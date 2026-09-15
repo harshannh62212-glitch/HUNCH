@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLASO-02 // NASA HUNCH External Cargo Transport Robot</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            space: {
+              950: '#040711',
+              900: '#080d1e',
+              850: '#0c132a',
+              800: '#111b3b',
+              700: '#1b2a5c'
+            },
+            nasablue: '#0B3D91',
+            nasared: '#FC3D21',
+            cyan: {
+              DEFAULT: '#00F0FF',
+              glow: '#00F0FF80'
+            },
+            lunar: '#E2E8F0',
+            missionamber: '#FFB800'
+          },
+          fontFamily: {
+            display: ['Orbitron', 'sans-serif'],
+            hud: ['Chakra Petch', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+            sans: ['Inter', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-space-950 text-slate-100 min-h-screen relative selection:bg-cyan selection:text-black">
+
+  <!-- Scanline subtle visual layer -->
+  <div class="fixed inset-0 pointer-events-none scanline-overlay z-50"></div>
+
+  <!-- TOP STATUS BANNER (AEROSPACE TELEMETRY BAR) -->
+  <header class="border-b border-cyan/20 bg-space-900/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Project Identity -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-lg bg-nasablue flex items-center justify-center border border-cyan/40 shadow-[0_0_12px_rgba(0,240,255,0.4)]">
+          <i data-lucide="box" class="w-5 h-5 text-cyan"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-display font-bold tracking-wider text-white text-base">NASA HUNCH</span>
+            <span class="text-xs px-1.5 py-0.5 rounded bg-cyan/10 text-cyan border border-cyan/30 font-mono">LLASO-02</span>
+          </div>
+          <p class="text-[11px] font-hud text-slate-400 tracking-wide uppercase">External Cargo Transport Robot // Lunar Logistics</p>
+        </div>
+      </div>
+
+      <!-- Quick Telemetry & MISSION STATUS BADGE -->
+      <div class="flex items-center space-x-4 sm:space-x-6">
+        
+        <!-- Live Mission Status Badge -->
+        <div class="flex items-center space-x-2 px-3 py-1.5 rounded-full border border-missionamber/60 bg-missionamber/10 pulse-planning">
+          <span class="w-2.5 h-2.5 rounded-full bg-missionamber pulse-dot"></span>
+          <div class="flex flex-col">
+            <span class="text-[10px] font-mono text-missionamber/90 font-semibold tracking-wider uppercase">Mission Status</span>
+            <span class="text-xs font-display font-extrabold text-amber-300 tracking-widest">PLANNING</span>
+          </div>
+        </div>
+
+        <!-- Audio Toggle & Quick Actions -->
+        <div class="hidden md:flex items-center space-x-3">
+          <button id="audio-toggle-btn" class="flex items-center space-x-1.5 px-3 py-1 text-xs font-mono text-slate-300 hover:text-cyan border border-slate-700 hover:border-cyan/50 rounded transition-all bg-space-850">
+            <i data-lucide="volume-2" class="w-3.5 h-3.5" id="audio-icon"></i>
+            <span id="audio-label">FX ON</span>
+          </button>
+          
+          <a href="#payload-calculator" class="px-3 py-1 text-xs font-mono bg-cyan/10 hover:bg-cyan text-cyan hover:text-black border border-cyan/40 rounded transition-all duration-200">
+            Manifest Calc
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+
+    <!-- HERO SECTION -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pt-4">
+      <div class="lg:col-span-7 space-y-6">
+        
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-nasablue/30 border border-cyan/30 text-cyan text-xs font-mono">
+          <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-cyan"></i>
+          <span>ARTEMIS MOON-TO-MARS LOGISTICS INITIATIVE</span>
+        </div>
+
+        <h1 class="text-3xl sm:text-5xl font-display font-black tracking-tight text-white leading-tight">
+          AUTONOMOUS EXTERNAL <br />
+          <span class="bg-clip-text text-transparent bg-gradient-to-r from-cyan via-sky-300 to-amber-400">
+            CARGO TRANSPORT ROBOT
+          </span>
+        </h1>
+
+        <p class="text-slate-300 text-base sm:text-lg font-sans max-w-2xl leading-relaxed">
+          Engineered for the <strong>NASA HUNCH LLASO Project 2</strong> challenge. An autonomous robotic surface transport vehicle designed to offload, navigate, and shuttle heavy pressurized and unpressurized payload canisters from Lunar Starship / HLS landing pads directly to the Artemis Base Supply Facility across rugged lunar regolith.
+        </p>
+
+        <!-- Mission Meta Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+          <div class="hud-card hud-corners p-3 rounded-lg border border-cyan/20">
+            <div class="text-[11px] font-hud text-slate-400 uppercase">Current Phase</div>
+            <div class="text-sm font-display font-bold text-amber-300">Phase 01 : Planning</div>
+          </div>
+          <div class="hud-card hud-corners p-3 rounded-lg border border-cyan/20">
+            <div class="text-[11px] font-hud text-slate-400 uppercase">Max Payload</div>
+            <div class="text-sm font-display font-bold text-cyan">500 kg Lunar</div>
+          </div>
+          <div class="hud-card hud-corners p-3 rounded-lg border border-cyan/20">
+            <div class="text-[11px] font-hud text-slate-400 uppercase">Drive Mechanism</div>
+            <div class="text-sm font-display font-bold text-white">6-Wheel Rocker-Bogie</div>
+          </div>
+          <div class="hud-card hud-corners p-3 rounded-lg border border-cyan/20">
+            <div class="text-[11px] font-hud text-slate-400 uppercase">Autonomy Level</div>
+            <div class="text-sm font-display font-bold text-emerald-400">Level 4 SLAM + AI</div>
+          </div>
+        </div>
+
+        <!-- Navigation Anchors -->
+        <div class="flex flex-wrap gap-3 pt-2 font-mono text-xs">
+          <a href="#viewer-section" class="px-5 py-2.5 rounded-md bg-cyan hover:bg-cyan/80 text-space-950 font-bold flex items-center space-x-2 transition-all shadow-[0_0_15px_rgba(0,240,255,0.4)]">
+            <i data-lucide="eye" class="w-4 h-4"></i>
+            <span>3D ROBOT CAD VIEWER</span>
+          </a>
+          <a href="#surface-simulator" class="px-5 py-2.5 rounded-md bg-space-850 hover:bg-space-800 text-slate-200 border border-slate-700 hover:border-cyan/40 flex items-center space-x-2 transition-all">
+            <i data-lucide="map" class="w-4 h-4 text-cyan"></i>
+            <span>SURFACE ROUTE SIM</span>
+          </a>
+          <a href="#engineering-crew" class="px-5 py-2.5 rounded-md bg-space-850 hover:bg-space-800 text-slate-200 border border-slate-700 hover:border-cyan/40 flex items-center space-x-2 transition-all">
+            <i data-lucide="users" class="w-4 h-4 text-amber-400"></i>
+            <span>ENGINEERING CREW</span>
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Hero Status Telemetry HUD Box -->
+      <div class="lg:col-span-5">
+        <div class="hud-card hud-corners rounded-xl p-6 border border-cyan/30 relative">
+          <div class="flex items-center justify-between border-b border-cyan/20 pb-3 mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span class="font-display font-semibold text-xs tracking-wider text-cyan">SYSTEM TELEMETRY LINK</span>
+            </div>
+            <span class="font-mono text-[11px] text-slate-400">LUNAR LINK: ACTIVE</span>
+          </div>
+
+          <!-- Live Dynamic Readings -->
+          <div class="space-y-4 font-mono text-xs">
+            <div>
+              <div class="flex justify-between mb-1">
+                <span class="text-slate-400">Main Battery Bus (Li-Sulfur Cryo)</span>
+                <span id="telemetry-battery-text" class="text-cyan font-bold">98.4%</span>
+              </div>
+              <div class="w-full bg-space-950 rounded-full h-2 border border-slate-800 overflow-hidden">
+                <div id="telemetry-battery-bar" class="bg-gradient-to-r from-cyan to-emerald-400 h-full w-[98%] transition-all duration-700"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between mb-1">
+                <span class="text-slate-400">Cargo Bay Lock Mechanism</span>
+                <span id="telemetry-bay-status" class="text-emerald-400 font-bold">ENGAGED // SECURE</span>
+              </div>
+              <div class="w-full bg-space-950 rounded-full h-2 border border-slate-800 overflow-hidden">
+                <div class="bg-emerald-400 h-full w-[100%]"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between mb-1">
+                <span class="text-slate-400">Regolith Dust Ingress Rate</span>
+                <span id="telemetry-dust-text" class="text-amber-300 font-bold">0.04 mg/m²</span>
+              </div>
+              <div class="w-full bg-space-950 rounded-full h-2 border border-slate-800 overflow-hidden">
+                <div id="telemetry-dust-bar" class="bg-amber-400 h-full w-[12%] transition-all duration-700"></div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-2 text-center">
+              <div class="p-2.5 rounded bg-space-950/80 border border-slate-800">
+                <div class="text-[10px] text-slate-400 font-hud">DOWNLINK LATENCY</div>
+                <div class="text-sm font-bold text-white mt-0.5">1.284 s</div>
+                <div class="text-[10px] text-cyan">Earth ↔ Shackleton</div>
+              </div>
+              <div class="p-2.5 rounded bg-space-950/80 border border-slate-800">
+                <div class="text-[10px] text-slate-400 font-hud">GRAVITY FACTOR</div>
+                <div class="text-sm font-bold text-white mt-0.5">1.62 m/s²</div>
+                <div class="text-[10px] text-amber-300">0.166 Earth g</div>
+              </div>
+            </div>
+
+            <!-- Mode Selector Switches -->
+            <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <span class="text-slate-400 text-[11px]">Operating Mode:</span>
+              <div class="flex space-x-1">
+                <button class="mode-btn px-2 py-1 text-[11px] rounded bg-cyan/20 border border-cyan text-cyan font-bold" data-mode="AUTO">AUTO</button>
+                <button class="mode-btn px-2 py-1 text-[11px] rounded bg-space-850 border border-slate-700 text-slate-400 hover:text-white" data-mode="TELEOP">TELE-OP</button>
+                <button class="mode-btn px-2 py-1 text-[11px] rounded bg-space-850 border border-slate-700 text-slate-400 hover:text-white" data-mode="DOCK">DOCKING</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE 3D ROBOT CAD VIEWER SECTION -->
+    <section id="viewer-section" class="scroll-mt-20">
+      <div class="hud-card hud-corners rounded-2xl border border-cyan/30 overflow-hidden">
+        
+        <!-- Viewer Header Bar -->
+        <div class="p-4 sm:p-5 border-b border-cyan/20 bg-space-900/80 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="orbit" class="w-5 h-5 text-cyan animate-spin" style="animation-duration: 12s;"></i>
+              <h2 class="text-lg sm:text-xl font-display font-bold text-white">INTERACTIVE 3D CAD VISUALIZER</h2>
+              <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">LIVE WEBGL</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">Drag to rotate • Scroll to zoom • Right-click/Shift to pan • Click subsystems to inspect</p>
+          </div>
+
+          <!-- Controls and Toggles -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="btn-wireframe" class="px-3 py-1.5 rounded bg-space-850 hover:bg-space-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-cyan flex items-center space-x-1.5 transition-all">
+              <i data-lucide="box" class="w-3.5 h-3.5"></i>
+              <span>Wireframe: OFF</span>
+            </button>
+            <button id="btn-explode" class="px-3 py-1.5 rounded bg-space-850 hover:bg-space-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-cyan flex items-center space-x-1.5 transition-all">
+              <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+              <span>Exploded View: OFF</span>
+            </button>
+            <button id="btn-reset-cam" class="px-3 py-1.5 rounded bg-space-850 hover:bg-space-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-cyan flex items-center space-x-1.5 transition-all">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              <span>Reset Camera</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3D Canvas + Interactive Subsystem Inspector HUD -->
+        <div class="relative w-full h-[480px] sm:h-[560px] bg-space-950 flex">
+          <canvas id="rover-canvas" class="w-full h-full block"></canvas>
+
+          <!-- Floating Interactive Subsystem Selector -->
+          <div class="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 p-3 rounded-lg bg-space-900/90 backdrop-blur-md border border-cyan/30 text-xs font-mono pointer-events-auto">
+            <div class="text-[11px] text-slate-400 font-hud uppercase tracking-wider mb-2 flex justify-between items-center">
+              <span>Subsystem Inspection</span>
+              <span id="active-part-tag" class="text-cyan font-bold">CHASSIS & BED</span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-1.5 mb-2">
+              <button class="part-btn px-2 py-1 rounded text-left border border-cyan/40 bg-cyan/15 text-cyan hover:bg-cyan/20" data-part="chassis">1. Main Chassis</button>
+              <button class="part-btn px-2 py-1 rounded text-left border border-slate-700 bg-space-850 text-slate-300 hover:text-white" data-part="wheels">2. Rocker-Bogie</button>
+              <button class="part-btn px-2 py-1 rounded text-left border border-slate-700 bg-space-850 text-slate-300 hover:text-white" data-part="cargobay">3. Cargo Bay Latch</button>
+              <button class="part-btn px-2 py-1 rounded text-left border border-slate-700 bg-space-850 text-slate-300 hover:text-white" data-part="lidar">4. LIDAR Mast & Nav</button>
+            </div>
+
+            <p id="part-description" class="text-[11px] text-slate-300 leading-relaxed font-sans border-t border-slate-800 pt-2">
+              Reinforced carbon-composite & titanium truss frame optimized to withstand 500 kg lunar cargo load during rough terrain traversal.
+            </p>
+          </div>
+
+          <!-- Compass / Orientation Indicator -->
+          <div class="absolute top-4 right-4 p-2 rounded bg-space-900/80 border border-slate-800 text-[10px] font-mono text-slate-400 flex items-center space-x-2 pointer-events-none">
+            <div class="w-2 h-2 rounded-full bg-cyan animate-pulse"></div>
+            <span>ARTEMIS SOUTH POLE // 89.9° S</span>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- INTERACTIVE MISSION ROUTE & LUNAR SURFACE SIMULATOR -->
+    <section id="surface-simulator" class="scroll-mt-20">
+      <div class="hud-card hud-corners rounded-2xl border border-cyan/30 p-6">
+        
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-cyan/20 pb-4 mb-6">
+          <div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="navigation" class="w-5 h-5 text-amber-400"></i>
+              <h2 class="text-xl font-display font-bold text-white">LUNAR SURFACE ROUTE SIMULATOR</h2>
+              <span class="text-xs px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30 font-mono">LLASO MISSION RUNWAY</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono mt-1">Autonomous waypoint navigation from Landing Pad Alpha (Rocket) to Base Supply Building</p>
+          </div>
+
+          <!-- Sim Controls -->
+          <div class="flex items-center space-x-3">
+            <button id="btn-sim-toggle" class="px-4 py-2 rounded bg-cyan hover:bg-cyan/80 text-space-950 font-mono font-bold text-xs flex items-center space-x-1.5 transition-all">
+              <i data-lucide="play" class="w-4 h-4" id="sim-icon"></i>
+              <span id="sim-btn-text">START TRANSIT SIM</span>
+            </button>
+            <button id="btn-sim-reset" class="px-3 py-2 rounded bg-space-850 hover:bg-space-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-white">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          <!-- Tactical Map Canvas -->
+          <div class="lg:col-span-8 bg-space-950 rounded-xl border border-slate-800 p-4 relative overflow-hidden flex flex-col justify-between">
+            <div class="flex justify-between text-xs font-mono text-slate-400 mb-2">
+              <span class="flex items-center space-x-1.5 text-cyan">
+                <i data-lucide="rocket" class="w-3.5 h-3.5"></i>
+                <span>HLS Touchdown Alpha (0 m)</span>
+              </span>
+              <span class="flex items-center space-x-1.5 text-emerald-400">
+                <i data-lucide="home" class="w-3.5 h-3.5"></i>
+                <span>Supply Building Gateway (850 m)</span>
+              </span>
+            </div>
+
+            <!-- Route SVG Animation Area -->
+            <div class="relative h-56 sm:h-64 w-full my-auto flex items-center justify-center">
+              <svg id="route-svg" viewBox="0 0 800 240" class="w-full h-full">
+                <!-- Regolith Surface Contour -->
+                <path d="M 40 180 Q 200 210, 360 160 T 600 190 T 760 150" fill="none" stroke="#1e293b" stroke-width="8" stroke-linecap="round" />
+                
+                <!-- Crater Hazards -->
+                <circle cx="280" cy="185" r="28" fill="rgba(244,63,94,0.08)" stroke="#f43f5e" stroke-width="1.5" stroke-dasharray="4,4" />
+                <text x="280" y="190" fill="#f43f5e" font-size="10" font-family="JetBrains Mono" text-anchor="middle">CRATER 14-B</text>
+                
+                <circle cx="510" cy="175" r="22" fill="rgba(255,184,0,0.08)" stroke="#ffb800" stroke-width="1.5" stroke-dasharray="4,4" />
+                <text x="510" y="180" fill="#ffb800" font-size="10" font-family="JetBrains Mono" text-anchor="middle">BOULDER FIELD</text>
+
+                <!-- Planned Transit Path -->
+                <path id="svg-path" d="M 60 170 Q 200 130, 360 145 T 600 155 T 740 140" fill="none" stroke="#00F0FF" stroke-width="3" stroke-dasharray="6,6" opacity="0.8" />
+
+                <!-- Origin Node (Lander) -->
+                <g transform="translate(60, 170)">
+                  <circle r="12" fill="#0B3D91" stroke="#00F0FF" stroke-width="2" />
+                  <circle r="4" fill="#00F0FF" />
+                  <text y="28" fill="#94a3b8" font-size="10" font-family="JetBrains Mono" text-anchor="middle">Rocket Lander</text>
+                </g>
+
+                <!-- Destination Node (Supply Base) -->
+                <g transform="translate(740, 140)">
+                  <circle r="14" fill="#065f46" stroke="#10b981" stroke-width="2" />
+                  <circle r="5" fill="#34d399" />
+                  <text y="28" fill="#34d399" font-size="10" font-family="JetBrains Mono" text-anchor="middle">Supply Facility</text>
+                </g>
+
+                <!-- Animated Rover Marker -->
+                <g id="rover-sim-marker" transform="translate(60, 170)">
+                  <circle r="16" fill="rgba(0,240,255,0.2)" stroke="#00F0FF" stroke-width="1.5" class="animate-ping" />
+                  <rect x="-10" y="-8" width="20" height="16" rx="3" fill="#080d1e" stroke="#00F0FF" stroke-width="2" />
+                  <circle cx="-6" cy="10" r="3" fill="#94a3b8" />
+                  <circle cx="6" cy="10" r="3" fill="#94a3b8" />
+                  <text y="-14" fill="#00F0FF" font-size="10" font-weight="bold" font-family="JetBrains Mono" text-anchor="middle">LLASO-02</text>
+                </g>
+              </svg>
+            </div>
+
+            <!-- Live Route Progress Bar -->
+            <div class="mt-4 space-y-1 font-mono text-xs">
+              <div class="flex justify-between text-slate-400">
+                <span>Route Transit Progress: <span id="sim-dist-text" class="text-white font-bold">0 m / 850 m</span></span>
+                <span id="sim-pct-text" class="text-cyan font-bold">0%</span>
+              </div>
+              <div class="w-full bg-space-900 rounded-full h-2.5 border border-slate-800 overflow-hidden">
+                <div id="sim-progress-bar" class="bg-gradient-to-r from-nasablue via-cyan to-emerald-400 h-full w-[0%] transition-all duration-200"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-time Route Telemetry Panel -->
+          <div class="lg:col-span-4 space-y-4">
+            <div class="bg-space-950 rounded-xl border border-slate-800 p-4 space-y-3 font-mono text-xs">
+              <div class="text-[11px] font-hud text-slate-400 uppercase border-b border-slate-800 pb-2">Active Route Metrics</div>
+              
+              <div class="flex justify-between py-1 border-b border-slate-900">
+                <span class="text-slate-400">Ground Velocity</span>
+                <span id="metric-speed" class="text-white font-bold">0.0 km/h</span>
+              </div>
+
+              <div class="flex justify-between py-1 border-b border-slate-900">
+                <span class="text-slate-400">Terrain Slope</span>
+                <span id="metric-slope" class="text-white font-bold">+2.4° (Nominal)</span>
+              </div>
+
+              <div class="flex justify-between py-1 border-b border-slate-900">
+                <span class="text-slate-400">Hazard Proximity</span>
+                <span id="metric-hazard" class="text-emerald-400 font-bold">CLEAR (> 60m)</span>
+              </div>
+
+              <div class="flex justify-between py-1 border-b border-slate-900">
+                <span class="text-slate-400">Estimated Arrival (ETA)</span>
+                <span id="metric-eta" class="text-cyan font-bold">--:--</span>
+              </div>
+
+              <div class="flex justify-between py-1">
+                <span class="text-slate-400">Slip Ratio</span>
+                <span id="metric-slip" class="text-slate-300 font-bold">3.2%</span>
+              </div>
+            </div>
+
+            <!-- Path Waypoints List -->
+            <div class="bg-space-950 rounded-xl border border-slate-800 p-4 font-mono text-xs space-y-2">
+              <div class="text-[11px] font-hud text-slate-400 uppercase">Waypoints Sequence</div>
+              <div class="space-y-1.5">
+                <div class="p-2 rounded bg-cyan/10 border border-cyan/30 text-cyan flex justify-between items-center" id="wp-1">
+                  <span>WP-01: Rocket Landing Airway</span>
+                  <span class="text-[10px] uppercase font-bold">STATIONARY</span>
+                </div>
+                <div class="p-2 rounded bg-space-900 border border-slate-800 text-slate-400 flex justify-between items-center" id="wp-2">
+                  <span>WP-02: North Crater Bypass</span>
+                  <span class="text-[10px] uppercase">PENDING</span>
+                </div>
+                <div class="p-2 rounded bg-space-900 border border-slate-800 text-slate-400 flex justify-between items-center" id="wp-3">
+                  <span>WP-03: Supply Facility Airlock 02</span>
+                  <span class="text-[10px] uppercase">TARGET</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- CARGO BAY PAYLOAD & MANIFEST CALCULATOR WIDGET -->
+    <section id="payload-calculator" class="scroll-mt-20">
+      <div class="hud-card hud-corners rounded-2xl border border-cyan/30 p-6">
+        
+        <div class="flex flex-wrap items-center justify-between gap-4 border-b border-cyan/20 pb-4 mb-6">
+          <div>
+            <div class="flex items-center space-x-2">
+              <i data-lucide="scale" class="w-5 h-5 text-cyan"></i>
+              <h2 class="text-xl font-display font-bold text-white">CARGO BAY PAYLOAD CALCULATOR</h2>
+              <span class="text-xs px-2 py-0.5 rounded bg-cyan/10 text-cyan border border-cyan/30 font-mono">HUNCH MANIFEST</span>
+            </div>
+            <p class="text-xs text-slate-400 font-mono mt-1">Configure supply canisters to evaluate center of gravity (CoG), lunar weight, and battery burn</p>
+          </div>
+          <div class="text-right">
+            <span class="text-xs font-mono text-slate-400">MAX CAPACITY:</span>
+            <span class="text-sm font-display font-bold text-cyan ml-1.5">500.0 KG</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          <!-- Cargo Item Selectors -->
+          <div class="lg:col-span-7 space-y-3 font-mono">
+            <div class="text-xs text-slate-400 uppercase font-hud mb-2">Select Lunar Cargo Items for Transit:</div>
+
+            <!-- Item 1 -->
+            <div class="flex items-center justify-between p-3 rounded-lg bg-space-950 border border-slate-800 hover:border-cyan/40 transition-colors">
+              <div class="flex items-center space-x-3">
+                <input type="checkbox" id="cargo-lox" class="cargo-checkbox w-4 h-4 accent-cyan cursor-pointer" data-mass="140" data-power="1.8" checked />
+                <div>
+                  <div class="text-xs font-bold text-white">LOX / CH4 Cryogenic Transfer Tank</div>
+                  <div class="text-[11px] text-slate-400">Propellant reserve for ascent return vehicle</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold text-cyan">140 kg</span>
+                <div class="text-[10px] text-slate-400">Lunar: 23 kg</div>
+              </div>
+            </div>
+
+            <!-- Item 2 -->
+            <div class="flex items-center justify-between p-3 rounded-lg bg-space-950 border border-slate-800 hover:border-cyan/40 transition-colors">
+              <div class="flex items-center space-x-3">
+                <input type="checkbox" id="cargo-eclss" class="cargo-checkbox w-4 h-4 accent-cyan cursor-pointer" data-mass="95" data-power="1.2" checked />
+                <div>
+                  <div class="text-xs font-bold text-white">ECLSS Water & Atmospheric Cassette</div>
+                  <div class="text-[11px] text-slate-400">Hab supply replenishment payload</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold text-cyan">95 kg</span>
+                <div class="text-[10px] text-slate-400">Lunar: 15.8 kg</div>
+              </div>
+            </div>
+
+            <!-- Item 3 -->
+            <div class="flex items-center justify-between p-3 rounded-lg bg-space-950 border border-slate-800 hover:border-cyan/40 transition-colors">
+              <div class="flex items-center space-x-3">
+                <input type="checkbox" id="cargo-drill" class="cargo-checkbox w-4 h-4 accent-cyan cursor-pointer" data-mass="80" data-power="1.0" checked />
+                <div>
+                  <div class="text-xs font-bold text-white">Autonomous Regolith Core Drill Kit</div>
+                  <div class="text-[11px] text-slate-400">ISRU geotechnical sampling hardware</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold text-cyan">80 kg</span>
+                <div class="text-[10px] text-slate-400">Lunar: 13.3 kg</div>
+              </div>
+            </div>
+
+            <!-- Item 4 -->
+            <div class="flex items-center justify-between p-3 rounded-lg bg-space-950 border border-slate-800 hover:border-cyan/40 transition-colors">
+              <div class="flex items-center space-x-3">
+                <input type="checkbox" id="cargo-food" class="cargo-checkbox w-4 h-4 accent-cyan cursor-pointer" data-mass="60" data-power="0.6" />
+                <div>
+                  <div class="text-xs font-bold text-white">NASA HUNCH Food Stowage Pack</div>
+                  <div class="text-[11px] text-slate-400">Crew rations & freeze-dried provisions</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold text-cyan">60 kg</span>
+                <div class="text-[10px] text-slate-400">Lunar: 10 kg</div>
+              </div>
+            </div>
+
+            <!-- Item 5 -->
+            <div class="flex items-center justify-between p-3 rounded-lg bg-space-950 border border-slate-800 hover:border-cyan/40 transition-colors">
+              <div class="flex items-center space-x-3">
+                <input type="checkbox" id="cargo-battery" class="cargo-checkbox w-4 h-4 accent-cyan cursor-pointer" data-mass="110" data-power="1.4" />
+                <div>
+                  <div class="text-xs font-bold text-white">Base Power Microgrid Secondary Cells</div>
+                  <div class="text-[11px] text-slate-400">Solid-state battery modules for night cycle</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-bold text-cyan">110 kg</span>
+                <div class="text-[10px] text-slate-400">Lunar: 18.3 kg</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Real-Time Mass & Physics Readout -->
+          <div class="lg:col-span-5 bg-space-950 rounded-xl border border-slate-800 p-5 flex flex-col justify-between font-mono space-y-4">
+            <div>
+              <div class="flex justify-between items-center border-b border-slate-800 pb-2 mb-3">
+                <span class="text-xs text-slate-400 font-hud uppercase">Calculated Manifest Dynamics</span>
+                <span id="calc-status-badge" class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-bold">BALANCED</span>
+              </div>
+
+              <div class="space-y-3 text-xs">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Earth Mass (Inertial):</span>
+                  <span id="calc-earth-mass" class="text-white font-bold text-sm">315.0 kg</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Lunar Surface Weight ($1/6g$):</span>
+                  <span id="calc-lunar-weight" class="text-cyan font-bold text-sm">52.5 kg (510.3 N)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Cargo Bay Capacity Utilization:</span>
+                  <span id="calc-pct" class="text-white font-bold">63.0%</span>
+                </div>
+                <div class="w-full bg-space-900 rounded-full h-3 border border-slate-800 overflow-hidden">
+                  <div id="calc-capacity-bar" class="bg-gradient-to-r from-cyan to-amber-400 h-full w-[63%] transition-all duration-300"></div>
+                </div>
+
+                <div class="flex justify-between pt-2">
+                  <span class="text-slate-400">Center of Gravity (CoG) Offset:</span>
+                  <span id="calc-cog" class="text-emerald-400 font-bold">+1.2 cm (Optimal)</span>
+                </div>
+
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Est. Transit Battery Draw:</span>
+                  <span id="calc-power" class="text-amber-300 font-bold">4.0 kWh</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-3 rounded bg-space-900 border border-slate-800 text-[11px] text-slate-400 leading-relaxed font-sans">
+              <strong class="text-cyan font-mono">LLASO Design Note:</strong> Due to 1/6th gravity, surface traction reduces significantly while payload inertia remains identical. The active suspension dynamically shifts wheel torque vectors to prevent wheel slip on loose lunar dust.
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- MISSION PLANNING ROADMAP -->
+    <section id="mission-roadmap" class="scroll-mt-20">
+      <div class="hud-card hud-corners rounded-2xl border border-cyan/30 p-6">
+        
+        <div class="flex items-center space-x-3 border-b border-cyan/20 pb-4 mb-6">
+          <i data-lucide="milestone" class="w-5 h-5 text-amber-400"></i>
+          <div>
+            <h2 class="text-xl font-display font-bold text-white">MISSION TIMELINE & ROADMAP</h2>
+            <p class="text-xs text-slate-400 font-mono">Current Status: <span class="text-amber-300 font-bold">PLANNING</span> • NASA HUNCH 2026–2027 Challenge Lifecycle</p>
+          </div>
+        </div>
+
+        <!-- 4 Phase Pipeline -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          
+          <!-- Phase 1: Planning (CURRENT) -->
+          <div class="p-4 rounded-xl bg-space-900 border-2 border-missionamber relative shadow-[0_0_20px_rgba(255,184,0,0.15)]">
+            <div class="absolute -top-3 right-3 px-2 py-0.5 rounded-full bg-missionamber text-space-950 font-display font-extrabold text-[10px] tracking-wider">
+              CURRENT PHASE
+            </div>
+            <div class="text-xs font-mono text-missionamber font-bold mb-1">PHASE 01</div>
+            <h3 class="font-display font-bold text-white text-base mb-2">Concept & Planning</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-3">
+              Define operational parameters, payload latch geometry, autonomous navigation architecture, and lunar regolith traversal requirements.
+            </p>
+            <div class="text-[11px] font-mono text-amber-300 font-semibold flex items-center space-x-1.5">
+              <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+              <span>Status: In Progress</span>
+            </div>
+          </div>
+
+          <!-- Phase 2: CAD & Prototyping -->
+          <div class="p-4 rounded-xl bg-space-950 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
+            <div class="text-xs font-mono text-slate-500 font-bold mb-1">PHASE 02</div>
+            <h3 class="font-display font-bold text-white text-base mb-2">CAD & Prototyping</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              Rapid physical fabrication, 3D printing of rocker-bogie joints, cargo locking test rig, and electronics harness prototyping.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500 flex items-center space-x-1.5">
+              <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+              <span>Target: Q4 2026</span>
+            </div>
+          </div>
+
+          <!-- Phase 3: Mobility Testing -->
+          <div class="p-4 rounded-xl bg-space-950 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
+            <div class="text-xs font-mono text-slate-500 font-bold mb-1">PHASE 03</div>
+            <h3 class="font-display font-bold text-white text-base mb-2">Simulated Regolith Trials</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              Testing mobility on synthetic lunar regolith test beds, automated docking alignment, and autonomous obstacle avoidance.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500 flex items-center space-x-1.5">
+              <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+              <span>Target: Q1 2027</span>
+            </div>
+          </div>
+
+          <!-- Phase 4: NASA HUNCH Review -->
+          <div class="p-4 rounded-xl bg-space-950 border border-slate-800 opacity-80 hover:opacity-100 transition-opacity">
+            <div class="text-xs font-mono text-slate-500 font-bold mb-1">PHASE 04</div>
+            <h3 class="font-display font-bold text-white text-base mb-2">NASA HUNCH Evaluation</h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              Final design presentation and live demonstration to NASA engineers, astronauts, and program mentors at Johnson Space Center.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500 flex items-center space-x-1.5">
+              <i data-lucide="award" class="w-3.5 h-3.5"></i>
+              <span>Target: Spring 2027</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ENGINEERING CREW & TEAM MEMBERS DOSSIER -->
+    <section id="engineering-crew" class="scroll-mt-20">
+      <div class="hud-card hud-corners rounded-2xl border border-cyan/30 p-6">
+        
+        <div class="flex items-center space-x-3 border-b border-cyan/20 pb-4 mb-6">
+          <i data-lucide="users" class="w-5 h-5 text-cyan"></i>
+          <div>
+            <h2 class="text-xl font-display font-bold text-white">LLASO ENGINEERING TEAM</h2>
+            <p class="text-xs text-slate-400 font-mono">NASA HUNCH Project 2 Core Systems Developers</p>
+          </div>
+        </div>
+
+        <!-- 3 Team Member Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          <!-- Member 1: Sacheth -->
+          <div class="p-5 rounded-xl bg-space-950 border border-slate-800 hover:border-cyan/50 transition-all group">
+            <div class="w-14 h-14 rounded-xl bg-nasablue/30 border border-cyan/40 flex items-center justify-center mb-4 text-cyan group-hover:scale-105 transition-transform">
+              <i data-lucide="cpu" class="w-7 h-7"></i>
+            </div>
+            <div class="text-xs font-mono text-cyan tracking-wider font-semibold uppercase">Avionics & Systems Lead</div>
+            <h3 class="text-xl font-display font-bold text-white mt-1 mb-2">Sacheth</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-4">
+              Directs the avionics architecture, embedded power distribution bus, cryogenic thermal sensors, and high-gain Earth-Moon communications downlink.
+            </p>
+            <div class="space-y-1.5 font-mono text-[11px] text-slate-400 border-t border-slate-900 pt-3">
+              <div class="flex justify-between">
+                <span>Domain:</span>
+                <span class="text-white">Avionics / Microcontrollers</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Subsystem:</span>
+                <span class="text-cyan">Power Distribution Unit</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Member 2: Ahrav -->
+          <div class="p-5 rounded-xl bg-space-950 border border-slate-800 hover:border-cyan/50 transition-all group">
+            <div class="w-14 h-14 rounded-xl bg-amber-500/10 border border-amber-400/40 flex items-center justify-center mb-4 text-amber-400 group-hover:scale-105 transition-transform">
+              <i data-lucide="cog" class="w-7 h-7"></i>
+            </div>
+            <div class="text-xs font-mono text-amber-400 tracking-wider font-semibold uppercase">Mechanical & Locomotion Lead</div>
+            <h3 class="text-xl font-display font-bold text-white mt-1 mb-2">Ahrav</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-4">
+              Oversees chassis CAD geometry, rocker-bogie articulation, titanium compliant wheels, and the automated cargo roll-bed docking lock.
+            </p>
+            <div class="space-y-1.5 font-mono text-[11px] text-slate-400 border-t border-slate-900 pt-3">
+              <div class="flex justify-between">
+                <span>Domain:</span>
+                <span class="text-white">CAD & Structural Dynamics</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Subsystem:</span>
+                <span class="text-amber-300">Rocker-Bogie / Cargo Bed</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Member 3: Harshan -->
+          <div class="p-5 rounded-xl bg-space-950 border border-slate-800 hover:border-cyan/50 transition-all group">
+            <div class="w-14 h-14 rounded-xl bg-emerald-500/10 border border-emerald-400/40 flex items-center justify-center mb-4 text-emerald-400 group-hover:scale-105 transition-transform">
+              <i data-lucide="binary" class="w-7 h-7"></i>
+            </div>
+            <div class="text-xs font-mono text-emerald-400 tracking-wider font-semibold uppercase">Autonomous Software & AI Lead</div>
+            <h3 class="text-xl font-display font-bold text-white mt-1 mb-2">Harshan</h3>
+            <p class="text-xs text-slate-300 leading-relaxed mb-4">
+              Leads autonomous SLAM pathfinding, obstacle evasion algorithms, regolith traction compensation AI, and mission control telemetry software.
+            </p>
+            <div class="space-y-1.5 font-mono text-[11px] text-slate-400 border-t border-slate-900 pt-3">
+              <div class="flex justify-between">
+                <span>Domain:</span>
+                <span class="text-white">Autonomous SLAM / Robotics</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Subsystem:</span>
+                <span class="text-emerald-300">Navigation & Guidance</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-cyan/20 pt-8 pb-12 text-slate-400 font-mono text-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center space-x-2">
+        <span class="text-cyan font-bold font-display">NASA HUNCH LLASO-02</span>
+        <span>•</span>
+        <span>Lunar Logistics & Supply Operations</span>
+      </div>
+      <div>
+        Engineered by Sacheth, Ahrav, and Harshan • Mission Status: <span class="text-amber-300 font-bold">PLANNING</span>
+      </div>
+    </footer>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
