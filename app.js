@@ -358,22 +358,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const subsystemData = {
       chassis: {
         title: 'Chassis & Structural Frame',
-        lead: 'Ahrav // Mechanical Design Lead',
+        lead: 'Ahrav & Sacheth // Assembly Lead & 3D Design Lead',
         desc: 'Carbon-composite monocoque enclosure with integrated 7075-T6 aluminum truss members. Houses primary avionics, cryo-insulated battery bus, and lower regolith skid plate rated for high-velocity particle deflection.'
       },
       locomotion: {
         title: 'Rocker-Bogie Suspension & Hub Drives',
-        lead: 'Ahrav // Mechanical Design Lead',
+        lead: 'Ahrav & Harshan // Assembly Lead & Co-Designer',
         desc: 'Passive 6-wheel articulated rocker-bogie architecture with non-pneumatic titanium compliant spring tires. Equipped with sealed cycloidal brushless hub motors delivering 180 Nm torque per wheel with zero dust intrusion.'
       },
       cargobay: {
         title: 'Cargo Transfer Roll-Bed & Latching',
-        lead: 'Sacheth // Systems & Avionics Lead',
+        lead: 'Sacheth & Ahrav // 3D Design Lead & Assembly Lead',
         desc: 'Dual-channel low-friction roller bed with automated electromagnetic latching mechanisms designed to lock standard 500 kg NASA HUNCH lunar stowage containers under ±15° incline maneuvers.'
       },
       avionics: {
         title: 'Perception, Autonomy & Downlink Mast',
-        lead: 'Harshan // Software & Autonomy Lead',
+        lead: 'Harshan & Ahrav // AI Lead & AI Training Lead',
         desc: 'High-speed solid-state flash LIDAR and dual stereoscopic cameras driving edge neural SLAM for 3D terrain reconstruction, real-time boulder avoidance, and 1.28s Earth-Moon telemetry communications.'
       }
     };
