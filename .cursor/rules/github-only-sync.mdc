@@ -17,13 +17,32 @@ User directive (Oct 2026): **do not sync or copy the project anywhere else — o
 ## Agents MAY
 
 - Edit and run code in the **single** workspace: `/Users/nhharshan/Hunch`.
-- Use **git** (`add`, `commit`, `push`, `pull`, `fetch`) against the configured GitHub remote when the user asks to sync or publish.
+- Use **git** (`add`, `commit`, `push`, `pull`, `fetch`) against the configured GitHub remotes when the user asks to sync or publish.
 - Read GitHub (`origin`, PRs, branches) to determine remote state when the user asks.
+
+## Dual GitHub remotes (required)
+
+Local monorepo publishes to **two** GitHub repos (same `main` content):
+
+| Remote | Repository |
+|--------|------------|
+| `origin` | `harshannh62212-glitch/HUNCH` |
+| `chat-app` | `harshannh62212-glitch/chat-app` |
+
+When the user asks to **sync**, **back up**, or **push** to GitHub, push **both** after any commit:
+
+```bash
+./scripts/push-github-both.sh
+```
+
+Equivalent: `git push origin main && git push chat-app main`.
+
+If `chat-app` rejects because histories diverged and the user wants the local tree to win, use `git push chat-app main --force-with-lease` once, then use the script for routine pushes.
 
 ## Commits and push
 
 - Only commit or push when the user explicitly requests it (unchanged).
-- When the user says “sync” or “back up the project,” mean **push to GitHub** (or pull from GitHub on another clone), not file copy.
+- When the user says “sync” or “back up the project,” mean **push to both GitHub remotes** (or pull from GitHub on another clone), not file copy.
 
 ## Supersedes
 

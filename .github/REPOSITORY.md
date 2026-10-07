@@ -1,38 +1,38 @@
-# GitHub repository: **HUNCH**
+# GitHub repositories (dual mirrors)
 
-| Field | Value |
-|--------|--------|
-| Owner | `harshannh62212-glitch` |
-| Repo slug | **`HUNCH`** |
-| Clone URL | `https://github.com/harshannh62212-glitch/HUNCH.git` |
-| Web | https://github.com/harshannh62212-glitch/HUNCH |
+Local workspace: `/Users/harshan/Hunch` (single source of truth). **Push both remotes** when publishing.
 
-Display title on GitHub can still be “The Hunch” in the description; the slug is `HUNCH`.
+| Remote | Owner / slug | URL |
+|--------|----------------|-----|
+| **`origin`** | `harshannh62212-glitch` / **HUNCH** | https://github.com/harshannh62212-glitch/HUNCH |
+| **`chat-app`** | `harshannh62212-glitch` / **chat-app** | https://github.com/harshannh62212-glitch/chat-app |
 
-## Rename on GitHub (if still `chat-app`)
-
-1. Open https://github.com/harshannh62212-glitch/chat-app/settings  
-2. **Repository name** → `HUNCH` → **Rename**
-
-GitHub redirects old `chat-app` URLs after rename.
-
-## Local remote
+## Routine push (both)
 
 ```bash
-cd /Users/nhharshan/Hunch
-git remote set-url origin https://github.com/harshannh62212-glitch/HUNCH.git
+cd /Users/harshan/Hunch
+./scripts/push-github-both.sh
+```
+
+Or manually:
+
+```bash
+git push origin main
+git push chat-app main
+```
+
+## Remotes setup (one-time)
+
+```bash
+git remote add origin https://github.com/harshannh62212-glitch/HUNCH.git
+git remote add chat-app https://github.com/harshannh62212-glitch/chat-app.git
 git remote -v
 ```
 
-## First push of the monorepo
+## Sync other machines
 
-Most rover/sim paths are still untracked locally. Stage deliberately; exclude `logs/`, large `*.pth` if needed (Git LFS or omit).
+Clone or pull from either mirror; prefer **HUNCH** as the canonical name. Keep both updated from this Mac when you sync.
 
-Sync other machines via **clone/pull from GitHub** only.
+## Excludes
 
-## Optional: GitHub CLI
-
-```bash
-brew install gh && gh auth login
-gh repo rename HUNCH --repo harshannh62212-glitch/chat-app
-```
+Respect `.gitignore` (e.g. `logs/`, `node_modules/`, `.venv/`, `*.pth`). Do not use rsync or folder copies — GitHub only.
