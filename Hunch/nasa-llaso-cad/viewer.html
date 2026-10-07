@@ -212,7 +212,7 @@
   <div class="bg-black/60 rounded-xl p-3 text-xs font-mono border border-slate-800 space-y-1.5">
     <div class="flex justify-between text-[10px]"><span class="text-slate-400">GOLDENMATE LiFePO4 (128 Wh)</span><span id="txt-rover-bat" class="text-white font-bold">100.0%</span></div>
     <div class="progress-bar-bg"><div id="bar-rover-bat" class="progress-fill bg-emerald-500" style="width:100%"></div></div>
-    <div class="flex justify-between text-[9px] text-slate-400"><span>HQST 9BB SOLAR: 100W</span><span id="txt-draw">DRAW: 15W</span></div>
+    <div class="flex justify-between text-[9px]"><span id="txt-pwr-source" class="text-slate-400">POWER: BATTERY ONLY</span><span id="txt-draw" class="text-amber-400 font-bold">DRAW: 15W</span></div>
   </div>
   <div class="bg-black/60 rounded-xl p-3 text-[10px] font-mono border border-amber-500/30 space-y-1.5">
     <div class="flex justify-between items-center"><span class="text-amber-300 font-black tracking-widest text-[9px]">LUNAR LOGISTICS</span><span id="log-phase" class="text-amber-200">IDLE</span></div>
@@ -3648,7 +3648,21 @@ function trackPlannedPath(p, path, startIdx) {
 
 function pathLookaheadPoint(p, path, startIdx, lookDist) {
   var acc = 0;
-  for (var j = startIdx; j < path.length - 1; j++) {
+  var qA = path[startIdx];
+  var qB = path[Math.min(startIdx + 1, path.length - 1)];
+  var sdx = qB.x - qA.x, sdz = qB.z - qA.z;
+  var segLen2 = sdx * sdx + sdz * sdz;
+  var projT = segLen2 > 1e-6 ? ((p.x - qA.x) * sdx + (p.z - qA.z) * sdz) / segLen2 : 0;
+  projT = Math.max(0, Math.min(1, projT));
+  var seg0Len = Math.sqrt(segLen2);
+  var remSeg0 = (1.0 - projT) * seg0Len;
+  if (remSeg0 >= lookDist) {
+    var t = projT + lookDist / (seg0Len || 1);
+    var px = qA.x + sdx * t, pz = qA.z + sdz * t;
+    return new THREE.Vector3(px, getH(px, pz) + 0.07, pz);
+  }
+  acc = remSeg0;
+  for (var j = startIdx + 1; j < path.length - 1; j++) {
     var q0 = path[j], q1 = path[j + 1];
     var seg = q0.distanceTo(q1);
     if (acc + seg >= lookDist) {
@@ -3778,10 +3792,10 @@ function computeAutopilot(dt) {
   var breathM = window.NASA_NavFusion ? NASA_NavFusion.BREATH_M : 0.34;
   var inRockGap = (rockCorridor && rockCorridor.mode === 'gap') || corridorClr >= ROVER_RADIUS + breathM * 0.45;
   var speedMs = Math.abs(vel);
-  var look = Math.max(2.6, Math.min(4.2, 2.4 + speedMs * 0.8));
+  var look = Math.max(3.0, Math.min(4.8, 2.8 + speedMs * 1.0));
   var tgt = pathLookaheadPoint(p, plannedPathPoints, navPathIdx, look);
   if (!comfortLookTarget) comfortLookTarget = tgt.clone();
-  else comfortLookTarget.lerp(tgt, Math.min(1.0, 8.0 * dt));
+  else comfortLookTarget.lerp(tgt, Math.min(1.0, 7.0 * dt));
 
   var segA = plannedPathPoints[navPathIdx];
   var segB = plannedPathPoints[Math.min(navPathIdx + 1, plannedPathPoints.length - 1)];
@@ -3789,7 +3803,8 @@ function computeAutopilot(dt) {
   var segLen = Math.hypot(sdx, sdz) || 1;
   var normX = -sdz / segLen, normZ = sdx / segLen;
   var crossTrack = (p.x - segA.x) * normX + (p.z - segA.z) * normZ;
-  if (Math.abs(crossTrack) < 0.12) crossTrack = 0;
+  var deadband = 0.06;
+  var effCrossTrack = Math.abs(crossTrack) < deadband ? 0 : (crossTrack > 0 ? crossTrack - deadband : crossTrack + deadband);
   var alpha = angleToGoalYawOnly(comfortLookTarget);
 
   // Hybrid Waypoint Blending (NASA rules: clear < 2.5m or > 90deg, blend steering vector)
@@ -3804,7 +3819,13 @@ function computeAutopilot(dt) {
     }
   }
 
-  var steer = alpha + Math.atan(0.45 * crossTrack / (speedMs + 1.4));
+  // Damped course correction:
+  // Pure pursuit angle alpha points toward lookahead point on the path.
+  // Add gentle cross-track correction, with yaw velocity damping (turnVel) to eliminate overshoot hunting
+  var ctCorrection = Math.atan(0.35 * effCrossTrack / (speedMs + 1.2));
+  var steerCmd = alpha * 0.85 + ctCorrection * 0.40;
+  var yawDamp = (typeof turnVel !== 'undefined' ? turnVel : 0) * 0.22;
+  var steer = steerCmd - yawDamp;
 
   var turnAhead = 0, prevH = null, run = 0;
   for (var k = navPathIdx; k < plannedPathPoints.length - 1 && run < 4; k++) {
@@ -3827,8 +3848,8 @@ function computeAutopilot(dt) {
   // straight-line goal bearing throttled the rover on every detour.
   var headErr = alpha;
   var aErr = Math.abs(headErr);
-  // steer is a yaw-rate command (rad/s): proportional heading control.
-  steer = Math.max(-1.35, Math.min(1.35, steer * 1.45));
+  // Clamped yaw-rate command (rad/s) without excessive multiplier
+  steer = Math.max(-1.15, Math.min(1.15, steer));
   var sm = window.navSecMins || {};
   var sFC = sm.F !== undefined ? sm.F : Math.min(lidarData[35], lidarData[0], lidarData[1]);
   var sSide = window.navSideMin !== undefined ? window.navSideMin : Math.min(lidarData[3], lidarData[4], lidarData[32], lidarData[33]);
@@ -3888,13 +3909,13 @@ function computeAutopilot(dt) {
   }
 
   var rawSteer = steer;
-  var slew = inRockGap ? 2.2 * dt : 2.6 * dt;
+  var slew = inRockGap ? 2.5 * dt : 3.0 * dt;
   var dSteer = rawSteer - window_prevBestSteer;
   if (dSteer > slew) dSteer = slew;
   else if (dSteer < -slew) dSteer = -slew;
   window_prevBestSteer += dSteer;
   steer = window_prevBestSteer;
-  if (Math.abs(steer) < 0.02) steer = 0;
+  if (Math.abs(steer) < 0.015) steer = 0;
   var spdRate = speed > window_lastTargetSpeed ? 8.0 : 1.6;
   window_lastTargetSpeed += (speed - window_lastTargetSpeed) * Math.min(1.0, spdRate * dt);
   return {steer: steer, speed: Math.max(0, Math.min(1.0, window_lastTargetSpeed))};
@@ -5365,9 +5386,9 @@ function updatePhysics(dt) {
       dockingState === 'ENTER' ||
       dockingState === 'TRANSIT' ||
       dockingState === 'UNDOCK_EXIT';
-    var maxAutoTurnRate = dockingTight ? 1.7 : 1.5;
+    var maxAutoTurnRate = dockingTight ? 1.7 : 1.25;
     autoTurnTarget = Math.max(-maxAutoTurnRate, Math.min(maxAutoTurnRate, autoTurnTarget));
-    var turnBlend = Math.min(1.0, (dockingTight ? 7.5 : 3.6) * dt) * roverMassScale();
+    var turnBlend = Math.min(1.0, (dockingTight ? 7.5 : 4.5) * dt) * roverMassScale();
     turnVel += (autoTurnTarget - turnVel) * turnBlend;
   } else {
     turnVel += (autoTurnTarget - turnVel) * 10.0 * dt * roverMassScale();
@@ -5689,7 +5710,21 @@ function updatePhysics(dt) {
   var bp = (roverWh / MAXWH) * 100;
   document.getElementById('txt-rover-bat').innerText = bp.toFixed(1) + '%';
   document.getElementById('bar-rover-bat').style.width = bp + '%';
-  document.getElementById('txt-draw').innerText = isDocked ? 'HQST SOLAR +100W' : ('DRAW: ' + drawW + 'W');
+  var pwrSrcEl = document.getElementById('txt-pwr-source');
+  var pwrDrawEl = document.getElementById('txt-draw');
+  if (pwrSrcEl && pwrDrawEl) {
+    if (isDocked) {
+      pwrSrcEl.innerHTML = '<span class="text-emerald-400 font-bold">⚡ HANGAR SOLAR: +100W</span>';
+      pwrDrawEl.innerText = 'CHARGING (DOCK)';
+      pwrDrawEl.className = 'text-emerald-300 font-bold';
+    } else {
+      pwrSrcEl.innerHTML = '<span class="text-slate-400">POWER: BATTERY ONLY</span>';
+      pwrDrawEl.innerText = 'DRAW: ' + drawW.toFixed(0) + 'W';
+      pwrDrawEl.className = 'text-amber-400 font-bold';
+    }
+  } else if (pwrDrawEl) {
+    pwrDrawEl.innerText = isDocked ? 'HQST SOLAR +100W' : ('DRAW: ' + drawW.toFixed(0) + 'W');
+  }
 
   roverGroup.updateMatrixWorld(true);
 

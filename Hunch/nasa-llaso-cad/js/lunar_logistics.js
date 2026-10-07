@@ -19,6 +19,8 @@
   var GRIP_CLOSED = 0.018;
   var JOINT_SPEED = 0.75;
   var DECK_Y = 0.30;
+  var GRIP_SNAP_DIST = 0.10;      // Max grab distance before force-snap
+  var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
 
   var manifest = null;
   var queue = [];
@@ -27,6 +29,8 @@
   var depot = [];
   var trips = 0;
   var phase = 'idle';
+  var craneWaitT = 0;
+  var missionStats = { startT: 0, parcelsDelivered: 0, totalMassKg: 0, kwhUsed: 0 };
   var missionArmed = false;
   var landerLanded = true;
   var hatchOpen = 1.0;
@@ -475,7 +479,9 @@
     var el = arm.elbow.rotation.z;
     var grip = gripGap();
     var carried = heldMass();
-    var speed = JOINT_SPEED * (carried > 2 ? 0.7 : 1);
+    // Heavier cargo → gentler arm motion to avoid oscillation
+    var massRatio = carried > 0 ? Math.min(1, carried / 8) : 0;
+    var speed = JOINT_SPEED * (1.0 - 0.4 * massRatio);
     var segs = [];
     var missed = false;
     for (var i = 0; i < waypoints.length; i++) {
@@ -684,25 +690,35 @@
     seat.y += mesh.userData.h + 0.01;
     var raised = seat.clone();
     raised.y += 0.14;
+    // Arc mid-point: smooth parabolic transit avoids clipping rover shell
     var mid = new THREE.Vector3().addVectors(lift, raised).multiplyScalar(0.5);
-    mid.y = Math.max(lift.y, raised.y) + 0.10;
+    mid.y = Math.max(lift.y, raised.y) + 0.12;
+    // Approach pre-grasp, then descend, close, lift with gentle arc, seat, release
     buildTraj([
-      { local: pre, grip: GRIP_OPEN },
-      { local: grasp, grip: GRIP_OPEN },
-      { grip: GRIP_CLOSED, dur: 0.35, tag: 'close' },
-      { local: lift, grip: GRIP_CLOSED },
+      { local: pre, grip: GRIP_OPEN, dur: 0.55 },
+      { local: grasp, grip: GRIP_OPEN, dur: 0.45 },
+      { grip: GRIP_CLOSED, dur: 0.4, tag: 'close' },
+      { local: lift, grip: GRIP_CLOSED, dur: 0.5 },
       { local: mid, grip: GRIP_CLOSED },
       { local: raised, grip: GRIP_CLOSED },
-      { local: seat, grip: GRIP_CLOSED, tag: 'seat' },
-      { grip: GRIP_OPEN, dur: 0.35, tag: 'openBay' },
-      { local: raised, grip: GRIP_OPEN },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.5, tag: 'seat' },
+      { grip: GRIP_OPEN, dur: 0.4, tag: 'openBay' },
+      { local: raised, grip: GRIP_OPEN, dur: 0.35 },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPick' },
     ]);
     log('<span class="text-cyan-300 font-bold">[ARM] Reaching for ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + '.</span>');
   }
 
   function startPlaceSequence() {
-    if (!bay.length || tableParcel) return;
+    // Wait for crane to clear the table before placing the next parcel
+    if (!bay.length) return;
+    if (tableParcel) {
+      // Table occupied — enter crane-wait phase
+      phase = 'crane_wait';
+      craneWaitT = 0;
+      log('<span class="text-amber-300">[ARM] Intake table occupied. Waiting for gantry crane to shelf the parcel.</span>');
+      return;
+    }
     ensureTip();
     var mesh = bay[bay.length - 1];
     var grasp = worldTarget(mesh.userData.grasp);
@@ -729,20 +745,40 @@
     gripRetry = 0;
     armMode = 'place';
     var mid = new THREE.Vector3().addVectors(grasp, placeUp).multiplyScalar(0.5);
-    mid.y = Math.max(grasp.y, placeUp.y) + 0.10;
+    mid.y = Math.max(grasp.y, placeUp.y) + 0.12;
+    // Gentler place trajectory: slower descents to prevent table bounce
     buildTraj([
-      { local: pre, grip: GRIP_OPEN },
-      { local: grasp, grip: GRIP_OPEN },
-      { grip: GRIP_CLOSED, dur: 0.35, tag: 'closeBay' },
-      { local: pre, grip: GRIP_CLOSED },
+      { local: pre, grip: GRIP_OPEN, dur: 0.5 },
+      { local: grasp, grip: GRIP_OPEN, dur: 0.45 },
+      { grip: GRIP_CLOSED, dur: 0.4, tag: 'closeBay' },
+      { local: pre, grip: GRIP_CLOSED, dur: 0.4 },
       { local: mid, grip: GRIP_CLOSED },
       { local: placeUp, grip: GRIP_CLOSED },
-      { local: place, grip: GRIP_CLOSED, tag: 'seat' },
-      { grip: GRIP_OPEN, dur: 0.35, tag: 'openTable' },
-      { local: placeUp, grip: GRIP_OPEN },
+      { local: place, grip: GRIP_CLOSED, dur: 0.6, tag: 'seat' },
+      { grip: GRIP_OPEN, dur: 0.4, tag: 'openTable' },
+      { local: placeUp, grip: GRIP_OPEN, dur: 0.35 },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPlace' },
     ]);
     log('<span class="text-cyan-300">[ARM] Offloading ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + ' to intake table.</span>');
+  }
+
+  function smoothAttach(parent, mesh) {
+    // Preserve world transform during reparent to prevent visual jump
+    if (!parent || !mesh) return;
+    var wp = new THREE.Vector3();
+    var wq = new THREE.Quaternion();
+    mesh.getWorldPosition(wp);
+    mesh.getWorldQuaternion(wq);
+    if (parent.attach) {
+      parent.attach(mesh);
+    } else {
+      parent.add(mesh);
+      parent.updateWorldMatrix(true, false);
+      var inv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+      wp.applyMatrix4(inv);
+      mesh.position.copy(wp);
+      mesh.quaternion.copy(wq);
+    }
   }
 
   function onArmTag(tag) {
@@ -751,16 +787,19 @@
       var mesh = picking;
       var dist = mesh ? gripDist(mesh) : 99;
       window.__lastGripDist = dist;
-      if (mesh && dist <= 0.08) {
+      if (mesh && dist <= GRIP_SNAP_DIST) {
         var gr = arm ? (arm.gripper || arm.wrist) : null;
-        if (gr && gr.attach) gr.attach(mesh); else if (gr) gr.add(mesh);
+        smoothAttach(gr, mesh);
         held = mesh;
         if (tag === 'close') dropFromQueue(mesh);
         else {
           var bi = bay.indexOf(mesh);
           if (bi >= 0) bay.splice(bi, 1);
         }
-      } else if (mesh && gripRetry < 1) {
+        if (dist > 0.04) {
+          log('<span class="text-emerald-300">[ARM] Gripper engaged at ' + (dist * 100).toFixed(1) + ' cm — within snap tolerance.</span>');
+        }
+      } else if (mesh && gripRetry < GRIP_RETRY_MAX) {
         gripRetry += 1;
         var again = worldTarget(mesh.userData.grasp);
         var fix = {
@@ -773,11 +812,11 @@
             el1: solveArm(again).elbow,
             g0: GRIP_OPEN,
             g1: GRIP_OPEN,
-            dur: 0.45,
+            dur: 0.5,
             tag: '',
           }, {
             yaw0: 0, yaw1: 0, sh0: 0, sh1: 0, el0: 0, el1: 0,
-            g0: GRIP_OPEN, g1: GRIP_CLOSED, dur: 0.35, tag: tag,
+            g0: GRIP_OPEN, g1: GRIP_CLOSED, dur: 0.4, tag: tag,
           }],
           i: 0,
           t: 0,
@@ -793,34 +832,35 @@
           fix.segs = fix.segs.concat(traj.segs.slice(traj.i));
         }
         traj = fix;
-        log('<span class="text-amber-300">[ARM] Grip was ' + (dist * 100).toFixed(1) + ' cm off the handle. Correcting.</span>');
+        log('<span class="text-amber-300">[ARM] Grip was ' + (dist * 100).toFixed(1) + ' cm off handle. Correction attempt ' + gripRetry + '/' + GRIP_RETRY_MAX + '.</span>');
       } else if (mesh) {
+        // Exceeded retry limit — force-lock to avoid infinite loop
         var gr = arm ? (arm.gripper || arm.wrist) : null;
-        if (gr && gr.attach) gr.attach(mesh); else if (gr) gr.add(mesh);
+        smoothAttach(gr, mesh);
         held = mesh;
         if (tag === 'close') dropFromQueue(mesh);
         else {
           var bi2 = bay.indexOf(mesh);
           if (bi2 >= 0) bay.splice(bi2, 1);
         }
-        log('<span class="text-emerald-300 font-bold">[ARM] Gripper locked onto ' + mesh.userData.rec.id + '.</span>');
+        log('<span class="text-emerald-300 font-bold">[ARM] Force-locked onto ' + mesh.userData.rec.id + ' after ' + GRIP_RETRY_MAX + ' corrections.</span>');
       }
     } else if (tag === 'openBay' && held) {
       var slots = window.cargoBaySlots || [];
       var slot = slots[bay.length] || slots[0];
-      if (slot && slot.attach) slot.attach(held);
-      else if (slot) slot.add(held);
+      smoothAttach(slot, held);
       bay.push(held);
       if (typeof window.noteCargoSeat === 'function') window.noteCargoSeat(held.userData.rec.mass_kg);
       log('<span class="text-emerald-300 font-bold">[ARM] Stowed ' + held.userData.rec.id + ' (' + held.userData.rec.mass_kg.toFixed(1) + ' kg, ' + (held.userData.rec.mass_kg * G_MOON).toFixed(1) + ' N lunar).</span>');
       held = null;
       picking = null;
     } else if (tag === 'openTable' && held) {
-      if (tableAnchor && tableAnchor.attach) tableAnchor.attach(held);
-      else if (tableAnchor) tableAnchor.add(held);
+      smoothAttach(tableAnchor, held);
       tableParcel = held;
+      missionStats.parcelsDelivered += 1;
+      missionStats.totalMassKg += held.userData.rec.mass_kg;
       if (crane) crane.queue.push(held);
-      log('<span class="text-cyan-300">[ARM] Set ' + held.userData.rec.id + ' on the intake table.</span>');
+      log('<span class="text-cyan-300">[ARM] Set ' + held.userData.rec.id + ' on the intake table. (' + missionStats.parcelsDelivered + ' delivered, ' + missionStats.totalMassKg.toFixed(1) + ' kg total)</span>');
       held = null;
       picking = null;
     } else if (tag === 'stowedPick') {
@@ -851,6 +891,23 @@
     if (!arm) return;
     var tilt = held ? -0.035 * Math.min(1, heldMass() / 5) : 0;
     arm.base.rotation.x += (tilt - arm.base.rotation.x) * Math.min(1, 2.5 * dt);
+  }
+
+  function tickCraneWait(dt) {
+    // Hold rover in place while crane clears the intake table
+    craneWaitT += dt;
+    if (!tableParcel && !(crane && crane.job)) {
+      // Table is clear — resume arm placement
+      phase = 'arm_place';
+      craneWaitT = 0;
+      log('<span class="text-emerald-300">[ARM] Table clear. Resuming offload.</span>');
+    } else if (craneWaitT > 30) {
+      // Safety timeout — skip this parcel to avoid infinite wait
+      log('<span class="text-rose-400">[ARM] Crane timeout (30s). Proceeding.</span>');
+      phase = 'arm_place';
+      craneWaitT = 0;
+      tableParcel = null;
+    }
   }
 
   function tickArm(dt) {
@@ -984,7 +1041,14 @@
     traj = null;
     armMode = null;
     if (bay.length && depot.length < DEPOT_SLOTS) {
-      phase = 'arm_place';
+      // Check if crane needs to clear the table first
+      if (tableParcel || (crane && crane.job)) {
+        phase = 'crane_wait';
+        craneWaitT = 0;
+        log('<span class="text-amber-300">[ARM] Waiting for crane to shelf before next drop.</span>');
+      } else {
+        phase = 'arm_place';
+      }
       return;
     }
     if (queue.length && depot.length < DEPOT_SLOTS && !socLow()) {
@@ -997,9 +1061,22 @@
   function finishOrHangar() {
     phase = 'rth';
     missionArmed = false;
-    if (socLow()) log('<span class="text-amber-300">[LOGISTICS] Battery low. Returning to the hangar.</span>');
-    else if (!queue.length) log('<span class="text-emerald-400 font-bold">[LOGISTICS] Rover parcels moved. Hauler items stay at the pad.</span>');
-    else log('<span class="text-amber-300">[DEPOT] Shelves are full. Remaining parcels stay on the lander belt.</span>');
+    // Record energy consumed
+    if (typeof roverWh !== 'undefined' && typeof MAXWH !== 'undefined') {
+      missionStats.kwhUsed = +(MAXWH - roverWh).toFixed(1);
+    }
+    if (socLow()) {
+      log('<span class="text-amber-300">[LOGISTICS] Battery low. Returning to the hangar.</span>');
+    } else if (!queue.length) {
+      log('<span class="text-emerald-400 font-bold">[LOGISTICS] ✅ MISSION COMPLETE — All rover parcels delivered to Artemis Base.</span>');
+      log('<span class="text-emerald-300">[SUMMARY] Parcels: ' + missionStats.parcelsDelivered +
+          ' | Mass: ' + missionStats.totalMassKg.toFixed(1) + ' kg' +
+          ' | Trips: ' + trips +
+          ' | Energy: ' + missionStats.kwhUsed + ' Wh' +
+          ' | Depot: ' + depot.length + '/' + DEPOT_SLOTS + ' slots filled</span>');
+    } else {
+      log('<span class="text-amber-300">[DEPOT] Shelves full. ' + queue.length + ' parcels remain on the lander belt.</span>');
+    }
     if (typeof startReturnToDock === 'function') startReturnToDock();
   }
 
@@ -1041,9 +1118,11 @@
     if (missionTag) {
       missionTag.textContent = phase.replace(/_/g, ' ').toUpperCase();
       missionTag.className = 'text-[8px] font-mono px-1.5 py-0.5 rounded font-bold ' +
-        (phase.includes('arm') ? 'bg-cyan-500/30 text-cyan-200' :
+        (phase === 'crane_wait' ? 'bg-yellow-500/30 text-yellow-200' :
+         phase.includes('arm') ? 'bg-cyan-500/30 text-cyan-200' :
          phase.includes('transit') ? 'bg-amber-500/30 text-amber-200' :
-         phase.includes('align') ? 'bg-purple-500/30 text-purple-200' : 'bg-emerald-500/20 text-emerald-300');
+         phase.includes('align') ? 'bg-purple-500/30 text-purple-200' :
+         phase === 'rth' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300');
     }
   }
 
@@ -1085,7 +1164,7 @@
     trips: function () { return trips; },
     craneBusy: function () { return !!(crane && (crane.job || crane.queue.length || tableParcel)); },
     jumps: function () { return window.__cargoJumps || []; },
-    holdsDrive: function () { return phase === 'arm_pick' || phase === 'arm_place'; },
+    holdsDrive: function () { return phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait'; },
     ownsGoal: function () { return phase === 'transit_lander' || phase === 'transit_base'; },
     onArrived: function () {
       if (typeof globalGoal !== 'undefined') globalGoal = null;
@@ -1094,7 +1173,7 @@
       else if (phase === 'transit_base') phase = 'align_drop';
     },
     driveOverride: function () {
-      if (phase === 'arm_pick' || phase === 'arm_place') {
+      if (phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait') {
         return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
       }
       if (phase !== 'align_pick' && phase !== 'align_drop') return null;
@@ -1128,7 +1207,8 @@
         v = Math.min(0.38, Math.sqrt(Math.max(0, 2 * 0.35 * dist)));
         if (dist < 0.50) v = Math.min(v, 0.14);
       }
-      var steer = Math.max(-1.15, Math.min(1.15, yawErr * 1.8));
+      var tvDamp = (typeof turnVel !== 'undefined') ? turnVel * 0.20 : 0;
+      var steer = Math.max(-0.95, Math.min(0.95, yawErr * 1.35 - tvDamp));
       return { steer: steer, throttle: v > 0.02 ? Math.min(1, v / ms) : 0, forward: v > 0.02, reverse: false, brake: false };
     },
     obstacles: function () {
@@ -1172,6 +1252,11 @@
     startMission: function () {
       wanderOn = false;
       missionArmed = true;
+      // Reset mission stats on fresh start
+      missionStats.startT = Date.now();
+      missionStats.parcelsDelivered = 0;
+      missionStats.totalMassKg = 0;
+      missionStats.kwhUsed = 0;
       if (!manifest) {
         log('<span class="text-amber-300">[LOGISTICS] Manifest pending; initializing defaults...</span>');
         initFallbackManifest();
@@ -1295,8 +1380,14 @@
       spawnPlume(dt);
       tickBelt(dt);
       tickCrane(dt);
-      if (phase === 'arm_pick' || phase === 'arm_place') tickArm(dt);
-      else stowIfIdle(dt);
+      if (phase === 'crane_wait') {
+        tickCraneWait(dt);
+        stowIfIdle(dt);
+      } else if (phase === 'arm_pick' || phase === 'arm_place') {
+        tickArm(dt);
+      } else {
+        stowIfIdle(dt);
+      }
       if (missionArmed && landerLanded && (phase === 'idle' || phase === 'descent')) {
         phase = 'idle';
         api.startMission();
