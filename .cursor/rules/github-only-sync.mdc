@@ -1,0 +1,30 @@
+---
+description: GitHub only for sync — no rsync, mirrors, or local copies
+alwaysApply: true
+---
+
+# GitHub is the only sync target
+
+User directive (Oct 2026): **do not sync or copy the project anywhere else — only GitHub.**
+
+## Agents must NOT
+
+- Run `rsync`, `scp`, `cp -R`, or similar to mirror the repo (M4 Mini, MSD card, NAS, Google Drive, second local folder, etc.).
+- Restore or merge from `/Volumes/256GB MSD/Hunch` or other backup volumes unless the user explicitly asks in that message.
+- Suggest or run two-way folder sync (Syncthing, Tailscale file copy) as part of finishing a task.
+- Create duplicate working trees “for safety” on the same machine.
+
+## Agents MAY
+
+- Edit and run code in the **single** workspace: `/Users/nhharshan/Hunch`.
+- Use **git** (`add`, `commit`, `push`, `pull`, `fetch`) against the configured GitHub remote when the user asks to sync or publish.
+- Read GitHub (`origin`, PRs, branches) to determine remote state when the user asks.
+
+## Commits and push
+
+- Only commit or push when the user explicitly requests it (unchanged).
+- When the user says “sync” or “back up the project,” mean **push to GitHub** (or pull from GitHub on another clone), not file copy.
+
+## Supersedes
+
+- Older rules that required M4 `rsync` or treated local mirrors as source of truth are **inactive** for agents; this rule wins.

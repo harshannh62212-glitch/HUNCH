@@ -1,0 +1,10 @@
+---
+description: (Inactive for agents) Former M1↔M4 Syncthing — use GitHub only
+alwaysApply: false
+---
+
+# Historical: Tailscale / Syncthing mirror
+
+This file is **not** applied to agents. The user chose **GitHub-only** sync; see [github-only-sync.mdc](./github-only-sync.mdc).
+
+Do not run rsync or recommend folder mirroring between Macs as part of agent workflows.

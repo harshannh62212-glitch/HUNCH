@@ -1,5 +1,16 @@
 .DS_Store
 .vercel
 node_modules
+.git.chat-app-wrong-backup/
+Hunch/nasa-llaso-cad/logs/
 *.log
 .tmp.driveupload
+.venv/
+**/.venv/
+**/node_modules/
+__pycache__/
+**/__pycache__/
+*.pyc
+dist/
+**/dist/
+*.pth

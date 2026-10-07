@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Design Evolution</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen p-8">
+  <a href="index.html" class="text-cyan-400 text-sm">← Review hub</a>
+  <h1 class="text-2xl font-bold text-white mt-4">Prototype progression (for judges)</h1>
+  <p class="text-slate-400 text-sm mt-2">HUNCH expects visible iteration — not a single jump to final CAD.</p>
+  <div class="grid md:grid-cols-2 gap-6 mt-8 max-w-4xl">
+    <article class="border border-slate-700 rounded-xl p-4">
+      <p class="text-xs text-amber-400">v0 · Concept</p>
+      <p class="text-sm mt-2">Cardboard / recycle-bin layout to set wheelbase and CoG. Trade study: wheels vs tracks.</p>
+    </article>
+    <article class="border border-slate-700 rounded-xl p-4">
+      <p class="text-xs text-amber-400">v1 · CAD skeleton</p>
+      <p class="text-sm mt-2"><code>generate_rover_cad.py</code> → truss, tracks, mast meshes. Torque calc in hardware spec.</p>
+      <img src="../../nasa-hunch-rover/cad_model/assets/lunar_surface.jpg" alt="Sim terrain" class="mt-3 rounded-lg opacity-80" />
+    </article>
+    <article class="border border-slate-700 rounded-xl p-4">
+      <p class="text-xs text-amber-400">v2 · Digital twin</p>
+      <p class="text-sm mt-2">Autopilot sim validates slope, slip, pit guard — see runbook scenarios.</p>
+      <a class="text-cyan-400 text-sm" href="../viewer.html">Open sim →</a>
+    </article>
+    <article class="border border-slate-700 rounded-xl p-4">
+      <p class="text-xs text-amber-400">v3 · Bench + build</p>
+      <p class="text-sm mt-2">PETG prints, MDD10A wiring, PWM/sensor bench scripts. FMEA drives vent and power revisions.</p>
+    </article>
+  </div>
+</body>
+</html>

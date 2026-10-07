@@ -1,0 +1,243 @@
+/**
+ * NASA Hunch Robot — Fusion CAD shell for the lunar sim.
+ * Loads decimated OBJ exports from meshes/fusion_rover/.
+ */
+(function (global) {
+  var MESH_BASE = 'meshes/fusion_rover/';
+
+  function loadText(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('Failed ' + url);
+      return r.text();
+    });
+  }
+
+  // Exported OBJ bounds are Z-up file space. Sim rover is Y-up: (x, y, z) -> (x, z, -y).
+  function fileToRover(x, y, z) {
+    return new THREE.Vector3(x, z, -y);
+  }
+
+  function addMotor(parent, sideSign) {
+    var gb = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.042, 20),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.91, roughness: 0.24 })
+    );
+    gb.rotation.x = Math.PI / 2;
+    gb.position.set(0, 0, -sideSign * 0.046);
+    parent.add(gb);
+    var can = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.023, 0.023, 0.048, 20),
+      new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.86, roughness: 0.25 })
+    );
+    can.rotation.x = Math.PI / 2;
+    can.position.set(0, 0, -sideSign * 0.088);
+    parent.add(can);
+    var red = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.003, 0.003, 0.095, 6),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.45 })
+    );
+    red.position.set(0.012, 0.045, -sideSign * 0.095);
+    var blk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.003, 0.003, 0.095, 6),
+      new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 })
+    );
+    blk.position.set(-0.012, 0.045, -sideSign * 0.095);
+    parent.add(red, blk);
+  }
+
+  function initFusionRover(opts) {
+    opts = opts || {};
+    var roverGroup = opts.roverGroup;
+    var manifest = opts.manifest;
+    var hide = opts.hide || [];
+    var wheelGroups = opts.wheelGroups || [];
+    var wheels = opts.wheels || [];
+    var cargoBayGroup = opts.cargoBayGroup;
+    var armBase = opts.armBase;
+    var mastGroup = opts.mastGroup;
+
+    var matDeck = new THREE.MeshStandardMaterial({
+      color: 0xb8bcc6,
+      metalness: 0.35,
+      roughness: 0.52,
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+    });
+    var matSkirt = new THREE.MeshStandardMaterial({
+      color: 0x6b7280,
+      metalness: 0.32,
+      roughness: 0.58,
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+    });
+    var matBayFloor = new THREE.MeshStandardMaterial({
+      color: 0x374151,
+      metalness: 0.45,
+      roughness: 0.68,
+    });
+    var matTire = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      metalness: 0.2,
+      roughness: 0.88,
+    });
+    var matHub = new THREE.MeshStandardMaterial({
+      color: 0x4b5563,
+      metalness: 0.55,
+      roughness: 0.45,
+    });
+    var matAxle = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      metalness: 0.72,
+      roughness: 0.38,
+    });
+
+    var root = new THREE.Group();
+    root.name = 'fusionRoverVisual';
+    roverGroup.add(root);
+
+    var mc = manifest.modelCenter;
+
+    function addSolidBox(w, h, d, mat, x, y, z) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      root.add(m);
+      return m;
+    }
+
+    var hull = addSolidBox(0.58, 0.16, 0.46, matDeck, 0.02, 0.095, 0);
+    hull.name = 'fusionDeckSolid';
+    addSolidBox(0.54, 0.025, 0.42, matSkirt, 0.02, 0.178, 0);
+
+    manifest.wheels.forEach(function (wp, idx) {
+      var wg = new THREE.Group();
+      var roverPos = fileToRover(wp.x - mc.x, wp.y - mc.y, wp.z - mc.z);
+      wg.position.copy(roverPos);
+
+      var spin = new THREE.Group();
+      spin.rotation.z = Math.PI / 2;
+      var tireMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, 0.076, 28),
+        matTire
+      );
+      tireMesh.castShadow = true;
+      tireMesh.receiveShadow = true;
+      spin.add(tireMesh);
+
+      var hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.028, 0.032, 0.084, 12),
+        matHub
+      );
+      spin.add(hub);
+      wg.add(spin);
+
+      var sideSign = roverPos.z >= 0 ? 1 : -1;
+      addMotor(wg, sideSign);
+      root.add(wg);
+
+      if (wheelGroups[idx]) {
+        wheelGroups[idx].group.visible = false;
+        wheelGroups[idx] = {
+          group: wg,
+          tire: tireMesh,
+          localPos: roverPos.clone(),
+          baseZ: roverPos.z,
+        };
+      }
+      if (wheels[idx]) wheels[idx] = tireMesh;
+    });
+
+    [[0, 3], [1, 4], [2, 5]].forEach(function (pair) {
+      var a = manifest.wheels[pair[0]];
+      var b = manifest.wheels[pair[1]];
+      var pa = fileToRover(a.x - mc.x, a.y - mc.y, a.z - mc.z);
+      var pb = fileToRover(b.x - mc.x, b.y - mc.y, b.z - mc.z);
+      var len = pa.distanceTo(pb);
+      var axle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.014, 0.014, len, 12),
+        matAxle
+      );
+      axle.rotation.x = Math.PI / 2;
+      axle.position.copy(pa.clone().add(pb).multiplyScalar(0.5));
+      axle.castShadow = true;
+      root.add(axle);
+    });
+
+    hide.forEach(function (o) {
+      if (o) o.visible = false;
+    });
+    roverGroup.children.forEach(function (ch) {
+      if (ch === root || ch === cargoBayGroup || ch === armBase || ch === mastGroup) return;
+      if (ch.type === 'Group' && ch !== root && ch.visible) {
+        var onFusion = false;
+        var p = ch.parent;
+        while (p) {
+          if (p === root) onFusion = true;
+          p = p.parent;
+        }
+        if (!onFusion && ch.children.length > 0 && ch !== cargoBayGroup) ch.visible = false;
+      }
+    });
+
+    if (cargoBayGroup && manifest.cargoBay) {
+      cargoBayGroup.children.forEach(function (ch) {
+        ch.visible = false;
+      });
+      var bayW = 0.42;
+      var bayFloorVis = new THREE.Mesh(
+        new THREE.BoxGeometry(bayW, 0.012, bayW),
+        matBayFloor
+      );
+      bayFloorVis.position.set(0, 0.006, 0);
+      bayFloorVis.receiveShadow = true;
+      cargoBayGroup.add(bayFloorVis);
+      cargoBayGroup.position.set(-0.02, 0.192, 0);
+      window.cargoBaySlots = [];
+      manifest.cargoBay.slots.forEach(function (s) {
+        var slot = new THREE.Object3D();
+        slot.position.set(s.x, 0.02, s.z);
+        cargoBayGroup.add(slot);
+        window.cargoBaySlots.push(slot);
+      });
+    }
+
+    if (armBase && manifest.armMount) {
+      armBase.position.copy(
+        fileToRover(
+          manifest.armMount.x - mc.x,
+          manifest.armMount.y - mc.y,
+          manifest.armMount.z - mc.z + 0.02
+        )
+      );
+    }
+
+    if (mastGroup) {
+      mastGroup.position.copy(fileToRover(0.05, 0, 0.42));
+      if (mastGroup.parent !== roverGroup) {
+        roverGroup.add(mastGroup);
+      }
+    }
+
+    if (manifest.roverRadius && typeof ROVER_RADIUS !== 'undefined') {
+      window.ROVER_RADIUS = manifest.roverRadius;
+    }
+
+    window.fusionWheelOffsets = manifest.wheels.map(function (wp) {
+      return fileToRover(wp.x - mc.x, wp.y - mc.y, wp.z - mc.z);
+    });
+
+    return Promise.resolve(root);
+  }
+
+  global.NASA_FusionRover = {
+    init: initFusionRover,
+    loadManifest: function () {
+      return fetch(MESH_BASE + 'manifest.json').then(function (r) {
+        return r.json();
+      });
+    },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);

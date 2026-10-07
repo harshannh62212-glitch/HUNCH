@@ -1,0 +1,11 @@
+.DS_Store
+**/.DS_Store
+.tmp.driveupload
+.vercel
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/dist
+*.log
+**/*.log

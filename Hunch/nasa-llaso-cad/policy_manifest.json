@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "onnx_file": "rover_pilot.onnx",
+  "architecture": "RoverPilotNet",
+  "inputs": ["camera_image 1x3x120x160", "telemetry 1x6"],
+  "outputs": ["steer_throttle 1x2"],
+  "dataset_frames": 0,
+  "trained_at": null,
+  "notes": "Regenerate via python3 train_rover_imitation.py after recording flight demos."
+}

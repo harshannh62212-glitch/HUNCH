@@ -1,0 +1,10 @@
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print { display: none !important; }
+  @page { margin: 0.4in; }
+}
+body { font-family: system-ui, sans-serif; color: #0f172a; background: #fff; }
+h1, h2 { color: #0c4a6e; }
+.panel { border: 1px solid #cbd5e1; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
+.muted { color: #64748b; font-size: 0.85rem; }
+.qr { width: 88px; height: 88px; }

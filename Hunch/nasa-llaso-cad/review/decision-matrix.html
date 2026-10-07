@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Decision Matrix</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 p-8">
+  <a href="index.html" class="text-cyan-400 text-sm">← Review hub</a>
+  <h1 class="text-2xl font-bold text-white mt-4">Mobility architecture decision matrix</h1>
+  <p class="text-slate-400 text-sm">Loaded from <code>data/decision-matrix.json</code> · scores 1–5 per criterion</p>
+  <div id="out" class="mt-6 overflow-x-auto"></div>
+  <script>
+    fetch('data/decision-matrix.json').then(r => r.json()).then(data => {
+      const crit = data.criteria;
+      const w = Object.fromEntries(crit.map(c => [c.id, c.weight_pct]));
+      let html = '<table class="text-sm border-collapse"><tr><th class="border border-slate-700 p-2">Alternative</th>';
+      crit.forEach(c => { html += `<th class="border border-slate-700 p-2">${c.label}<br/><span class="text-slate-500">${c.weight_pct}%</span></th>`; });
+      html += '<th class="border border-slate-700 p-2">Weighted total</th></tr>';
+      data.alternatives.forEach(alt => {
+        let total = 0;
+        html += `<tr><td class="border border-slate-700 p-2 font-semibold">${alt.name}</td>`;
+        crit.forEach(c => {
+          const s = alt.scores_1_to_5[c.id];
+          total += w[c.id] * (s / 5);
+          html += `<td class="border border-slate-700 p-2 text-center">${s}</td>`;
+        });
+        html += `<td class="border border-slate-700 p-2 text-center text-cyan-300">${total.toFixed(1)}</td></tr>`;
+      });
+      html += '</table>';
+      document.getElementById('out').innerHTML = html;
+    });
+  </script>
+</body>
+</html>

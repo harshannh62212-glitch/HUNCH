@@ -1,0 +1,15 @@
+{
+  "summary": {
+    "source_csv": "/Users/harshan/Hunch/Hunch/nasa-llaso-cad/review/test-results/rover_telemetry_archetype_quick_mission.csv",
+    "sample_count": 600,
+    "duration_sec": 59.9,
+    "distance_m": 12.58,
+    "slip_event_fraction": 0.0,
+    "max_slip_ratio": 0.31,
+    "max_motor_cmd_fraction": 0.775,
+    "max_lunar_sink_cm": 0.4,
+    "min_turn_radius_m": 1.313,
+    "min_pit_clearance_m": 4.2,
+    "peak_speed_mps": 0.231
+  }
+}

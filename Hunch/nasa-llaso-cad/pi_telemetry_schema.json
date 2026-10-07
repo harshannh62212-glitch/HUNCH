@@ -1,0 +1,27 @@
+{
+  "description": "Raspberry Pi field telemetry aligned with AEGIS payload.json dodge policy and sim ONNX inputs.",
+  "rate_hz": 10,
+  "clearances_m": {
+    "FL": "front-left",
+    "FC": "front-center",
+    "FR": "front-right",
+    "cL": "center-left",
+    "cR": "center-right",
+    "SL": "side-left",
+    "SR": "side-right",
+    "BL": "back-left",
+    "BC": "back-center",
+    "BR": "back-right"
+  },
+  "telemetry_vector_onnx": ["vel_mps", "yaw_rate", "pitch_deg", "roll_deg", "min_front_m", "dist_goal_m"],
+  "sim_export_csv_fields": [
+    "slip_ratio",
+    "motor_cmd_frac",
+    "traction_lim_mps2",
+    "lunar_sink_cm",
+    "turn_radius_m",
+    "pit_clear_m"
+  ],
+  "dodge_policy_output": { "dodge": "none | left | right" },
+  "safety_overrides": ["pit_guard", "max_closing_speed_0.55_mps", "reverse_escape_supervisor"]
+}

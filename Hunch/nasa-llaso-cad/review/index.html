@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NASA HUNCH — Review Packet</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen font-sans">
+  <div class="max-w-4xl mx-auto px-6 py-10 space-y-8">
+    <header>
+      <p class="text-cyan-400 text-xs tracking-widest font-bold">NASA HUNCH · DESIGN REVIEW PACKET</p>
+      <h1 class="text-3xl font-black text-white mt-2">LLASO Autonomous Lunar Rover</h1>
+      <p class="text-sm text-slate-400 mt-2">Project <code class="text-cyan-300">LLASO-P1-AMR-2026</code> — evidence hub (AI nav unchanged)</p>
+    </header>
+
+    <section class="grid sm:grid-cols-2 gap-3">
+      <a href="trifold.html" class="p-4 rounded-lg border border-cyan-500/40 bg-cyan-950/20 hover:bg-cyan-900/30">Tri-fold board (print)</a>
+      <a href="brochure.html" class="p-4 rounded-lg border border-emerald-500/40 bg-emerald-950/20 hover:bg-emerald-900/30">Brochure (print)</a>
+      <a href="engineering-deck.html" class="p-4 rounded-lg border border-purple-500/40 bg-purple-950/20 hover:bg-purple-900/30">Engineering deck</a>
+      <a href="design-evolution.html" class="p-4 rounded-lg border border-amber-500/40 bg-amber-950/20">Design evolution</a>
+      <a href="decision-matrix.html" class="p-4 rounded-lg border border-slate-600 bg-slate-900/50">Decision matrix</a>
+      <a href="electrical-block-diagram.svg" class="p-4 rounded-lg border border-slate-600 bg-slate-900/50">Electrical block diagram</a>
+      <a href="../viewer.html" class="p-4 rounded-lg border border-purple-500/40">Live autopilot sim</a>
+      <a href="../../nasa-hunch-rover/cad_model/rover_viewer.html" class="p-4 rounded-lg border border-amber-500/40">CAD assembly viewer</a>
+    </section>
+
+    <section class="text-sm space-y-2 border-t border-slate-800 pt-6">
+      <h2 class="text-white font-bold">Written evidence (markdown)</h2>
+      <ul class="list-disc pl-5 text-slate-400 space-y-1">
+        <li><a class="text-cyan-400 hover:underline" href="CRITERIA_EVIDENCE.md">CRITERIA_EVIDENCE.md</a> — how each judge item is met</li>
+        <li><a class="text-cyan-400 hover:underline" href="docs/research-brief.md">Research brief</a></li>
+        <li><a class="text-cyan-400 hover:underline" href="docs/test-plan.md">Test plan</a></li>
+        <li><a class="text-cyan-400 hover:underline" href="docs/fmea-closure.md">FMEA closure</a></li>
+        <li><a class="text-cyan-400 hover:underline" href="docs/cots-comparison.md">COTS comparison</a></li>
+        <li><a class="text-cyan-400 hover:underline" href="test-results/sim_summary.json">Latest sim metrics JSON</a></li>
+      </ul>
+    </section>
+
+    <section class="flex flex-wrap gap-6 items-start border-t border-slate-800 pt-6">
+      <div>
+        <p class="text-xs text-slate-500 mb-2">QR → live sim demo</p>
+        <img alt="QR sim" width="120" height="120" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=http://127.0.0.1:8002/viewer.html" />
+      </div>
+      <div>
+        <p class="text-xs text-slate-500 mb-2">QR → engineering deck</p>
+        <img alt="QR deck" width="120" height="120" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=http://127.0.0.1:8002/review/engineering-deck.html" />
+      </div>
+    </section>
+
+    <p class="text-xs text-slate-600">Regenerate test bundle: <code>python3 generate_hunch_review_bundle.py</code></p>
+  </div>
+</body>
+</html>

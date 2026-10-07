@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Engineering Deck — HUNCH</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-200">
+  <nav class="no-print sticky top-0 bg-slate-900 border-b border-slate-800 px-4 py-2 text-sm">
+    <a href="index.html" class="text-cyan-400">← Review hub</a>
+    <span class="text-slate-500 ml-4">Use arrow keys / scroll — bullets only (HUNCH style)</span>
+  </nav>
+  <main class="max-w-3xl mx-auto px-6 py-10 space-y-16">
+    <section>
+      <p class="text-cyan-400 text-xs tracking-widest">SLIDE 1</p>
+      <h1 class="text-4xl font-black text-white">LLASO Autonomous Tracked Rover</h1>
+      <p class="text-slate-400 mt-2">NASA HUNCH · LLASO-P1-AMR-2026</p>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 2 — PROBLEM</p>
+      <ul class="list-disc pl-6 space-y-2 text-lg">
+        <li>Move external cargo on the lunar surface between logistics module and sites</li>
+        <li>Must climb 25° slopes with regolith-like traction</li>
+        <li>Autonomous hazard avoidance for pits and obstacles</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 3 — CONSTRAINTS</p>
+      <ul class="list-disc pl-6 space-y-2">
+        <li>Earth test mass 8 kg · lunar weight ~13 N</li>
+        <li>Motors sized at 1 g so classroom demo matches NASA review</li>
+        <li>Dust + heat: vented PETG, 304 mesh, driver spreader plate</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 4 — RESEARCH</p>
+      <ul class="list-disc pl-6 space-y-2">
+        <li>COTS motor/driver/LiDAR trade study documented</li>
+        <li>Sim limits listed in Lunar_Constraints_and_Sim_Flaws.pdf</li>
+        <li>Logistics link: 40-ft module + LIFO manifest optimizer</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 5 — DECISION MATRIX</p>
+      <p class="text-slate-300">Weighted: 4WD wheels vs <strong class="text-white">6WD tracked ✓</strong> vs rocker-bogie</p>
+      <p class="text-sm text-slate-500 mt-2"><a class="text-cyan-400" href="decision-matrix.html">Open scored matrix</a></p>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 6 — DESIGN</p>
+      <ul class="list-disc pl-6 space-y-2">
+        <li>CAD: URDF + STL assembly (chassis, tracks, mast, LiDAR)</li>
+        <li>Power: 12.8 V LiFePO4 → MDD10A + dual isolated 5 V</li>
+        <li>Software: digital twin + AEGIS dashboard + optional ONNX pilot</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 7 — PROTOTYPE MILESTONES</p>
+      <ul class="list-disc pl-6 space-y-2">
+        <li>PDR: CAD + torque math + mobility trade studies</li>
+        <li>CDR: PETG build + wiring + sensor integration</li>
+        <li>FDR: live demo + closed FMEA + telemetry package</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 8 — TESTING</p>
+      <ul class="list-disc pl-6 space-y-2">
+        <li>SIM-01: <code>run_nav_scenarios.py</code> geometry regression</li>
+        <li>SIM-02: telemetry CSV → <code>extract_sim_metrics.py</code></li>
+        <li>HW: pwm_channel_test · sensor_pipeline_stress on Pi</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 9 — FMEA HIGHLIGHTS</p>
+      <ul class="list-disc pl-6 space-y-2 text-sm">
+        <li>NCR-001 brownout → isolated rails + TVS</li>
+        <li>NCR-002 gearbox → planetary motors + current limit</li>
+        <li>NCR-003 thermal → chimney vents</li>
+        <li>NCR-004 LiDAR sun → cowls + Amp gate</li>
+      </ul>
+    </section>
+    <section>
+      <p class="text-cyan-400 text-xs">SLIDE 10 — LIVE DEMO SCRIPT</p>
+      <ol class="list-decimal pl-6 space-y-2">
+        <li>Open <a class="text-cyan-400" href="../viewer.html">viewer.html</a> on port 8002</li>
+        <li>QUICK MISSION — point at map, slip HUD, pit clearance</li>
+        <li>LOG TELEMETRY → show CSV export (optional)</li>
+        <li>Show physical rover OR CAD twin on 8003</li>
+      </ol>
+      <p class="text-xs text-slate-500 mt-4">AI nav stack not modified for this review packet.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "generated_at_utc": "2026-09-29T02:52Z",
+  "note": "Archetype CSV models QUICK MISSION physics bands; replace with viewer CSV export for judge demos.",
+  "artifacts": {
+    "nav_geometry_regression": "/Users/harshan/Hunch/Hunch/nasa-llaso-cad/review/test-results/nav_geometry_regression.txt",
+    "telemetry_csv": "/Users/harshan/Hunch/Hunch/nasa-llaso-cad/review/test-results/rover_telemetry_archetype_quick_mission.csv",
+    "sim_summary": "/Users/harshan/Hunch/Hunch/nasa-llaso-cad/review/test-results/sim_summary.json"
+  },
+  "bench_scripts": [
+    "Hunch/nasa-hunch-rover/bench/pwm_channel_test.py",
+    "Hunch/nasa-hunch-rover/bench/sensor_pipeline_stress.py"
+  ],
+  "runbook": "engineering_validation_runbook.md"
+}

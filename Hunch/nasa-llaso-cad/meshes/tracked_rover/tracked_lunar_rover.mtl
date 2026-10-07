@@ -1,0 +1,46 @@
+# Material definitions for 3D-Printed Tracked Lunar Rover
+newmtl WhitePETG
+Kd 0.92 0.94 0.95
+Ks 0.3 0.3 0.3
+Ns 30
+
+newmtl TrackRubber
+Kd 0.22 0.24 0.26
+Ks 0.1 0.1 0.1
+Ns 10
+
+newmtl Sprockets
+Kd 0.85 0.87 0.90
+Ks 0.4 0.4 0.4
+Ns 40
+
+newmtl BrassGold
+Kd 0.85 0.68 0.15
+Ks 0.8 0.7 0.2
+Ns 80
+
+newmtl MotorSteel
+Kd 0.60 0.62 0.65
+Ks 0.7 0.7 0.7
+Ns 70
+
+newmtl YDLidarBlack
+Kd 0.08 0.08 0.10
+Ks 0.4 0.4 0.4
+Ns 40
+
+newmtl CameraPCBGreen
+Kd 0.05 0.55 0.20
+Ks 0.2 0.2 0.2
+Ns 20
+
+newmtl BatteryBlue
+Kd 0.10 0.40 0.85
+Ks 0.2 0.2 0.2
+Ns 15
+
+newmtl SolarCells
+Kd 0.05 0.10 0.25
+Ks 0.8 0.8 0.9
+Ns 100
+

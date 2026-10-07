@@ -1,0 +1,13 @@
+---
+description: Point agents at the Hunch navigation index before deep exploration
+alwaysApply: true
+---
+
+# Agent entry point
+
+Before searching the monorepo or reading `viewer.html` end-to-end:
+
+1. Read [`.agents/AGENT_INDEX.md`](../../.agents/AGENT_INDEX.md) — task → file map, sim line ranges, AI stack, paths to skip.
+2. Runbooks: [`.agents/skills/nasa-hunch/SKILL.md`](../../.agents/skills/nasa-hunch/SKILL.md) and [`AGENTS.md`](../../AGENTS.md).
+3. Do not index or read `Hunch/nasa-llaso-cad/logs/` (Chrome headless profile); use `serve.py` + `viewer.html` instead.
+4. Workspace: `/Users/nhharshan/Hunch` only. Sync via **GitHub** when the user asks — no rsync or local copies ([github-only-sync.mdc](./github-only-sync.mdc)).

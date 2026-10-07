@@ -1,0 +1,899 @@
+{
+  "source": "LLASO-P1-VR-2026",
+  "gravity_m_s2": {
+    "earth": 9.806,
+    "moon": 1.622
+  },
+  "limits": {
+    "parcel_mass_cap_kg": 5.0,
+    "bay_mass_cap_kg": 10.0,
+    "bay_slots": 2,
+    "bay_size_m": [
+      0.61,
+      0.61,
+      0.3
+    ],
+    "parcel_dim_m": [
+      0.43,
+      0.25,
+      0.25
+    ],
+    "note": "5 kg at 0.45 m reach in 1.622 m/s^2 is about 3.6 N\u00b7m (~37 kg\u00b7cm), inside a 35\u201340 kg\u00b7cm servo."
+  },
+  "rover_payload_kg": 194.2,
+  "hauler_payload_kg": 554.3,
+  "manifest_payload_kg": 748.5,
+  "parcel_count": 44,
+  "parcels": [
+    {
+      "id": "P001",
+      "source_item": "Crew Emergency First Aid & Trauma Kit",
+      "source_type": "CTB_1U",
+      "part": 1,
+      "parts": 2,
+      "day_number": 1,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P002",
+      "source_item": "Crew Emergency First Aid & Trauma Kit",
+      "source_type": "CTB_1U",
+      "part": 2,
+      "parts": 2,
+      "day_number": 1,
+      "mass_kg": 3.0,
+      "earth_N": 29.4,
+      "lunar_N": 4.87,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P003",
+      "source_item": "Day 1-2 Fresh Rations & Hydration Packs",
+      "source_type": "CTB_2U",
+      "part": 1,
+      "parts": 4,
+      "day_number": 1,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P004",
+      "source_item": "Day 1-2 Fresh Rations & Hydration Packs",
+      "source_type": "CTB_2U",
+      "part": 2,
+      "parts": 4,
+      "day_number": 1,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P005",
+      "source_item": "Day 1-2 Fresh Rations & Hydration Packs",
+      "source_type": "CTB_2U",
+      "part": 3,
+      "parts": 4,
+      "day_number": 1,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P006",
+      "source_item": "Day 1-2 Fresh Rations & Hydration Packs",
+      "source_type": "CTB_2U",
+      "part": 4,
+      "parts": 4,
+      "day_number": 1,
+      "mass_kg": 3.0,
+      "earth_N": 29.4,
+      "lunar_N": 4.87,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P007",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 1,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P008",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 2,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P009",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 3,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P010",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 4,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P011",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 5,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P012",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 6,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P013",
+      "source_item": "Potable Water Resupply Bladder #1",
+      "source_type": "CTB_3U",
+      "part": 7,
+      "parts": 7,
+      "day_number": 2,
+      "mass_kg": 2.0,
+      "earth_N": 19.6,
+      "lunar_N": 3.24,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Internal Robot"
+    },
+    {
+      "id": "P014",
+      "source_item": "Surface EVA Comm Repeater Spare",
+      "source_type": "CTB_2U",
+      "part": 1,
+      "parts": 3,
+      "day_number": 3,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P015",
+      "source_item": "Surface EVA Comm Repeater Spare",
+      "source_type": "CTB_2U",
+      "part": 2,
+      "parts": 3,
+      "day_number": 3,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P016",
+      "source_item": "Surface EVA Comm Repeater Spare",
+      "source_type": "CTB_2U",
+      "part": 3,
+      "parts": 3,
+      "day_number": 3,
+      "mass_kg": 4.2,
+      "earth_N": 41.2,
+      "lunar_N": 6.81,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P017",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 1,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P018",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 2,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P019",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 3,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P020",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 4,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P021",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 5,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P022",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 6,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P023",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 7,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P024",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 8,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P025",
+      "source_item": "Additive Regolith 3D Print Feedstock",
+      "source_type": "CTB_4U",
+      "part": 9,
+      "parts": 9,
+      "day_number": 6,
+      "mass_kg": 2.0,
+      "earth_N": 19.6,
+      "lunar_N": 3.24,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Fabrication System"
+    },
+    {
+      "id": "P026",
+      "source_item": "HEPA & Regolith Dust Filtration Cartridges",
+      "source_type": "CTB_2U",
+      "part": 1,
+      "parts": 3,
+      "day_number": 7,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Maintenance Robot"
+    },
+    {
+      "id": "P027",
+      "source_item": "HEPA & Regolith Dust Filtration Cartridges",
+      "source_type": "CTB_2U",
+      "part": 2,
+      "parts": 3,
+      "day_number": 7,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Maintenance Robot"
+    },
+    {
+      "id": "P028",
+      "source_item": "HEPA & Regolith Dust Filtration Cartridges",
+      "source_type": "CTB_2U",
+      "part": 3,
+      "parts": 3,
+      "day_number": 7,
+      "mass_kg": 1.0,
+      "earth_N": 9.8,
+      "lunar_N": 1.62,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Maintenance Robot"
+    },
+    {
+      "id": "P029",
+      "source_item": "South Pole PSR Thermal Probe",
+      "source_type": "CTB_2U",
+      "part": 1,
+      "parts": 4,
+      "day_number": 9,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P030",
+      "source_item": "South Pole PSR Thermal Probe",
+      "source_type": "CTB_2U",
+      "part": 2,
+      "parts": 4,
+      "day_number": 9,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P031",
+      "source_item": "South Pole PSR Thermal Probe",
+      "source_type": "CTB_2U",
+      "part": 3,
+      "parts": 4,
+      "day_number": 9,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P032",
+      "source_item": "South Pole PSR Thermal Probe",
+      "source_type": "CTB_2U",
+      "part": 4,
+      "parts": 4,
+      "day_number": 9,
+      "mass_kg": 1.5,
+      "earth_N": 14.7,
+      "lunar_N": 2.43,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "External Robot"
+    },
+    {
+      "id": "P033",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 1,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P034",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 2,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P035",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 3,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P036",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 4,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P037",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 5,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P038",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 6,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P039",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 7,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P040",
+      "source_item": "Days 10-14 Dehydrated Meal Packs",
+      "source_type": "CTB_4U",
+      "part": 8,
+      "parts": 8,
+      "day_number": 10,
+      "mass_kg": 1.0,
+      "earth_N": 9.8,
+      "lunar_N": 1.62,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P041",
+      "source_item": "Backup EVA Space Suit Gloves & Seals",
+      "source_type": "CTB_1U",
+      "part": 1,
+      "parts": 2,
+      "day_number": 11,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P042",
+      "source_item": "Backup EVA Space Suit Gloves & Seals",
+      "source_type": "CTB_1U",
+      "part": 2,
+      "parts": 2,
+      "day_number": 11,
+      "mass_kg": 2.5,
+      "earth_N": 24.5,
+      "lunar_N": 4.06,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P043",
+      "source_item": "Solid Waste Compactor Liners & Bags",
+      "source_type": "CTB_2U",
+      "part": 1,
+      "parts": 2,
+      "day_number": 13,
+      "mass_kg": 5.0,
+      "earth_N": 49.0,
+      "lunar_N": 8.11,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    },
+    {
+      "id": "P044",
+      "source_item": "Solid Waste Compactor Liners & Bags",
+      "source_type": "CTB_2U",
+      "part": 2,
+      "parts": 2,
+      "day_number": 13,
+      "mass_kg": 4.0,
+      "earth_N": 39.2,
+      "lunar_N": 6.49,
+      "dim_m": [
+        0.43,
+        0.25,
+        0.25
+      ],
+      "actor": "Astronaut"
+    }
+  ],
+  "hauler_items": [
+    {
+      "source_item": "ECLSS Primary O2/N2 Sensor Kit",
+      "source_type": "Locker_1U",
+      "day_number": 1,
+      "mass_kg": 12.5,
+      "earth_N": 122.6,
+      "lunar_N": 20.3,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Internal Robot"
+    },
+    {
+      "source_item": "Habitat Interface Power Coupler",
+      "source_type": "Locker_1U",
+      "day_number": 1,
+      "mass_kg": 16.0,
+      "earth_N": 156.9,
+      "lunar_N": 26.0,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Internal Robot"
+    },
+    {
+      "source_item": "CO2 Scrubber Amine Replacement Beds",
+      "source_type": "Locker_2U",
+      "day_number": 2,
+      "mass_kg": 24.0,
+      "earth_N": 235.3,
+      "lunar_N": 38.9,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Internal Robot"
+    },
+    {
+      "source_item": "Radiation Dosimeter Re-calibration Hub",
+      "source_type": "Locker_1U",
+      "day_number": 3,
+      "mass_kg": 9.5,
+      "earth_N": 93.2,
+      "lunar_N": 15.4,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Astronaut"
+    },
+    {
+      "source_item": "Regolith Volatiles Mass Spectrometer",
+      "source_type": "Science_POD",
+      "day_number": 4,
+      "mass_kg": 85.0,
+      "earth_N": 833.5,
+      "lunar_N": 137.9,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Internal Robot"
+    },
+    {
+      "source_item": "Lunar Ice Drill Bit Assortment (Carbide)",
+      "source_type": "Locker_1U",
+      "day_number": 4,
+      "mass_kg": 15.8,
+      "earth_N": 154.9,
+      "lunar_N": 25.6,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Maintenance Robot"
+    },
+    {
+      "source_item": "Cryogenic Liquid O2 Storage Cell A",
+      "source_type": "Cryo_Cylinder",
+      "day_number": 5,
+      "mass_kg": 145.0,
+      "earth_N": 1421.9,
+      "lunar_N": 235.2,
+      "reason": "requires external hauler / ILTR",
+      "actor": "External Robot"
+    },
+    {
+      "source_item": "Cryogenic Liquid O2 Storage Cell B",
+      "source_type": "Cryo_Cylinder",
+      "day_number": 5,
+      "mass_kg": 145.0,
+      "earth_N": 1421.9,
+      "lunar_N": 235.2,
+      "reason": "requires external hauler / ILTR",
+      "actor": "External Robot"
+    },
+    {
+      "source_item": "CNC Milling High-Speed Spindle Head",
+      "source_type": "Locker_2U",
+      "day_number": 7,
+      "mass_kg": 28.5,
+      "earth_N": 279.5,
+      "lunar_N": 46.2,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Fabrication System"
+    },
+    {
+      "source_item": "Rover Solid-State Battery Module",
+      "source_type": "Locker_2U",
+      "day_number": 8,
+      "mass_kg": 38.0,
+      "earth_N": 372.6,
+      "lunar_N": 61.6,
+      "reason": "requires external hauler / ILTR",
+      "actor": "External Robot"
+    },
+    {
+      "source_item": "Lander Ascent Stage Telemetry Transceiver",
+      "source_type": "Locker_1U",
+      "day_number": 12,
+      "mass_kg": 13.0,
+      "earth_N": 127.5,
+      "lunar_N": 21.1,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Mission Control"
+    },
+    {
+      "source_item": "Earth Sample Return Secure Carrier",
+      "source_type": "Locker_2U",
+      "day_number": 14,
+      "mass_kg": 22.0,
+      "earth_N": 215.7,
+      "lunar_N": 35.7,
+      "reason": "requires external hauler / ILTR",
+      "actor": "Internal Robot"
+    }
+  ]
+}

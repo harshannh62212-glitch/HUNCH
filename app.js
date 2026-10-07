@@ -1,5 +1,5 @@
 // NASA HUNCH 2026–2027 // LLASO Project 2
-// AGEIS-V1 External Cargo Transport System (ECTS)
+// AEGIS-V1 External Cargo Transport System (ECTS)
 // Engineering CAD Viewer & Mission Simulation Engine
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,8 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function initCADViewer(canvasEl) {
     const container = canvasEl.parentElement;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0d101a);
-    scene.fog = new THREE.FogExp2(0x0d101a, 0.025);
+    scene.background = new THREE.Color(0x0a0d16);
+    scene.fog = new THREE.FogExp2(0x0a0d16, 0.025);
 
     const camera = new THREE.PerspectiveCamera(
       42,
@@ -33,270 +33,563 @@ document.addEventListener('DOMContentLoaded', () => {
       antialias: true,
       alpha: false
     });
-    renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(container.clientWidth, container.clientHeight, false);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Controls
+    // Orbit Controls
     const controls = new THREE.OrbitControls(camera, canvasEl);
     controls.enableDamping = true;
     controls.dampingFactor = 0.06;
-    controls.maxPolarAngle = Math.PI / 2 + 0.02;
-    controls.minDistance = 4;
-    controls.maxDistance = 28;
+    controls.maxPolarAngle = Math.PI / 2 + 0.05;
+    controls.minDistance = 3.5;
+    controls.maxDistance = 32;
     controls.target.set(0, 1.2, 0);
 
-    // Balanced Studio Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    // Balanced Studio & Lunar Fill Lighting
+    const ambientLight = new THREE.AmbientLight(0x2a3346, 0.95);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    keyLight.position.set(12, 20, 10);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    keyLight.position.set(14, 22, 12);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.bias = -0.0001;
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.5);
-    fillLight.position.set(-12, 10, -10);
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.85);
+    fillLight.position.set(-14, 12, -12);
     scene.add(fillLight);
 
+    const earthBounceLight = new THREE.DirectionalLight(0x38bdf8, 0.55);
+    earthBounceLight.position.set(-6, -10, 14);
+    scene.add(earthBounceLight);
+
     // Studio Inspection Floor Plate
-    const floorGeo = new THREE.CylinderGeometry(14, 14, 0.2, 64);
+    const floorGeo = new THREE.CylinderGeometry(15, 15, 0.2, 64);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x141824,
+      color: 0x111622,
       roughness: 0.85,
-      metalness: 0.15
+      metalness: 0.2
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = -0.1;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Subtle CAD Alignment Grid
+    // CAD Precision Alignment Grid
     const grid = new THREE.GridHelper(26, 26, 0x334155, 0x1e293b);
     grid.position.y = 0.01;
     scene.add(grid);
 
-    // Assembly Root & Groups
+    // Procedural HD Canvas Textures
+    function createPetgTex() {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 512;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#12151d'; c.fillRect(0, 0, 512, 512);
+      for (let y = 0; y < 512; y += 3) {
+        const s = Math.round(18 + Math.sin(y * 1.8) * 4 + (Math.random() - 0.5) * 5);
+        c.fillStyle = 'rgb(' + s + ',' + (s+1) + ',' + (s+4) + ')';
+        c.fillRect(0, y, 512, 1.8);
+      }
+      const tex = new THREE.CanvasTexture(cv);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2, 2);
+      return tex;
+    }
+
+    function createGoldenmateTex() {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#0f172a'; c.fillRect(0, 0, 512, 256);
+      c.fillStyle = '#0284c7'; c.fillRect(0, 0, 512, 48);
+      c.fillStyle = '#ffffff'; c.font = 'bold 26px sans-serif';
+      c.fillText('GOLDENMATE', 24, 34);
+      c.fillStyle = '#38bdf8'; c.font = 'bold 36px monospace';
+      c.fillText('12V 10Ah', 24, 110);
+      c.fillStyle = '#94a3b8'; c.font = '18px monospace';
+      c.fillText('LiFePO4 LITHIUM • 128Wh', 24, 145);
+      c.fillText('100% SMART BMS • IP67', 24, 175);
+      c.fillStyle = '#ef4444'; c.fillRect(430, 20, 50, 50);
+      c.fillStyle = '#ffffff'; c.font = 'bold 28px sans-serif'; c.fillText('+', 446, 56);
+      c.fillStyle = '#1e293b'; c.fillRect(430, 90, 50, 50);
+      c.fillStyle = '#ffffff'; c.fillText('-', 450, 124);
+      return new THREE.CanvasTexture(cv);
+    }
+
+    function createArduinoTex() {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 360;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#0891b2'; c.fillRect(0, 0, 512, 360);
+      c.fillStyle = '#0e7490'; c.fillRect(15, 15, 482, 330);
+      c.fillStyle = '#1e293b'; c.fillRect(160, 110, 190, 65);
+      c.fillStyle = '#ffffff'; c.font = 'bold 15px monospace';
+      c.fillText('ATmega328P', 195, 148);
+      c.fillStyle = '#cbd5e1'; c.fillRect(10, 25, 80, 70);
+      c.fillStyle = '#1e293b'; c.fillRect(10, 260, 95, 75);
+      c.fillStyle = '#ffffff'; c.font = 'bold 22px sans-serif';
+      c.fillText('ARDUINO UNO R3', 150, 60);
+      return new THREE.CanvasTexture(cv);
+    }
+
+    function createPi5Tex() {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 340;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#14532d'; c.fillRect(0, 0, 512, 340);
+      c.fillStyle = '#ffffff'; c.font = 'bold 18px monospace';
+      c.fillText('Raspberry Pi 5 4GB', 75, 72);
+      c.fillStyle = '#86efac'; c.font = '14px monospace';
+      c.fillText('SANOOV ACTIVE COOLER • BCM2712', 75, 98);
+      for (let p = 0; p < 20; p++) {
+        c.fillStyle = '#fbbf24';
+        c.fillRect(65 + p * 18, 14, 10, 10);
+        c.fillRect(65 + p * 18, 28, 10, 10);
+      }
+      return new THREE.CanvasTexture(cv);
+    }
+
+    function createBuckTex() {
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#1e293b'; c.fillRect(0, 0, 256, 128);
+      c.fillStyle = '#38bdf8'; c.font = 'bold 16px monospace';
+      c.fillText('YRDZXG BUCK', 15, 34);
+      c.fillStyle = '#e2e8f0'; c.font = '13px monospace';
+      c.fillText('12V -> 5V 5A 25W', 15, 60);
+      c.fillText('WATERPROOF IP68', 15, 84);
+      return new THREE.CanvasTexture(cv);
+    }
+
+    const petgTex = createPetgTex();
+    const goldenmateTex = createGoldenmateTex();
+    const arduinoTex = createArduinoTex();
+    const pi5Tex = createPi5Tex();
+    const buckTex = createBuckTex();
+
+    // Engineering Materials
+    const materials = {
+      petgChassis: new THREE.MeshStandardMaterial({ map: petgTex, bumpMap: petgTex, bumpScale: 0.03, color: 0x161a23, roughness: 0.48, metalness: 0.28 }),
+      petgArmor: new THREE.MeshStandardMaterial({ map: petgTex, bumpMap: petgTex, bumpScale: 0.02, color: 0x12151c, roughness: 0.38, metalness: 0.32 }),
+      brassInsert: new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.22, metalness: 0.94 }),
+      titaniumBumper: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.24, metalness: 0.88 }),
+      darkAnodized: new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.32, metalness: 0.84 }),
+      blueAnodized: new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.25, metalness: 0.85 }),
+      treadWheel: new THREE.MeshStandardMaterial({ color: 0x222630, roughness: 0.76, metalness: 0.35 }),
+      wheelRim: new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.22, metalness: 0.90 }),
+      goldenmateBat: new THREE.MeshStandardMaterial({ map: goldenmateTex, roughness: 0.38, metalness: 0.2 }),
+      arduinoPcb: new THREE.MeshStandardMaterial({ map: arduinoTex, roughness: 0.35, metalness: 0.25 }),
+      pi5Pcb: new THREE.MeshStandardMaterial({ map: pi5Tex, roughness: 0.38, metalness: 0.28 }),
+      buckMat: new THREE.MeshStandardMaterial({ map: buckTex, roughness: 0.32, metalness: 0.75 }),
+      arducamPcb: new THREE.MeshStandardMaterial({ color: 0x065f46, roughness: 0.45, metalness: 0.3 }),
+      sensorOptics: new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.08, metalness: 0.95 }),
+      cyanGlow: new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 1.25 }),
+      amberGlow: new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xb45309, emissiveIntensity: 1.1 }),
+      cargoEnclosure: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.32, metalness: 0.25 })
+    };
+
+    const inspectableMeshes = [];
+    const fanRotors = [];
+    const wheelMeshes = [];
+    const regMesh = (m) => { inspectableMeshes.push(m); return m; };
+
+    // Root Assembly
     const assembly = new THREE.Group();
     scene.add(assembly);
 
     const chassisGroup = new THREE.Group();
     const suspensionGroup = new THREE.Group();
-    const cargoGroup = new THREE.Group();
-    const mastGroup = new THREE.Group();
+    const upperShellGroup = new THREE.Group();
     assembly.add(chassisGroup);
     assembly.add(suspensionGroup);
-    assembly.add(cargoGroup);
-    assembly.add(mastGroup);
+    assembly.add(upperShellGroup);
 
-    // Realistic Engineering Materials
-    const materials = {
-      carbonChassis: new THREE.MeshStandardMaterial({
-        color: 0x1e2638,
-        roughness: 0.35,
-        metalness: 0.6
-      }),
-      titaniumBumper: new THREE.MeshStandardMaterial({
-        color: 0x64748b,
-        roughness: 0.25,
-        metalness: 0.85
-      }),
-      treadWheel: new THREE.MeshStandardMaterial({
-        color: 0x94a3b8,
-        roughness: 0.45,
-        metalness: 0.8
-      }),
-      wheelHub: new THREE.MeshStandardMaterial({
-        color: 0x0f172a,
-        roughness: 0.3,
-        metalness: 0.7
-      }),
-      cargoEnclosure: new THREE.MeshStandardMaterial({
-        color: 0xf1f5f9,
-        roughness: 0.3,
-        metalness: 0.3
-      }),
-      accentBlue: new THREE.MeshStandardMaterial({
-        color: 0x0b3d91,
-        roughness: 0.4,
-        metalness: 0.5
-      }),
-      sensorOptics: new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        roughness: 0.1,
-        metalness: 0.9
-      }),
-      amberStatus: new THREE.MeshStandardMaterial({
-        color: 0xf59e0b,
-        roughness: 0.3,
-        metalness: 0.2
-      })
-    };
+    // =========================================================================
+    // 1. LOWER MONOCOQUE CHASSIS TUB & UNDERSIDE AXLES (Template Image 5)
+    // =========================================================================
+    const lowerTub = regMesh(new THREE.Mesh(
+      new THREE.BoxGeometry(4.4, 0.72, 2.65),
+      materials.petgChassis
+    ));
+    lowerTub.position.y = 1.05;
+    lowerTub.castShadow = true; lowerTub.receiveShadow = true;
+    chassisGroup.add(lowerTub);
 
-    const inspectableMeshes = [];
+    // 3 CONTINUOUS TRANSVERSE TUBULAR AXLES UNDERNEATH WITH CENTRAL MOUNTING CLAMPS (Template Image 5)
+    const axleXPositions = [1.95, 0.0, -1.95];
+    axleXPositions.forEach(ax => {
+      // Transverse tubular axle connecting left and right wheel assemblies
+      const axleTube = regMesh(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.11, 3.42, 24).rotateX(Math.PI / 2),
+        materials.darkAnodized
+      ));
+      axleTube.position.set(ax, 0.56, 0);
+      axleTube.castShadow = true;
+      chassisGroup.add(axleTube);
 
-    // --- 1. CHASSIS (Monocoque composite frame) ---
-    const mainChassisGeo = new THREE.BoxGeometry(4.5, 0.65, 2.6);
-    const mainChassis = new THREE.Mesh(mainChassisGeo, materials.carbonChassis);
-    mainChassis.position.y = 1.3;
-    mainChassis.castShadow = true;
-    mainChassis.receiveShadow = true;
-    chassisGroup.add(mainChassis);
-    inspectableMeshes.push(mainChassis);
+      // Central split-collar chassis mounting clamp (Template Image 5)
+      const collar = regMesh(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.165, 0.165, 0.36, 20).rotateX(Math.PI / 2),
+        materials.titaniumBumper
+      ));
+      collar.position.set(ax, 0.56, 0);
+      chassisGroup.add(collar);
 
-    // Front/Rear Titanium Push Bumpers
-    const bumperGeo = new THREE.BoxGeometry(0.4, 0.5, 2.7);
-    const frontBumper = new THREE.Mesh(bumperGeo, materials.titaniumBumper);
-    frontBumper.position.set(2.35, 1.3, 0);
-    frontBumper.castShadow = true;
-    const rearBumper = new THREE.Mesh(bumperGeo, materials.titaniumBumper);
-    rearBumper.position.set(-2.35, 1.3, 0);
-    rearBumper.castShadow = true;
-    chassisGroup.add(frontBumper, rearBumper);
-    inspectableMeshes.push(frontBumper, rearBumper);
+      [-0.12, 0.12].forEach(offZ => {
+        const bolt = regMesh(new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 0.38, 12),
+          materials.brassInsert
+        ));
+        bolt.position.set(ax, 0.56, offZ);
+        chassisGroup.add(bolt);
+      });
+    });
 
-    // Underbody Regolith Deflector Skid Plate
-    const skidGeo = new THREE.BoxGeometry(4.3, 0.1, 2.4);
-    const skidPlate = new THREE.Mesh(skidGeo, materials.titaniumBumper);
-    skidPlate.position.y = 0.95;
-    skidPlate.castShadow = true;
-    chassisGroup.add(skidPlate);
-    inspectableMeshes.push(skidPlate);
+    // 20x M3/M4 Brass Heat-Set Threaded Inserts on Chassis Deck Perimeter
+    for (let bx = -1.9; bx <= 1.95; bx += 0.76) {
+      [-1.26, 1.26].forEach(bz => {
+        const insert = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.12, 12), materials.brassInsert));
+        insert.position.set(bx, 1.42, bz);
+        chassisGroup.add(insert);
+      });
+    }
 
-    // --- 2. SUSPENSION & ROCKER-BOGIE LOCOMOTION (6 Wheels) ---
+    // Front Face Push Bumper with Rectangular Stereo Aperture & Round Sensor Port (Template Image 2)
+    const frontBumper = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, 2.85), materials.titaniumBumper));
+    frontBumper.position.set(2.36, 1.05, 0);
+    chassisGroup.add(frontBumper);
+
+    const rearBumper = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.36, 2.75), materials.titaniumBumper));
+    rearBumper.position.set(-2.32, 1.05, 0);
+    chassisGroup.add(rearBumper);
+
+    // Rectangular Stereo Perception Window (Lower-Left front view, +Z)
+    const stereoWindow = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.22, 0.58), materials.darkAnodized));
+    stereoWindow.position.set(2.51, 1.05, 0.55);
+    const stereoLens1 = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16).rotateZ(Math.PI / 2), materials.sensorOptics));
+    stereoLens1.position.set(2.54, 1.05, 0.70);
+    const stereoLens2 = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16).rotateZ(Math.PI / 2), materials.sensorOptics));
+    stereoLens2.position.set(2.54, 1.05, 0.40);
+    chassisGroup.add(stereoWindow, stereoLens1, stereoLens2);
+
+    // Circular Sensor Port with Grill (Lower-Right front view, -Z)
+    const roundPort = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.06, 24).rotateZ(Math.PI / 2), materials.darkAnodized));
+    roundPort.position.set(2.51, 1.05, -0.65);
+    const roundEye = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.08, 20).rotateZ(Math.PI / 2), materials.sensorOptics));
+    roundEye.position.set(2.54, 1.05, -0.65);
+    chassisGroup.add(roundPort, roundEye);
+
+    // Amber Heavy-Duty Tow Shackles
+    [-1.05, 1.05].forEach(sz => {
+      const shackle = regMesh(new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 12, 24), materials.amberGlow));
+      shackle.position.set(2.50, 0.88, sz);
+      shackle.rotation.y = Math.PI / 2;
+      chassisGroup.add(shackle);
+    });
+
+    // 6x 3007 (30x30x7mm) Brushless Chassis Cooling Fans (3 Left Intake, 3 Right Exhaust)
+    [-1.34, 1.34].forEach(fz => {
+      [-1.15, 0.0, 1.15].forEach(fx => {
+        const fanHousing = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.08), materials.darkAnodized));
+        fanHousing.position.set(fx, 1.06, fz);
+        chassisGroup.add(fanHousing);
+
+        const rotor = new THREE.Group();
+        rotor.position.set(fx, 1.06, fz + (fz > 0 ? 0.03 : -0.03));
+        const rHub = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.06, 12), materials.brassInsert));
+        rHub.rotation.x = Math.PI / 2;
+        rotor.add(rHub);
+        for (let b = 0; b < 7; b++) {
+          const blade = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.015), materials.titaniumBumper));
+          const ang = (b / 7) * Math.PI * 2;
+          blade.position.set(Math.cos(ang) * 0.11, Math.sin(ang) * 0.11, 0);
+          blade.rotation.z = ang + 0.45;
+          rotor.add(blade);
+        }
+        chassisGroup.add(rotor);
+        fanRotors.push(rotor);
+      });
+    });
+
+    // =========================================================================
+    // 2. INTERNAL AVIONICS BAY (Revealed in Exploded View)
+    // =========================================================================
+    const goldenmateBat = regMesh(new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.68, 0.82), materials.goldenmateBat));
+    goldenmateBat.position.set(-0.88, 1.56, -0.32);
+    goldenmateBat.castShadow = true;
+    chassisGroup.add(goldenmateBat);
+
+    const pi5Board = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.14, 0.58), materials.pi5Pcb));
+    pi5Board.position.set(0.82, 1.46, -0.48);
+    const pi5Cooler = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 0.42), materials.titaniumBumper));
+    pi5Cooler.position.set(0.82, 1.58, -0.48);
+    chassisGroup.add(pi5Board, pi5Cooler);
+
+    const arduinoUno = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.12, 0.56), materials.arduinoPcb));
+    arduinoUno.position.set(0.82, 1.45, 0.52);
+    chassisGroup.add(arduinoUno);
+
+    const buckConverter = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.42), materials.buckMat));
+    buckConverter.position.set(-0.82, 1.48, 0.68);
+    chassisGroup.add(buckConverter);
+
+    const cytronDriver = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 0.48), materials.darkAnodized));
+    cytronDriver.position.set(0.0, 1.46, 0.0);
+    chassisGroup.add(cytronDriver);
+
+    // =========================================================================
+    // 3. 6-WHEEL CHEVRON LOCOMOTION, VERTICAL YOKES & GREARTISAN 37MM MOTORS
+    // =========================================================================
     const wheelPositions = [
-      { x: 2.0, z: 1.75 },  // Front L
-      { x: 0.0, z: 1.85 },  // Mid L
-      { x: -2.0, z: 1.75 }, // Rear L
-      { x: 2.0, z: -1.75 }, // Front R
-      { x: 0.0, z: -1.85 }, // Mid R
-      { x: -2.0, z: -1.75 } // Rear R
+      { x: 1.95, z: 1.68 },  { x: 0.0, z: 1.82 },  { x: -1.95, z: 1.68 },
+      { x: 1.95, z: -1.68 }, { x: 0.0, z: -1.82 }, { x: -1.95, z: -1.68 }
     ];
 
     wheelPositions.forEach(pos => {
       const wheelAssembly = new THREE.Group();
-      wheelAssembly.position.set(pos.x, 0.7, pos.z);
+      wheelAssembly.position.set(pos.x, 0.56, pos.z);
+      const zSign = pos.z > 0 ? 1 : -1;
 
-      // Compliant mesh tire
-      const tireGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.5, 32);
-      tireGeo.rotateZ(Math.PI / 2);
-      const tire = new THREE.Mesh(tireGeo, materials.treadWheel);
-      tire.castShadow = true;
-      tire.receiveShadow = true;
+      // Vertical Drop Yoke (Matching Template Images 1, 3, 5)
+      const yoke = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.72, 0.16), materials.petgArmor));
+      yoke.position.set(0, 0.42, zSign * 0.28);
+      wheelAssembly.add(yoke);
+
+      // Deep-Dish Wheel Rim
+      const rim = regMesh(new THREE.Mesh(
+        new THREE.CylinderGeometry(0.38, 0.38, 0.42, 24).rotateX(Math.PI / 2),
+        materials.wheelRim
+      ));
+      wheelAssembly.add(rim);
+
+      // Compliant Chevron Tire
+      const tireGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.44, 32);
+      tireGeo.rotateX(Math.PI / 2);
+      const tire = regMesh(new THREE.Mesh(tireGeo, materials.treadWheel));
+      tire.castShadow = true; tire.receiveShadow = true;
       wheelAssembly.add(tire);
-      inspectableMeshes.push(tire);
+      wheelMeshes.push(tire);
 
-      // Hub & BLDC motor housing
-      const hubGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.52, 24);
-      hubGeo.rotateZ(Math.PI / 2);
-      const hub = new THREE.Mesh(hubGeo, materials.wheelHub);
-      wheelAssembly.add(hub);
-      inspectableMeshes.push(hub);
+      // 16 Directional Chevron Grousers (Template Images 1, 3, 5)
+      for (let g = 0; g < 16; g++) {
+        const ang = (g / 16) * Math.PI * 2;
+        const chevronL = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.18), materials.petgArmor));
+        chevronL.position.set(Math.cos(ang) * 0.56, Math.sin(ang) * 0.56, 0.09);
+        chevronL.rotation.z = ang; chevronL.rotation.y = 0.28;
 
-      // Suspension Arm / Linkage
-      const linkGeo = new THREE.BoxGeometry(0.12, 0.65, 0.12);
-      const link = new THREE.Mesh(linkGeo, materials.titaniumBumper);
-      const zDir = pos.z > 0 ? -1 : 1;
-      link.position.set(0, 0.35, zDir * 0.22);
-      link.rotation.x = zDir * 0.28;
-      link.castShadow = true;
-      wheelAssembly.add(link);
-      inspectableMeshes.push(link);
+        const chevronR = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.18), materials.petgArmor));
+        chevronR.position.set(Math.cos(ang) * 0.56, Math.sin(ang) * 0.56, -0.09);
+        chevronR.rotation.z = ang; chevronR.rotation.y = -0.28;
+
+        tire.add(chevronL, chevronR);
+      }
+
+      // Greartisan DC 12V 100RPM 37mm Gearbox (Silver) + Motor Can (Black)
+      const gearbox37 = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.28, 20).rotateX(Math.PI / 2), materials.titaniumBumper));
+      gearbox37.position.set(0, 0, -zSign * 0.34);
+      const motorCan = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.32, 20).rotateX(Math.PI / 2), materials.darkAnodized));
+      motorCan.position.set(0, 0, -zSign * 0.62);
+
+      // Brass Hex Coupler & Lug Nuts
+      const hexCoupler = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.14, 6).rotateX(Math.PI / 2), materials.brassInsert));
+      hexCoupler.position.set(0, 0, zSign * 0.24);
+      wheelAssembly.add(gearbox37, motorCan, hexCoupler);
 
       suspensionGroup.add(wheelAssembly);
     });
 
-    // --- 3. CARGO BED & STANDARDIZED PAYLOAD CONTAINER ---
-    // Roll-bed guide deck
-    const bedGeo = new THREE.BoxGeometry(3.5, 0.15, 2.1);
-    const cargoBed = new THREE.Mesh(bedGeo, materials.titaniumBumper);
-    cargoBed.position.set(-0.3, 1.7, 0);
-    cargoBed.castShadow = true;
-    cargoGroup.add(cargoBed);
-    inspectableMeshes.push(cargoBed);
+    // =========================================================================
+    // 4. UPPER CARAPACE, EMBOSSED 'AEGIS' FLANKS, ARM, MAST & CARGO HOPPER
+    //    (Lifts smoothly in Exploded View)
+    // =========================================================================
 
-    // Guide Rails
-    const railGeo = new THREE.BoxGeometry(3.5, 0.25, 0.08);
-    const railL = new THREE.Mesh(railGeo, materials.carbonChassis);
-    railL.position.set(-0.3, 1.85, 1.05);
-    const railR = new THREE.Mesh(railGeo, materials.carbonChassis);
-    railR.position.set(-0.3, 1.85, -1.05);
-    cargoGroup.add(railL, railR);
-    inspectableMeshes.push(railL, railR);
+    // Front Elevated Deck
+    const frontDeck = regMesh(new THREE.Mesh(
+      new THREE.BoxGeometry(1.85, 0.32, 2.65),
+      materials.petgArmor
+    ));
+    frontDeck.position.set(1.28, 1.57, 0);
+    frontDeck.castShadow = true; frontDeck.receiveShadow = true;
+    upperShellGroup.add(frontDeck);
 
-    // Standard NASA HUNCH Lunar Cargo Canister
-    const containerGeo = new THREE.BoxGeometry(2.5, 1.25, 1.85);
-    const container = new THREE.Mesh(containerGeo, materials.cargoEnclosure);
-    container.position.set(-0.3, 2.4, 0);
-    container.castShadow = true;
-    container.receiveShadow = true;
-    cargoGroup.add(container);
-    inspectableMeshes.push(container);
+    // Recessed Cargo Hopper Bed (Template Images 1, 3, 4)
+    const cargoHopperGroup = new THREE.Group();
+    cargoHopperGroup.position.set(-0.75, 1.45, 0);
 
-    // NASA HUNCH Identification Stripe
-    const bandGeo = new THREE.BoxGeometry(2.52, 0.25, 1.87);
-    const band = new THREE.Mesh(bandGeo, materials.accentBlue);
-    band.position.set(-0.3, 2.4, 0);
-    cargoGroup.add(band);
-    inspectableMeshes.push(band);
+    const hopperFloor = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.12, 2.45), materials.darkAnodized));
+    hopperFloor.receiveShadow = true;
+    cargoHopperGroup.add(hopperFloor);
 
-    // Cargo Retention Locking Clamp
-    const clampGeo = new THREE.BoxGeometry(0.18, 0.35, 1.95);
-    const clampF = new THREE.Mesh(clampGeo, materials.amberStatus);
-    clampF.position.set(1.0, 2.25, 0);
-    const clampR = new THREE.Mesh(clampGeo, materials.amberStatus);
-    clampR.position.set(-1.6, 2.25, 0);
-    cargoGroup.add(clampF, clampR);
-    inspectableMeshes.push(clampF, clampR);
+    // Hopper Perimeter Walls
+    const wallL = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.62, 0.10), materials.petgArmor));
+    wallL.position.set(0, 0.31, 1.20);
+    const wallR = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.62, 0.10), materials.petgArmor));
+    wallR.position.set(0, 0.31, -1.20);
+    const wallBack = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.62, 2.45), materials.petgArmor));
+    wallBack.position.set(-1.38, 0.31, 0);
+    const wallFront = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.62, 2.45), materials.petgArmor));
+    wallFront.position.set(1.38, 0.31, 0);
 
-    // --- 4. PERCEPTION MAST & COMMUNICATIONS ---
-    const mastPillarGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.5, 16);
-    const mastPillar = new THREE.Mesh(mastPillarGeo, materials.titaniumBumper);
-    mastPillar.position.set(1.65, 2.35, 0);
-    mastPillar.castShadow = true;
+    // Top Blue Anodized Guide Rails
+    const railL = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.06, 0.08), materials.blueAnodized));
+    railL.position.set(0, 0.63, 1.20);
+    const railR = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.06, 0.08), materials.blueAnodized));
+    railR.position.set(0, 0.63, -1.20);
+    cargoHopperGroup.add(wallL, wallR, wallBack, wallFront, railL, railR);
+
+    // Standardized NASA HUNCH Lunar Logistics Container
+    const containerMesh = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.88, 1.95), materials.cargoEnclosure));
+    containerMesh.position.set(0, 0.48, 0);
+    containerMesh.castShadow = true; containerMesh.receiveShadow = true;
+    const containerBand = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.27, 0.18, 1.97), materials.blueAnodized));
+    containerBand.position.set(0, 0.48, 0);
+    const containerLatch = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.24, 0.28), materials.amberGlow));
+    containerLatch.position.set(1.14, 0.48, 0);
+    cargoHopperGroup.add(containerMesh, containerBand, containerLatch);
+    upperShellGroup.add(cargoHopperGroup);
+
+    // 3D EMBOSSED 'AEGIS' LETTERING ON BOTH FLANKS (Template Image 1)
+    function createLetter(char, mat) {
+      const g = new THREE.Group();
+      const d = 0.08, w = 0.08, H = 0.48, W = 0.32;
+      const bar = (bx, by, bw, bh) => {
+        const m = regMesh(new THREE.Mesh(new THREE.BoxGeometry(bw, bh, d), mat));
+        m.position.set(bx, by, 0);
+        g.add(m);
+        return m;
+      };
+      if (char === 'A') {
+        bar(-W/2 + w/2, 0, w, H); bar(W/2 - w/2, 0, w, H);
+        bar(0, H/2 - w/2, W, w); bar(0, 0, W, w);
+      } else if (char === 'E') {
+        bar(-W/2 + w/2, 0, w, H); bar(0, H/2 - w/2, W, w);
+        bar(-0.02, 0, W * 0.72, w); bar(0, -H/2 + w/2, W, w);
+      } else if (char === 'G') {
+        bar(-W/2 + w/2, 0, w, H); bar(0, H/2 - w/2, W, w);
+        bar(0, -H/2 + w/2, W, w); bar(W/2 - w/2, -H/4 + w/4, w, H/2);
+        bar(0.04, 0, W/2, w);
+      } else if (char === 'I') {
+        bar(0, 0, w * 1.2, H); bar(0, H/2 - w/2, W * 0.7, w);
+        bar(0, -H/2 + w/2, W * 0.7, w);
+      } else if (char === 'S') {
+        bar(0, H/2 - w/2, W, w); bar(-W/2 + w/2, H/4, w, H/2);
+        bar(0, 0, W, w); bar(W/2 - w/2, -H/4, w, H/2);
+        bar(0, -H/2 + w/2, W, w);
+      }
+      return g;
+    }
+
+    function createAegisBadge(isLeft) {
+      const g = new THREE.Group();
+      const plaque = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.62, 0.08), materials.blueAnodized));
+      g.add(plaque);
+      const innerPlate = regMesh(new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.54, 0.09), materials.darkAnodized));
+      g.add(innerPlate);
+
+      const letters = ['A', 'E', 'G', 'I', 'S'];
+      const startX = -0.80, spacing = 0.40;
+      letters.forEach((char, idx) => {
+        const lMesh = createLetter(char, materials.cyanGlow);
+        lMesh.position.set(startX + idx * spacing, 0, 0.06);
+        g.add(lMesh);
+      });
+
+      const zPos = isLeft ? 1.36 : -1.36;
+      g.position.set(0, 1.88, zPos);
+      if (!isLeft) g.rotation.y = Math.PI;
+      return g;
+    }
+
+    upperShellGroup.add(createAegisBadge(true));
+    upperShellGroup.add(createAegisBadge(false));
+
+    // ARTICULATED ROBOTIC ARM ON FRONT-LEFT DECK (Template Images 1, 2, 5)
+    const armGroup = new THREE.Group();
+    armGroup.position.set(1.42, 1.73, 0.62);
+
+    // Cylindrical Base Turntable
+    const armBase = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.16, 24), materials.darkAnodized));
+    armBase.position.y = 0.08;
+    armGroup.add(armBase);
+
+    // Spherical Shoulder Ball Joint (Template Images 1, 2, 5)
+    const shoulderBall = regMesh(new THREE.Mesh(new THREE.SphereGeometry(0.22, 24, 20), materials.titaniumBumper));
+    shoulderBall.position.set(0, 0.26, 0);
+    armGroup.add(shoulderBall);
+
+    // Upper Boom Link angled forward and upward
+    const upperBoom = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.35, 16), materials.petgArmor));
+    upperBoom.position.set(0.38, 0.82, 0);
+    upperBoom.rotation.z = -0.58;
+    armGroup.add(upperBoom);
+
+    // Shoulder Linear Actuator Cylinder
+    const actuatorCyl = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.85, 16), materials.titaniumBumper));
+    actuatorCyl.position.set(0.18, 0.68, 0.14);
+    actuatorCyl.rotation.z = -0.42;
+    armGroup.add(actuatorCyl);
+
+    // Elbow Hinge Joint
+    const elbowJoint = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.26, 16).rotateX(Math.PI / 2), materials.brassInsert));
+    elbowJoint.position.set(0.72, 1.38, 0);
+    armGroup.add(elbowJoint);
+
+    // Forearm Link angled downward
+    const forearm = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 1.15, 16), materials.petgArmor));
+    forearm.position.set(1.08, 0.95, 0);
+    forearm.rotation.z = 0.72;
+    armGroup.add(forearm);
+
+    // Wrist Hub & Two-Pronged Gripper Fork Claw (Template Images 1, 2, 5)
+    const wrist = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.18, 16).rotateX(Math.PI / 2), materials.titaniumBumper));
+    wrist.position.set(1.42, 0.52, 0);
+    armGroup.add(wrist);
+
+    const clawBar = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.08, 0.65), materials.titaniumBumper));
+    clawBar.position.set(1.42, 0.52, 0);
+    armGroup.add(clawBar);
+
+    [-0.28, 0.28].forEach(pz => {
+      const prong = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.08), materials.blueAnodized));
+      prong.position.set(1.62, 0.46, pz);
+      prong.rotation.z = -0.22;
+      armGroup.add(prong);
+    });
+
+    upperShellGroup.add(armGroup);
+
+    // PERCEPTION MAST ON FRONT-RIGHT DECK (Template Images 1, 2)
+    const mastGroup = new THREE.Group();
+    mastGroup.position.set(1.42, 1.73, -0.62);
+
+    const mastPillar = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 1.35, 20), materials.petgArmor));
+    mastPillar.position.y = 0.68;
     mastGroup.add(mastPillar);
-    inspectableMeshes.push(mastPillar);
 
-    // Sensor Gimbal Head
-    const headGeo = new THREE.BoxGeometry(0.35, 0.28, 0.65);
-    const sensorHead = new THREE.Mesh(headGeo, materials.carbonChassis);
-    sensorHead.position.set(1.65, 3.1, 0);
-    sensorHead.castShadow = true;
-    mastGroup.add(sensorHead);
-    inspectableMeshes.push(sensorHead);
+    const mastRing = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 24), materials.blueAnodized));
+    mastRing.position.y = 1.35;
+    mastGroup.add(mastRing);
 
-    // Stereo Navigation Cameras
-    const camGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.12, 16);
-    camGeo.rotateZ(Math.PI / 2);
-    const camL = new THREE.Mesh(camGeo, materials.sensorOptics);
-    camL.position.set(1.85, 3.1, 0.2);
-    const camR = new THREE.Mesh(camGeo, materials.sensorOptics);
-    camR.position.set(1.85, 3.1, -0.2);
-    mastGroup.add(camL, camR);
-    inspectableMeshes.push(camL, camR);
-
-    // Flash LIDAR Turret (Rotates on Z axis)
-    const lidarPuckGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.2, 24);
-    const lidarPuck = new THREE.Mesh(lidarPuckGeo, materials.carbonChassis);
-    lidarPuck.position.set(1.65, 3.35, 0);
+    // Spinning EC Buying YDLIDAR X2L 360° Turret
+    const lidarPuck = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.19, 0.18, 24), materials.darkAnodized));
+    lidarPuck.position.y = 1.48;
+    const lidarEye = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 16).rotateZ(Math.PI / 2), materials.sensorOptics));
+    lidarEye.position.set(0.16, 0, 0);
+    lidarPuck.add(lidarEye);
     mastGroup.add(lidarPuck);
-    inspectableMeshes.push(lidarPuck);
 
-    // High Gain Antenna (Lunar-to-Gateway Downlink)
-    const dishGeo = new THREE.SphereGeometry(0.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.5);
-    const dish = new THREE.Mesh(dishGeo, materials.titaniumBumper);
-    dish.position.set(-1.75, 2.75, -0.85);
-    dish.rotation.x = -Math.PI / 3;
-    dish.rotation.z = Math.PI / 5;
-    dish.castShadow = true;
-    mastGroup.add(dish);
-    inspectableMeshes.push(dish);
+    // Arducam Navigation Camera on Mast
+    const mastCamPcb = regMesh(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.20), materials.arducamPcb));
+    mastCamPcb.position.set(0.12, 1.25, 0);
+    const mastCamLens = regMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 16).rotateZ(Math.PI / 2), materials.sensorOptics));
+    mastCamLens.position.set(0.16, 1.25, 0);
+    mastGroup.add(mastCamPcb, mastCamLens);
 
-    // --- CAD VIEWPORT CONTROLS ---
+    upperShellGroup.add(mastGroup);
+
+    // =========================================================================
+    // 5. VIEWPORT CONTROLS & CAMERA PRESETS
+    // =========================================================================
     let isWireframe = false;
     let isExploded = false;
 
@@ -304,10 +597,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnExplode = document.getElementById('btn-explode');
     const btnResetCam = document.getElementById('btn-reset-cam');
 
-    // Camera Preset Buttons
-    document.querySelectorAll('.cam-preset-btn').forEach(btn => {
+    const camPresetBtns = document.querySelectorAll('.cam-preset-btn');
+    const setCamActive = (activeView) => {
+      camPresetBtns.forEach(b => {
+        const isActive = (b.dataset.view === activeView);
+        b.className = 'cam-preset-btn px-2.5 py-1 rounded transition-colors ' +
+          (isActive ? 'bg-white/10 text-white font-medium shadow-sm' : 'hover:text-white text-slate-400');
+      });
+    };
+    setCamActive('iso');
+
+    camPresetBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         const view = btn.dataset.view;
+        setCamActive(view);
         if (view === 'iso') {
           camera.position.set(10, 6.5, 11);
           controls.target.set(0, 1.2, 0);
@@ -315,11 +618,14 @@ document.addEventListener('DOMContentLoaded', () => {
           camera.position.set(0, 15, 0.01);
           controls.target.set(0, 1.2, 0);
         } else if (view === 'side') {
-          camera.position.set(0, 2.5, 14);
+          camera.position.set(0, 2.0, 12);
           controls.target.set(0, 1.2, 0);
         } else if (view === 'front') {
-          camera.position.set(14, 2.5, 0);
+          camera.position.set(12, 2.0, 0);
           controls.target.set(0, 1.2, 0);
+        } else if (view === 'bottom') {
+          camera.position.set(0, -9.5, 0.01);
+          controls.target.set(0, 0.8, 0);
         }
         controls.update();
       });
@@ -331,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
         inspectableMeshes.forEach(mesh => {
           if (mesh.material) {
             mesh.material.wireframe = isWireframe;
+            mesh.material.needsUpdate = true;
           }
         });
         btnWireframe.textContent = isWireframe ? 'Wireframe: ON' : 'Wireframe: OFF';
@@ -351,30 +658,31 @@ document.addEventListener('DOMContentLoaded', () => {
         camera.position.set(10, 6.5, 11);
         controls.target.set(0, 1.2, 0);
         controls.update();
+        if (typeof setCamActive === 'function') setCamActive('iso');
       });
     }
 
     // Subsystem Engineering Dossier
     const subsystemData = {
       chassis: {
-        title: 'Chassis & Structural Frame',
-        lead: 'Ahrav & Sacheth // Assembly Lead & 3D Design Lead',
-        desc: 'Carbon-composite monocoque enclosure with integrated 7075-T6 aluminum truss members. Houses primary avionics, cryo-insulated battery bus, and lower regolith skid plate rated for high-velocity particle deflection.'
+        title: 'Polymaker Black PETG Chassis & Internal Electronics',
+        lead: 'Ahrav, Sacheth & Harshan // Mechanical, CAD & Autonomy',
+        desc: '3D-printed stealth-black Polymaker PETG armored shell with M3/M4 brass heat-set inserts, 6x 3007 (30x30x7mm) brushless cooling fans, GOLDENMATE 12V 10Ah LiFePO4 battery (IP67 BMS), SANOOV Raspberry Pi 5 4GB with Active Cooler, Arduino Uno REV3 (ATmega328P), and YRDZXG 12V/24V-to-5V 5A Buck Converter. Toggle Exploded View to inspect internals.'
       },
       locomotion: {
-        title: 'Rocker-Bogie Suspension & Hub Drives',
-        lead: 'Ahrav & Harshan // Assembly Lead & Co-Designer',
-        desc: 'Passive 6-wheel articulated rocker-bogie architecture with non-pneumatic titanium compliant spring tires. Equipped with sealed cycloidal brushless hub motors delivering 180 Nm torque per wheel with zero dust intrusion.'
+        title: '6x Greartisan 100RPM Drive & Underside Axles',
+        lead: 'Ahrav & Harshan // Drivetrain & Locomotion',
+        desc: 'Continuous transverse tubular axles with central mounting clamps (Template Image 5) and vertical drop yokes driven by 6 independent Greartisan 12V 100RPM 37mm gear motors with brass hex couplers and deep-chevron TPU/PETG lunar tires.'
       },
       cargobay: {
-        title: 'Cargo Transfer Roll-Bed & Latching',
-        lead: 'Sacheth & Ahrav // 3D Design Lead & Assembly Lead',
-        desc: 'Dual-channel low-friction roller bed with automated electromagnetic latching mechanisms designed to lock standard 500 kg NASA HUNCH lunar stowage containers under ±15° incline maneuvers.'
+        title: 'Recessed Cargo Hopper Bed & Robotic Arm',
+        lead: 'Sacheth & Ahrav // 3D Design & Assembly',
+        desc: 'Recessed cargo hopper with perimeter retention walls and blue anodized guide rails locking the standardized NASA HUNCH lunar container, paired with the front deck articulated robotic arm and two-pronged gripper claw.'
       },
       avionics: {
-        title: 'Perception, Autonomy & Downlink Mast',
-        lead: 'Harshan & Ahrav // AI Lead & AI Training Lead',
-        desc: 'High-speed solid-state flash LIDAR and dual stereoscopic cameras driving edge neural SLAM for 3D terrain reconstruction, real-time boulder avoidance, and 1.28s Earth-Moon telemetry communications.'
+        title: 'EC Buying YDLIDAR X2L 360° & Dual Arducam Suite',
+        lead: 'Harshan // Autonomous Software & AI Vision Lead',
+        desc: '360-degree YDLIDAR X2L optical laser scanner turret mounted on perception mast paired with forward stereo perception aperture and navigation cameras feeding the onboard neural autonomy stack.'
       }
     };
 
@@ -397,10 +705,17 @@ document.addEventListener('DOMContentLoaded', () => {
           subDesc.textContent = subsystemData[subKey].desc;
         }
 
-        if (subKey === 'chassis') controls.target.set(0, 1.2, 0);
-        if (subKey === 'locomotion') controls.target.set(0, 0.7, 1.2);
-        if (subKey === 'cargobay') controls.target.set(-0.3, 2.2, 0);
-        if (subKey === 'avionics') controls.target.set(1.65, 3.1, 0);
+        if (subKey === 'chassis') {
+          isExploded = true;
+          if (btnExplode) { btnExplode.textContent = 'Assembly: Exploded'; btnExplode.classList.add('text-blue-400'); }
+          controls.target.set(0, 1.4, 0);
+        } else if (subKey === 'locomotion') {
+          controls.target.set(0, 0.6, 1.2);
+        } else if (subKey === 'cargobay') {
+          controls.target.set(-0.7, 1.8, 0);
+        } else if (subKey === 'avionics') {
+          controls.target.set(1.4, 2.2, 0);
+        }
         controls.update();
       });
     });
@@ -410,10 +725,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!container) return;
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setSize(container.clientWidth, container.clientHeight, false);
     });
 
-    // Render Loop
+    // Render & Animation Loop
     let clock = new THREE.Clock();
 
     function animate() {
@@ -421,17 +736,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const delta = clock.getDelta();
 
       if (lidarPuck) {
-        lidarPuck.rotation.y += 2.2 * delta;
+        lidarPuck.rotation.y += 4.5 * delta;
       }
+      fanRotors.forEach(r => { r.rotation.z += 18.0 * delta; });
 
-      // Smooth Exploded Animation
-      const targetCargoY = isExploded ? 1.5 : 0;
-      const targetMastY = isExploded ? 0.7 : 0;
-      const targetMastX = isExploded ? 0.5 : 0;
-
-      cargoGroup.position.y += (targetCargoY - cargoGroup.position.y) * 0.08;
-      mastGroup.position.y += (targetMastY - mastGroup.position.y) * 0.08;
-      mastGroup.position.x += (targetMastX - mastGroup.position.x) * 0.08;
+      // Smooth Exploded Animation (Lifts upper carapace to expose internal avionics bay)
+      const targetExplodeY = isExploded ? 1.65 : 0;
+      upperShellGroup.position.y += (targetExplodeY - upperShellGroup.position.y) * 0.08;
 
       controls.update();
       renderer.render(scene, camera);

@@ -1,0 +1,29 @@
+{
+  "project": "LLASO-P1-AMR-2026 Autonomous Tracked Lunar Rover",
+  "criteria": [
+    { "id": "slope_25deg", "label": "Climb 25° regolith incline (Earth test mass 8 kg)", "weight_pct": 25 },
+    { "id": "autonomy_sensors", "label": "LiDAR + camera + onboard compute for auto-nav", "weight_pct": 20 },
+    { "id": "lunar_margin", "label": "Torque margin for 1/6 g ops after Earth sizing", "weight_pct": 15 },
+    { "id": "dust_power", "label": "Dust-tolerant vents + stable 5 V rail under load", "weight_pct": 15 },
+    { "id": "fab_cost", "label": "PETG + COTS parts (classroom buildable)", "weight_pct": 15 },
+    { "id": "logistics_fit", "label": "Fits LLASO cargo / surface logistics story", "weight_pct": 10 }
+  ],
+  "alternatives": [
+    {
+      "name": "4WD skid-steer wheels",
+      "scores_1_to_5": { "slope_25deg": 2, "autonomy_sensors": 4, "lunar_margin": 3, "dust_power": 3, "fab_cost": 5, "logistics_fit": 3 },
+      "notes": "Low cost; poor sinkage on loose regolith."
+    },
+    {
+      "name": "6WD tracked skid-steer (selected)",
+      "scores_1_to_5": { "slope_25deg": 5, "autonomy_sensors": 5, "lunar_margin": 5, "dust_power": 4, "fab_cost": 4, "logistics_fit": 5 },
+      "notes": "Selected — matches hardware_specification_sheet torque study."
+    },
+    {
+      "name": "Rocker-bogie (Curiosity-class)",
+      "scores_1_to_5": { "slope_25deg": 5, "autonomy_sensors": 3, "lunar_margin": 4, "dust_power": 3, "fab_cost": 1, "logistics_fit": 2 },
+      "notes": "Excellent terrain but exceeds HUNCH build timeline and mass budget."
+    }
+  ],
+  "method": "Weighted score = sum(weight_pct * score / 5). Highest total wins."
+}

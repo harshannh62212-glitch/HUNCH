@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HUNCH Tri-fold — LLASO AMR</title>
+  <link rel="stylesheet" href="shared-print.css" />
+  <style>
+    .boards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; max-width: 11in; margin: 0 auto; padding: 8px; }
+    .board { min-height: 9in; border: 2px dashed #94a3b8; padding: 10px; font-size: 0.78rem; line-height: 1.3; }
+    .board h2 { font-size: 0.95rem; margin: 0 0 6px; }
+    @media print { .boards { gap: 0; } .board { border: 1px solid #ccc; page-break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <p class="no-print muted" style="padding:8px"><a href="index.html">← Hub</a> · Print landscape · fold outer panels inward</p>
+  <div class="boards">
+    <div class="board">
+      <h2>Problem</h2>
+      <p>LLASO lunar logistics needs <strong>autonomous surface transport</strong> of cargo between a 40-ft module and EVA work zones.</p>
+      <h2>Constraints</h2>
+      <ul>
+        <li>1/6&nbsp;g ops · motors sized at 1&nbsp;g Earth demo</li>
+        <li>25° max slope · 8&nbsp;kg gross</li>
+        <li>Dust, thermal, power brownout risks</li>
+      </ul>
+      <h2>Team</h2>
+      <p>[School] · [Teacher]<br/>Sacheth · Ahrav · Harshan</p>
+      <p><img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=88x88&amp;data=http://127.0.0.1:8002/review/engineering-deck.html" alt="QR deck" /></p>
+    </div>
+    <div class="board">
+      <h2>Design &amp; CAD</h2>
+      <p>6WD tracked skid-steer selected via weighted decision matrix (see <code>decision-matrix.html</code>).</p>
+      <p>Torque study: ≥28–35&nbsp;kg·cm stall @ 12&nbsp;V — <code>hardware_specification_sheet.md</code>.</p>
+      <h2>COTS studied</h2>
+      <p>L298N ✗ · MDD10A ✓ · LM2596 ✗ · XL4015 ✓ · PLA ✗ · PETG ✓</p>
+      <h2>Electrical</h2>
+      <p>Dual isolated bucks · TVS on motor bus — <code>electrical-block-diagram.svg</code></p>
+    </div>
+    <div class="board">
+      <h2>Prototype progression</h2>
+      <ol>
+        <li>Recycle-bin concept / sketch</li>
+        <li>Fusion CAD + PETG prints</li>
+        <li>Digital twin validation (sim)</li>
+        <li>Bench PWM + sensor stress scripts</li>
+        <li>CDR hardware + FDR demo path</li>
+      </ol>
+      <h2>Testing</h2>
+      <p><code>run_nav_scenarios.py</code> pit guard PASS</p>
+      <p>Telemetry: slip, motor_cmd_frac, pit_clear_m — JSON in <code>test-results/</code></p>
+      <h2>Live demo</h2>
+      <img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=88x88&amp;data=http://127.0.0.1:8002/viewer.html" alt="QR sim" />
+    </div>
+  </div>
+</body>
+</html>

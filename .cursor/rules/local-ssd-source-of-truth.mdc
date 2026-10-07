@@ -1,0 +1,18 @@
+---
+description: Single local workspace path (no mirrors) — see github-only-sync
+alwaysApply: true
+---
+
+# Workspace location (edit here only)
+
+- **Canonical folder on this Mac:** `/Users/nhharshan/Hunch` (also cited as `/Users/harshan/Hunch` in older docs — same project).
+- **Do not** copy or rsync this tree to other paths or machines; use **GitHub** per [github-only-sync.mdc](./github-only-sync.mdc).
+
+## CAD / simulator
+
+- Start the LLASO CAD sim from: `/Users/nhharshan/Hunch/Hunch/nasa-llaso-cad` (`python3 serve.py 8002`).
+- Do not substitute Google Drive or MSD copies unless the user names that path in the current request.
+
+## Commits
+
+- Only commit or push when the user explicitly requests it.

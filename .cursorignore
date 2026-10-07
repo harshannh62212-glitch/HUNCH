@@ -1,0 +1,11 @@
+# Cursor agent index exclusions (files remain on disk)
+.git/
+**/.git/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/dist/
+.stfolder/
+Hunch/nasa-llaso-cad/logs/
+**/*.stl
+.vercel/

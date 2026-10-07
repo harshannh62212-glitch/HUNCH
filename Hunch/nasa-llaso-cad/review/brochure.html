@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>HUNCH Brochure — LLASO AMR</title>
+  <link rel="stylesheet" href="shared-print.css" />
+  <style>
+    .wrap { max-width: 8.5in; margin: 0 auto; padding: 0.35in; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .hero { background: linear-gradient(135deg,#0c4a6e,#0369a1); color:#fff; padding:16px; border-radius:8px; }
+    .hero h1 { color:#fff; margin:0; font-size:1.35rem; }
+    img.photo { width:100%; border-radius:6px; object-fit:cover; max-height:120px; }
+  </style>
+</head>
+<body>
+  <p class="no-print muted"><a href="index.html">← Review hub</a> · Print one-sided (Ctrl/Cmd+P)</p>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Autonomous Tracked Lunar Rover</h1>
+      <p class="muted" style="color:#bae6fd">NASA HUNCH LLASO · LLASO-P1-AMR-2026</p>
+      <p style="font-size:0.9rem;margin-top:8px">External cargo transport between lunar logistics modules and surface work sites — sized for Earth demo at 8&nbsp;kg gross, 25° slope, μ<sub>track</sub>≈0.65.</p>
+    </div>
+
+    <div class="grid2" style="margin-top:12px">
+      <div class="panel">
+        <h2>Team</h2>
+        <p><strong>School:</strong> [Your High School]</p>
+        <p><strong>Teacher:</strong> [Teacher Name]</p>
+        <p><strong>Leads:</strong> Sacheth (CAD/assembly), Ahrav (mechanical), Harshan (autonomy/software)</p>
+        <div class="grid2" style="grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px">
+          <img class="photo" src="../../../assets/team/sacheth.jpg" alt="Sacheth" />
+          <img class="photo" src="../../../assets/team/ahrav.jpg" alt="Ahrav" />
+          <img class="photo" src="../../../assets/team/harshan.png" alt="Harshan" />
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Main features</h2>
+        <ul style="font-size:0.88rem;line-height:1.35">
+          <li>6WD tracked skid-steer · JGB37-550 class motors (≥35&nbsp;kg·cm stall target)</li>
+          <li>Dual isolated 5&nbsp;V rails · Cytron MDD10A drive</li>
+          <li>LiDAR + camera fusion · digital twin + AEGIS mission control</li>
+          <li>PETG truss chassis · M3/M4 brass inserts</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h2>CAD (isometric assembly)</h2>
+        <p class="muted">Open interactive twin: <code>cad_model/rover_viewer.html</code></p>
+        <p class="muted">Meshes: chassis_truss, tracks, sensor_mast, ydlidar — URDF export.</p>
+      </div>
+      <div class="panel">
+        <h2>Demo &amp; data</h2>
+        <p class="muted">Sim: LOG TELEMETRY → CSV · metrics JSON</p>
+        <p><img class="qr" alt="QR sim" src="https://api.qrserver.com/v1/create-qr-code/?size=88x88&amp;data=http://127.0.0.1:8002/viewer.html" /></p>
+        <p class="muted">Video folder: <code>review/media/</code></p>
+      </div>
+    </div>
+
+    <p class="muted" style="text-align:center;margin-top:10px">Mission control: aegisv1.vercel.app · Full criteria map: review/CRITERIA_EVIDENCE.md</p>
+  </div>
+</body>
+</html>

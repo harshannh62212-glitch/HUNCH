@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Hunch — NASA HUNCH LLASO Launch Pad</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#07080d] text-slate-200 min-h-screen font-mono">
+  <div class="max-w-3xl mx-auto px-6 py-12 space-y-8">
+    <header>
+      <p class="text-cyan-400 text-xs tracking-[0.3em] font-bold">THE HUNCH · NASA HUNCH · LLASO</p>
+      <h1 class="text-3xl font-black text-white mt-2">Mission Launch Pad</h1>
+      <p class="text-sm text-slate-400 mt-2">Always use <strong class="text-white">http://127.0.0.1</strong> — not <code class="text-amber-300">file://</code>.</p>
+      <p class="text-[10px] text-cyan-500/80 mt-1">Surface sim build: <strong class="text-cyan-300">2026.09.27.1635</strong> (M4 sync + smooth nav)</p>
+    </header>
+
+    <section class="space-y-3">
+      <a href="viewer.html" class="block p-5 rounded-xl border border-purple-500/40 bg-purple-950/30 hover:bg-purple-900/40 transition">
+        <div class="text-lg font-bold text-purple-200">Surface Autopilot Sim</div>
+        <div class="text-xs text-slate-400 mt-1">A* + Pure Pursuit · pit guard · mastcam · optional VLM / ONNX · port 8002</div>
+      </a>
+      <a href="http://127.0.0.1:8003/rover_viewer.html" target="_blank" rel="noopener" class="block p-5 rounded-xl border border-amber-500/40 bg-amber-950/20 hover:bg-amber-900/30 transition">
+        <div class="text-lg font-bold text-amber-200">Tracked Rover CAD Twin</div>
+        <div class="text-xs text-slate-400 mt-1">High-fidelity OBJ assembly — serve <code class="text-slate-300">cad_model/</code> on port 8003</div>
+      </a>
+      <a href="viewer.html?mission=cargo" class="block p-5 rounded-xl border border-emerald-500/40 bg-emerald-950/20 hover:bg-emerald-900/30 transition">
+        <div class="text-lg font-bold text-emerald-200">ECTS Cargo Run (Project 1 → 2)</div>
+        <div class="text-xs text-slate-400 mt-1">Preset route: lunar logistics pallet zone · auto-engage AI nav</div>
+      </a>
+    </section>
+
+    <section class="text-xs text-slate-500 border-t border-slate-800 pt-6 space-y-2">
+      <p><span class="text-slate-400">Start server:</span> <code class="text-slate-300">python3 serve.py 8002</code></p>
+      <p><span class="text-slate-400">CAD server:</span> <code class="text-slate-300">cd ../nasa-hunch-rover/cad_model && python3 -m http.server 8003 --bind 127.0.0.1</code></p>
+      <p><span class="text-slate-400">Nav regression:</span> <code class="text-slate-300">python3 run_nav_scenarios.py</code></p>
+    </section>
+  </div>
+</body>
+</html>
