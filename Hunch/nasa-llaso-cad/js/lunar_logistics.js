@@ -19,7 +19,7 @@
   var GRIP_CLOSED = 0.018;
   var JOINT_SPEED = 0.75;
   var DECK_Y = 0.30;
-  var GRIP_SNAP_DIST = 0.10;      // Max grab distance before force-snap
+  var GRIP_SNAP_DIST = 0.025;     // Fingers must be on the handle. No force-lock.
   var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
 
   var manifest = null;
@@ -30,7 +30,19 @@
   var trips = 0;
   var phase = 'idle';
   var craneWaitT = 0;
-  var missionStats = { startT: 0, parcelsDelivered: 0, totalMassKg: 0, kwhUsed: 0 };
+  var missionStats = {
+    startT: 0,
+    parcelsDelivered: 0,
+    totalMassKg: 0,
+    kwhUsed: 0,
+    distanceM: 0,
+    whUsed: 0,
+    placementErrM: null,
+    lastX: null,
+    lastZ: null,
+    lastWh: null,
+    tracking: false
+  };
   var missionArmed = false;
   var landerLanded = true;
   var hatchOpen = 1.0;
@@ -54,6 +66,10 @@
   var groundY = 0;
   var landedCenterY = 0;
   var parkGap = { pick: 0.22, drop: 0.22 };
+  var PICK_ROVER_Z_NOM = -35.02;
+  var PICK_GAP_NOM = 0.22;
+  var DROP_ROVER_X_NOM = -19.68;
+  var DROP_GAP_NOM = 0.22;
   var reachWarned = false;
   var traj = null;
   var armMode = null;
@@ -61,6 +77,8 @@
   var crane = null;
   var _tip = new THREE.Vector3();
   var _grasp = new THREE.Vector3();
+  var _tipArm = new THREE.Vector3();
+  var _tipErr = new THREE.Vector3();
 
   function log(html) {
     if (typeof llog === 'function') llog(html);
@@ -144,9 +162,48 @@
     tableAnchor = new THREE.Object3D();
     tableAnchor.position.set(0.18, DECK_Y, 0);
     intake.add(tableAnchor);
+    buildAirlock(baseGroup, deckLift);
 
     crane = buildCrane(baseGroup);
     crane.root.position.y = deckLift;
+  }
+
+  function buildAirlock(parent, deckLift) {
+    var bom = window.NASA_RoverBOM;
+    var opening = bom && bom.airlock ? bom.airlock.openingM : 0.375;
+    var faceX = -20.13;
+    var faceZ = INTAKE.z;
+    window.AIRLOCK_FACE = { x: faceX, z: faceZ };
+    var wall = new THREE.Group();
+    wall.name = 'airlockWall';
+    wall.position.set(faceX - 0.04 - BASE.x, deckLift, faceZ - BASE.z);
+    var wallH = 1.6;
+    var wallW = 2.2;
+    var thick = 0.08;
+    var sideW = (wallW - opening) / 2;
+    var jamb = mat(0xd6d3d1, 0.55, 0.45);
+    box(thick, wallH, sideW, jamb, wall, 0, wallH * 0.5, -(opening * 0.5 + sideW * 0.5));
+    box(thick, wallH, sideW, jamb, wall, 0, wallH * 0.5, opening * 0.5 + sideW * 0.5);
+    var headerH = 0.42;
+    box(thick, headerH, opening, jamb, wall, 0, wallH - headerH * 0.5, 0);
+    var sillH = 0.28;
+    box(thick, sillH, opening, jamb, wall, 0, sillH * 0.5, 0);
+    var skirt = new THREE.Mesh(
+      new THREE.TorusGeometry(opening * 0.52, 0.018, 8, 24),
+      mat(0xf59e0b, 0.4, 0.35)
+    );
+    skirt.rotation.y = Math.PI / 2;
+    skirt.position.set(0.05, 0.78, 0);
+    wall.add(skirt);
+    box(0.55, 0.015, 0.55, mat(0x334155, 0.7, 0.2), wall, 0.42, 0.02, 0);
+    parent.add(wall);
+  }
+
+  function bumperGap() {
+    if (!roverGroup || !window.AIRLOCK_FACE || typeof roverYaw === 'undefined') return null;
+    var fx = roverGroup.position.x + Math.cos(roverYaw) * 0.45;
+    var fz = roverGroup.position.z + Math.sin(roverYaw) * 0.45;
+    return Math.hypot(fx - window.AIRLOCK_FACE.x, fz - window.AIRLOCK_FACE.z);
   }
 
   function buildCrane(parent) {
@@ -279,7 +336,8 @@
   }
 
   function makeParcelMesh(rec) {
-    var d = rec.dim_m || [0.43, 0.25, 0.25];
+    var pod = window.NASA_RoverBOM && NASA_RoverBOM.pod;
+    var d = pod ? [pod.lengthM, pod.widthM, pod.heightM] : (rec.dim_m || [0.43, 0.25, 0.25]);
     var h = d[2];
     var mesh = new THREE.Mesh(new THREE.BoxGeometry(d[0], h, d[1]), mat(parcelColor(rec.day_number), 0.78, 0.08));
     mesh.castShadow = true;
@@ -298,7 +356,7 @@
     bar.position.set(0, h * 0.5 + 0.038, 0);
     mesh.add(bar);
     var grasp = new THREE.Object3D();
-    grasp.position.set(0, h * 0.5, 0);
+    grasp.position.set(0, h * 0.5 + 0.038, 0);
     mesh.add(grasp);
     mesh.userData.grasp = grasp;
     return mesh;
@@ -370,25 +428,37 @@
 
   function approachDir() {
     if (phase === 'align_pick' || phase === 'arm_pick') {
+      var pickCloser = PICK_GAP_NOM - parkGap.pick;
       return {
         x: 0,
         z: 1,
         faceX: RACK.x,
         faceZ: -35.74,
         roverX: RACK.x,
-        roverZ: -35.02,
+        roverZ: PICK_ROVER_Z_NOM - pickCloser,
         yaw: Math.PI / 2
       };
     }
+    var dropCloser = DROP_GAP_NOM - parkGap.drop;
     return {
       x: 1,
       z: 0,
       faceX: INTAKE.x + 0.18,
       faceZ: INTAKE.z,
-      roverX: -19.68,
+      roverX: DROP_ROVER_X_NOM - dropCloser,
       roverZ: INTAKE.z,
       yaw: Math.PI
     };
+  }
+
+  function pickAlignOk() {
+    if (typeof roverGroup === 'undefined' || typeof roverYaw === 'undefined') return false;
+    var pose = parkPose();
+    var p = roverGroup.position;
+    var dist = Math.hypot(pose.x - p.x, pose.z - p.z);
+    var stopErr = Math.abs(wrap(pose.targetYaw - roverYaw));
+    var v = (typeof vel !== 'undefined') ? Math.abs(vel) : 0;
+    return dist < 0.12 && stopErr < 0.12 && v < 0.08;
   }
 
   function parkPose() {
@@ -397,8 +467,9 @@
   }
 
   function solveArm(local) {
-    var L1 = 0.26;
-    var L2 = 0.24;
+    var armNow = window.roverArm;
+    var L1 = (armNow && armNow.L1) || 0.26;
+    var L2 = (armNow && armNow.L2) || 0.24;
     var yaw = Math.atan2(-local.z, local.x);
     var planar = Math.hypot(local.x, local.z);
     var y = local.y;
@@ -443,6 +514,45 @@
     var wp = new THREE.Vector3();
     obj.getWorldPosition(wp);
     return armFrameLocal(wp);
+  }
+
+  function measureTipLocal() {
+    var arm = window.roverArm;
+    if (!arm || !arm.tip) return null;
+    arm.base.updateWorldMatrix(true, true);
+    arm.tip.getWorldPosition(_tipArm);
+    return armFrameLocal(_tipArm);
+  }
+
+  /** Adjust IK target so the gripper tip (not the shoulder pin) reaches desiredTipLocal. */
+  function localForTipTarget(desiredTipLocal) {
+    var arm = window.roverArm;
+    if (!arm || !arm.tip || !desiredTipLocal) return desiredTipLocal;
+    ensureTip();
+    var yaw0 = arm.base.rotation.y;
+    var sh0 = arm.shoulder.rotation.z;
+    var el0 = arm.elbow.rotation.z;
+    var g0 = gripGap();
+    var local = desiredTipLocal.clone();
+    for (var iter = 0; iter < 3; iter++) {
+      var sol = solveArm(local);
+      setJoints(yaw0 + wrap(sol.yaw - yaw0), sol.shoulder, sol.elbow, GRIP_OPEN);
+      arm.base.updateWorldMatrix(true, true);
+      var tipNow = measureTipLocal();
+      if (!tipNow) break;
+      _tipErr.subVectors(desiredTipLocal, tipNow);
+      if (_tipErr.length() < 0.004) break;
+      local.add(_tipErr);
+    }
+    setJoints(yaw0, sh0, el0, g0);
+    return local;
+  }
+
+  function ikAtTipTarget(desiredTipLocal, yawRef) {
+    var local = localForTipTarget(desiredTipLocal);
+    var sol = solveArm(local);
+    var yaw = (yawRef != null ? yawRef : 0) + wrap(sol.yaw - (yawRef != null ? yawRef : 0));
+    return { local: local, yaw: yaw, shoulder: sol.shoulder, elbow: sol.elbow, reachable: sol.reachable };
   }
 
   function ensureTip() {
@@ -495,11 +605,22 @@
         nextSh = 1.15;
         nextEl = -2.15;
       } else if (w.local) {
-        var sol = solveArm(w.local);
-        if (!sol.reachable) missed = true;
-        nextYaw = yaw + wrap(sol.yaw - yaw);
-        nextSh = sol.shoulder;
-        nextEl = sol.elbow;
+        var ik;
+        if (w.tipIk !== false) {
+          ik = ikAtTipTarget(w.local, yaw);
+        } else {
+          var solPlain = solveArm(w.local);
+          ik = {
+            yaw: yaw + wrap(solPlain.yaw - yaw),
+            shoulder: solPlain.shoulder,
+            elbow: solPlain.elbow,
+            reachable: solPlain.reachable,
+          };
+        }
+        if (!ik.reachable) missed = true;
+        nextYaw = ik.yaw;
+        nextSh = ik.shoulder;
+        nextEl = ik.elbow;
       } else {
         nextYaw = yaw;
       }
@@ -512,6 +633,8 @@
         g0: grip, g1: nextGrip,
         dur: dur,
         tag: w.tag || '',
+        retargetGrasp: !!w.retargetGrasp,
+        retargetPre: !!w.retargetPre,
       });
       yaw = nextYaw;
       sh = nextSh;
@@ -529,15 +652,52 @@
   function playTraj(dt) {
     if (!traj) return true;
     var seg = traj.segs[traj.i];
+    var endYaw = seg.yaw1;
+    var endSh = seg.sh1;
+    var endEl = seg.el1;
+    if (seg.retargetGrasp && picking && picking.userData.grasp) {
+      var tipWant = worldTarget(picking.userData.grasp);
+      if (seg.retargetPre) tipWant.y += 0.12;
+      var ikLive = ikAtTipTarget(tipWant, seg.yaw0);
+      endYaw = ikLive.yaw;
+      endSh = ikLive.shoulder;
+      endEl = ikLive.elbow;
+      seg.yaw1 = endYaw;
+      seg.sh1 = endSh;
+      seg.el1 = endEl;
+    }
     traj.t += dt;
     var u = quintic(Math.min(1, traj.t / seg.dur));
     setJoints(
-      seg.yaw0 + (seg.yaw1 - seg.yaw0) * u,
-      seg.sh0 + (seg.sh1 - seg.sh0) * u,
-      seg.el0 + (seg.el1 - seg.el0) * u,
+      seg.yaw0 + (endYaw - seg.yaw0) * u,
+      seg.sh0 + (endSh - seg.sh0) * u,
+      seg.el0 + (endEl - seg.el0) * u,
       seg.g0 + (seg.g1 - seg.g0) * u
     );
     if (traj.t < seg.dur) return false;
+    var nextSeg = traj.segs[traj.i + 1];
+    if (nextSeg && nextSeg.tag === 'close' && picking) {
+      var preDist = gripDist(picking);
+      window.__lastGripDist = preDist;
+      if (preDist > GRIP_SNAP_DIST) {
+        var fixIk = ikAtTipTarget(worldTarget(picking.userData.grasp), seg.yaw0 + (endYaw - seg.yaw0));
+        var arm = window.roverArm;
+        var cy = arm ? arm.base.rotation.y : endYaw;
+        var cs = arm ? arm.shoulder.rotation.z : endSh;
+        var ce = arm ? arm.elbow.rotation.z : endEl;
+        traj.segs.splice(traj.i + 1, 0, {
+          yaw0: cy, yaw1: fixIk.yaw,
+          sh0: cs, sh1: fixIk.shoulder,
+          el0: ce, el1: fixIk.elbow,
+          g0: GRIP_OPEN, g1: GRIP_OPEN,
+          dur: 0.35,
+          tag: '',
+          retargetGrasp: true,
+        });
+        traj.t = 0;
+        return false;
+      }
+    }
     var tag = seg.tag;
     traj.t = 0;
     traj.i += 1;
@@ -676,13 +836,13 @@
     if (!beltReady()) return;
     ensureTip();
     var mesh = belt[0];
-    var grasp = worldTarget(mesh.userData.grasp);
-    var pre = grasp.clone();
+    var graspTip = worldTarget(mesh.userData.grasp);
+    var pre = graspTip.clone();
     pre.y += 0.12;
     picking = mesh;
     gripRetry = 0;
     armMode = 'pick';
-    var lift = grasp.clone();
+    var lift = graspTip.clone();
     lift.y += 0.16;
     var slots = window.cargoBaySlots || [];
     var slot = slots[bay.length] || slots[0];
@@ -694,9 +854,10 @@
     var mid = new THREE.Vector3().addVectors(lift, raised).multiplyScalar(0.5);
     mid.y = Math.max(lift.y, raised.y) + 0.12;
     // Approach pre-grasp, then descend, close, lift with gentle arc, seat, release
+    window.__pickReach = +Math.hypot(graspTip.x, graspTip.y, graspTip.z).toFixed(3);
     buildTraj([
-      { local: pre, grip: GRIP_OPEN, dur: 0.55 },
-      { local: grasp, grip: GRIP_OPEN, dur: 0.45 },
+      { local: pre, grip: GRIP_OPEN, dur: 0.55, retargetGrasp: true, retargetPre: true },
+      { local: graspTip, grip: GRIP_OPEN, dur: 0.45, retargetGrasp: true },
       { grip: GRIP_CLOSED, dur: 0.4, tag: 'close' },
       { local: lift, grip: GRIP_CLOSED, dur: 0.5 },
       { local: mid, grip: GRIP_CLOSED },
@@ -762,22 +923,46 @@
     log('<span class="text-cyan-300">[ARM] Offloading ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + ' to intake table.</span>');
   }
 
-  function smoothAttach(parent, mesh) {
-    // Preserve world transform during reparent to prevent visual jump
+  function hideTies(mesh) {
+    var p = mesh && mesh.parent;
+    if (p && p.userData && p.userData.ties) {
+      p.userData.ties.forEach(function (t) { t.visible = false; });
+    }
+  }
+
+  function holdAtTip(mesh) {
+    var arm = window.roverArm;
+    if (!arm || !mesh) return;
+    var gr = arm.gripper || arm.wrist;
+    hideTies(mesh);
+    gr.attach(mesh);
+    var grasp = mesh.userData.grasp;
+    if (!grasp || !arm.tip) {
+      mesh.position.set(0.03, 0, 0);
+      mesh.rotation.set(0, 0, 0);
+      return;
+    }
+    gr.updateWorldMatrix(true, true);
+    var tipW = new THREE.Vector3();
+    var gW = new THREE.Vector3();
+    var mW = new THREE.Vector3();
+    arm.tip.getWorldPosition(tipW);
+    grasp.getWorldPosition(gW);
+    mesh.getWorldPosition(mW);
+    mW.add(tipW).sub(gW);
+    gr.worldToLocal(mW);
+    mesh.position.copy(mW);
+  }
+
+  function seatFlat(parent, mesh, y) {
     if (!parent || !mesh) return;
-    var wp = new THREE.Vector3();
-    var wq = new THREE.Quaternion();
-    mesh.getWorldPosition(wp);
-    mesh.getWorldQuaternion(wq);
-    if (parent.attach) {
-      parent.attach(mesh);
-    } else {
-      parent.add(mesh);
-      parent.updateWorldMatrix(true, false);
-      var inv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
-      wp.applyMatrix4(inv);
-      mesh.position.copy(wp);
-      mesh.quaternion.copy(wq);
+    hideTies(mesh);
+    parent.attach(mesh);
+    mesh.position.set(0, y || 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    mesh.quaternion.identity();
+    if (parent.userData && parent.userData.ties) {
+      parent.userData.ties.forEach(function (t) { t.visible = true; });
     }
   }
 
@@ -788,8 +973,7 @@
       var dist = mesh ? gripDist(mesh) : 99;
       window.__lastGripDist = dist;
       if (mesh && dist <= GRIP_SNAP_DIST) {
-        var gr = arm ? (arm.gripper || arm.wrist) : null;
-        smoothAttach(gr, mesh);
+        holdAtTip(mesh);
         held = mesh;
         if (tag === 'close') dropFromQueue(mesh);
         else {
@@ -801,15 +985,15 @@
         }
       } else if (mesh && gripRetry < GRIP_RETRY_MAX) {
         gripRetry += 1;
-        var again = worldTarget(mesh.userData.grasp);
+        var fixIk = ikAtTipTarget(worldTarget(mesh.userData.grasp), arm.base.rotation.y);
         var fix = {
           segs: [{
             yaw0: arm.base.rotation.y,
-            yaw1: arm.base.rotation.y + wrap(solveArm(again).yaw - arm.base.rotation.y),
+            yaw1: fixIk.yaw,
             sh0: arm.shoulder.rotation.z,
-            sh1: solveArm(again).shoulder,
+            sh1: fixIk.shoulder,
             el0: arm.elbow.rotation.z,
-            el1: solveArm(again).elbow,
+            el1: fixIk.elbow,
             g0: GRIP_OPEN,
             g1: GRIP_OPEN,
             dur: 0.5,
@@ -821,41 +1005,42 @@
           i: 0,
           t: 0,
         };
-        var sol = solveArm(again);
         fix.segs[1].yaw0 = fix.segs[0].yaw1;
         fix.segs[1].yaw1 = fix.segs[0].yaw1;
-        fix.segs[1].sh0 = sol.shoulder;
-        fix.segs[1].sh1 = sol.shoulder;
-        fix.segs[1].el0 = sol.elbow;
-        fix.segs[1].el1 = sol.elbow;
+        fix.segs[1].sh0 = fixIk.shoulder;
+        fix.segs[1].sh1 = fixIk.shoulder;
+        fix.segs[1].el0 = fixIk.elbow;
+        fix.segs[1].el1 = fixIk.elbow;
         if (traj) {
           fix.segs = fix.segs.concat(traj.segs.slice(traj.i));
         }
         traj = fix;
         log('<span class="text-amber-300">[ARM] Grip was ' + (dist * 100).toFixed(1) + ' cm off handle. Correction attempt ' + gripRetry + '/' + GRIP_RETRY_MAX + '.</span>');
       } else if (mesh) {
-        // Exceeded retry limit — force-lock to avoid infinite loop
-        var gr = arm ? (arm.gripper || arm.wrist) : null;
-        smoothAttach(gr, mesh);
-        held = mesh;
-        if (tag === 'close') dropFromQueue(mesh);
-        else {
-          var bi2 = bay.indexOf(mesh);
-          if (bi2 >= 0) bay.splice(bi2, 1);
-        }
-        log('<span class="text-emerald-300 font-bold">[ARM] Force-locked onto ' + mesh.userData.rec.id + ' after ' + GRIP_RETRY_MAX + ' corrections.</span>');
+        traj = null;
+        held = null;
+        gripRetry = 0;
+        phase = (tag === 'closeBay') ? 'align_drop' : 'align_pick';
+        log('<span class="text-amber-300">[ARM] Fingers missed the handle by ' + (dist * 100).toFixed(0) + ' cm. Cargo stays put.</span>');
       }
     } else if (tag === 'openBay' && held) {
       var slots = window.cargoBaySlots || [];
       var slot = slots[bay.length] || slots[0];
-      smoothAttach(slot, held);
+      seatFlat(slot, held, 0);
       bay.push(held);
       if (typeof window.noteCargoSeat === 'function') window.noteCargoSeat(held.userData.rec.mass_kg);
       log('<span class="text-emerald-300 font-bold">[ARM] Stowed ' + held.userData.rec.id + ' (' + held.userData.rec.mass_kg.toFixed(1) + ' kg, ' + (held.userData.rec.mass_kg * G_MOON).toFixed(1) + ' N lunar).</span>');
       held = null;
       picking = null;
     } else if (tag === 'openTable' && held) {
-      smoothAttach(tableAnchor, held);
+      if (tableAnchor) {
+        var target = new THREE.Vector3();
+        var now = new THREE.Vector3();
+        tableAnchor.getWorldPosition(target);
+        held.getWorldPosition(now);
+        missionStats.placementErrM = Math.hypot(now.x - target.x, now.y - target.y, now.z - target.z);
+      }
+      seatFlat(tableAnchor, held, halfH(held));
       tableParcel = held;
       missionStats.parcelsDelivered += 1;
       missionStats.totalMassKg += held.userData.rec.mass_kg;
@@ -1080,6 +1265,19 @@
     if (typeof startReturnToDock === 'function') startReturnToDock();
   }
 
+  function beginTracking(reset) {
+    if (reset || !missionStats.startT) {
+      missionStats.startT = Date.now();
+      missionStats.distanceM = 0;
+      missionStats.whUsed = 0;
+      missionStats.placementErrM = null;
+      missionStats.lastX = null;
+      missionStats.lastZ = null;
+      missionStats.lastWh = (typeof roverWh !== 'undefined') ? roverWh : null;
+    }
+    missionStats.tracking = true;
+  }
+
   function updateHud() {
     var bayEl = document.getElementById('log-bay');
     var depEl = document.getElementById('log-depot');
@@ -1094,6 +1292,22 @@
     if (haulEl) haulEl.textContent = String(haulerItems.length);
     if (tripEl) tripEl.textContent = String(trips);
     if (phaseEl) phaseEl.textContent = phase.replace(/_/g, ' ').toUpperCase();
+    var tEl = document.getElementById('m6-time');
+    var dEl = document.getElementById('m6-dist');
+    var wEl = document.getElementById('m6-wh');
+    var eEl = document.getElementById('m6-err');
+    var podEl = document.getElementById('pod-note');
+    if (tEl) {
+      var sec = missionStats.startT ? Math.max(0, (Date.now() - missionStats.startT) / 1000) : 0;
+      tEl.textContent = sec.toFixed(0) + ' s';
+    }
+    if (dEl) dEl.textContent = missionStats.distanceM.toFixed(1) + ' m';
+    if (wEl) wEl.textContent = missionStats.whUsed.toFixed(2) + ' Wh';
+    if (eEl) eEl.textContent = missionStats.placementErrM == null ? '—' : (missionStats.placementErrM * 100).toFixed(0) + ' cm';
+    if (podEl) {
+      var lunarN = (bayMass() + heldMass()) * G_MOON;
+      podEl.textContent = 'Pod 4×2 ft at 1:4 · ' + (bayMass() + heldMass()).toFixed(1) + ' kg · ' + lunarN.toFixed(1) + ' N lunar';
+    }
     if (bar) bar.style.width = Math.min(100, (depotMass() / (DEPOT_SLOTS * SLOT_CAP_KG)) * 100) + '%';
 
     var mKg = bayMass() + heldMass();
@@ -1165,12 +1379,16 @@
     craneBusy: function () { return !!(crane && (crane.job || crane.queue.length || tableParcel)); },
     jumps: function () { return window.__cargoJumps || []; },
     holdsDrive: function () { return phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait'; },
-    ownsGoal: function () { return phase === 'transit_lander' || phase === 'transit_base'; },
+    ownsGoal: function () { return phase === 'transit_lander' || phase === 'transit_base' || phase === 'transit_stage'; },
     onArrived: function () {
       if (typeof globalGoal !== 'undefined') globalGoal = null;
       if (typeof waypoint !== 'undefined') waypoint = null;
       if (phase === 'transit_lander') phase = 'align_pick';
       else if (phase === 'transit_base') phase = 'align_drop';
+      else if (phase === 'transit_stage') {
+        phase = 'idle';
+        log('<span class="text-emerald-300">[MISSION 1] Staging area reached. Clear of the landing zone.</span>');
+      }
     },
     driveOverride: function () {
       if (phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait') {
@@ -1188,15 +1406,23 @@
       var yawErr = wrap((useStop ? stopYaw : driveYaw) - roverYaw);
       var stopErr = wrap(stopYaw - roverYaw);
       var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
-      if (dist < 0.22 && Math.abs(stopErr) < 0.28) {
-        if (Math.abs(vel) < 0.06 || (dist < 0.14 && Math.abs(stopErr) < 0.18)) {
+      var pickAlign = phase === 'align_pick';
+      var distGate = pickAlign ? 0.14 : 0.22;
+      var yawGate = pickAlign ? 0.18 : 0.28;
+      var fineDist = pickAlign ? 0.08 : 0.14;
+      var fineYaw = pickAlign ? 0.10 : 0.18;
+      var velGate = pickAlign ? 0.05 : 0.06;
+      if (dist < distGate && Math.abs(stopErr) < yawGate) {
+        if (Math.abs(vel) < velGate || (dist < fineDist && Math.abs(stopErr) < fineYaw)) {
           phase = phase === 'align_pick' ? 'arm_pick' : 'arm_place';
           traj = null;
           armMode = null;
           gripRetry = 0;
           log(phase === 'arm_pick'
             ? '<span class="text-cyan-300 font-bold">[ARM] At the lander belt. Waiting on the handle.</span>'
-            : '<span class="text-cyan-300 font-bold">[ARM] At the intake table. Offloading cargo.</span>');
+            : '<span class="text-cyan-300 font-bold">[ARM] Bumper is ' +
+              ((bumperGap() != null) ? (bumperGap() * 100).toFixed(0) : '?') +
+              ' cm from the airlock face. Setting the pod in the receiving zone.</span>');
           return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
         }
         var doBrake = dist < 0.15 || Math.abs(vel) > 0.10;
@@ -1249,6 +1475,16 @@
       if (landerGroup && landerGroup.userData.light) landerGroup.userData.light.intensity = 6;
       log('<span class="text-amber-300 font-bold">[LANDER] Cargo module on descent to the south-east pad.</span>');
     },
+    missionDrive: function () {
+      wanderOn = false;
+      missionArmed = true;
+      beginTracking(false);
+      phase = 'transit_stage';
+      var stage = { x: 10, z: -28 };
+      log('<span class="text-cyan-300 font-bold">[MISSION 1] Leaving the landing zone for the staging area.</span>');
+      if (typeof queueMissionOrUndock === 'function') queueMissionOrUndock(stage.x, stage.z, 'LEAVE LZ');
+      else if (typeof launchMissionGoal === 'function') launchMissionGoal(stage.x, stage.z, 'LEAVE LZ');
+    },
     startMission: function () {
       wanderOn = false;
       missionArmed = true;
@@ -1257,6 +1493,7 @@
       missionStats.parcelsDelivered = 0;
       missionStats.totalMassKg = 0;
       missionStats.kwhUsed = 0;
+      beginTracking(true);
       if (!manifest) {
         log('<span class="text-amber-300">[LOGISTICS] Manifest pending; initializing defaults...</span>');
         initFallbackManifest();
@@ -1277,6 +1514,7 @@
     goToLander: function () {
       wanderOn = false;
       missionArmed = true;
+      beginTracking(false);
       if (!landerLanded && phase !== 'descent') api.deployLander();
       beginLeg('transit_lander');
       log('<span class="text-cyan-300 font-bold">[NAV] Routing to Commercial Cargo Lander staging pad.</span>');
@@ -1284,6 +1522,7 @@
     goToBase: function () {
       wanderOn = false;
       missionArmed = true;
+      beginTracking(false);
       beginLeg('transit_base');
       log('<span class="text-cyan-300 font-bold">[NAV] Routing to Artemis Lunar Base cargo intake deck.</span>');
     },
@@ -1291,20 +1530,28 @@
       finishOrHangar();
     },
     pickupCargo: function () {
+      beginTracking(false);
       var dLander = Math.hypot(roverGroup.position.x - RACK.x, roverGroup.position.z - RACK.z);
       if (dLander > 4.5) {
         log('<span class="text-amber-300">[ARM] Rover is ' + dLander.toFixed(1) + ' m from lander. Driving to lander first...</span>');
         api.goToLander();
         return;
       }
-      phase = 'arm_pick';
       traj = null;
       armMode = null;
       gripRetry = 0;
+      reachWarned = false;
+      if (!pickAlignOk()) {
+        phase = 'align_pick';
+        log('<span class="text-cyan-300">[ARM] Aligning to lander belt before pickup.</span>');
+        return;
+      }
+      phase = 'arm_pick';
       startPickSequence();
       log('<span class="text-emerald-400 font-bold">[ARM] Executing robotic arm pickup sequence.</span>');
     },
     dropCargo: function () {
+      beginTracking(false);
       if (!bay.length) {
         log('<span class="text-amber-300">[ARM] Cargo hopper is empty. Nothing to offload.</span>');
         return;
@@ -1378,6 +1625,21 @@
         if (hatchPivot) hatchPivot.rotation.x = -hatchOpen * 1.35;
       }
       spawnPlume(dt);
+      if (missionStats.tracking && roverGroup) {
+        var px = roverGroup.position.x;
+        var pz = roverGroup.position.z;
+        if (missionStats.lastX != null) {
+          missionStats.distanceM += Math.hypot(px - missionStats.lastX, pz - missionStats.lastZ);
+        }
+        missionStats.lastX = px;
+        missionStats.lastZ = pz;
+        if (typeof roverWh !== 'undefined') {
+          if (missionStats.lastWh == null) missionStats.lastWh = roverWh;
+          var used = missionStats.lastWh - roverWh;
+          if (used > 0) missionStats.whUsed += used;
+          missionStats.lastWh = roverWh;
+        }
+      }
       tickBelt(dt);
       tickCrane(dt);
       if (phase === 'crane_wait') {

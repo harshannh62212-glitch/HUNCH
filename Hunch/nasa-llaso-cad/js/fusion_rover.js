@@ -4,13 +4,13 @@
  * - Monocoque Polymaker Black PETG chassis with embossed "AEGIS" side flanks
  * - 6-wheel chevron locomotion with deep-dish rims & brass M3 lug nuts
  * - 3 transverse axle tubes underneath with central chassis mounting clamps
- * - 6 vertical wheel drop yokes & Greartisan 12V 100RPM 37mm gear motors
+ * - 6 vertical wheel drop yokes, 6 Traxxas-style shocks, 6 Greartisan 12V 100RPM 37mm motors
  * - Front deck articulated robotic arm with spherical shoulder & 2-prong claw
- * - Perception mast with spinning EC Buying YDLIDAR X2L 360° & stereo cameras
+ * - Perception mast with spinning EC Buying YDLIDAR X2L 360° & two Arducam OV5647 cameras
  * - Front face rectangular stereo perception aperture & round sensor port
  * - Recessed cargo hopper bed with standardized NASA HUNCH container
  * - Full internal avionics bay (GOLDENMATE 12V LiFePO4, Pi 5, Arduino Uno R3,
- *   Buck converter, Cytron MDD10A, 6x 3007 cooling fans).
+ *   Buck converter, Cytron MDD10A, 4x 3007 cooling fans in a front-to-rear duct).
  */
 (function (global) {
   var MESH_BASE = 'meshes/fusion_rover/';
@@ -411,9 +411,9 @@
       verticalStrut.castShadow = true;
       yoke.add(verticalStrut);
 
-      // Greartisan 37mm Motor Clamp Pod Collar
+      // Greartisan 37 mm motor clamp. Body diameter is 37 mm.
       var motorClamp = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.030, 0.030, 0.040, 18),
+        new THREE.CylinderGeometry(0.022, 0.022, 0.028, 18),
         matDarkAlloy
       );
       motorClamp.rotation.x = Math.PI / 2;
@@ -425,9 +425,9 @@
       clampBolt.position.set(0.020, 0.020, -sideSign * 0.054);
       yoke.add(clampBolt);
 
-      // Greartisan DC 12V 100RPM 37mm Gearbox (Silver)
+      // Greartisan DC 12V 100 RPM gearbox, 37 mm diameter, part of the 78 mm stack
       var gearbox = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.025, 0.025, 0.042, 20),
+        new THREE.CylinderGeometry(0.0185, 0.0185, 0.032, 20),
         matAlloy
       );
       gearbox.rotation.x = Math.PI / 2;
@@ -435,9 +435,9 @@
       gearbox.castShadow = true;
       yoke.add(gearbox);
 
-      // Greartisan Black DC Motor Can
+      // Greartisan black motor can. Gearbox plus can is about 78 mm.
       var motorCan = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.023, 0.023, 0.050, 20),
+        new THREE.CylinderGeometry(0.0185, 0.0185, 0.046, 20),
         matDarkAlloy
       );
       motorCan.rotation.x = Math.PI / 2;
@@ -459,6 +459,12 @@
       yoke.add(hexCoupler);
 
       wg.add(yoke);
+
+      // Lower shock eye on the axle. The damper itself is parented to the chassis.
+      var lowerEye = new THREE.Object3D();
+      lowerEye.name = 'axle-eye-' + wd.id;
+      lowerEye.position.set(0, 0, -sideSign * 0.02);
+      wg.add(lowerEye);
 
       // 6-Wheel Directional Chevron Grouser Tires & Rim Hubs
       var spinAxle = new THREE.Group();
@@ -511,10 +517,50 @@
       wheelGroups.push({
         group: wg,
         tire: tire,
+        lowerEye: lowerEye,
+        id: wd.id,
         localPos: new THREE.Vector3(wd.x, 0.09, wd.z),
         baseZ: wd.z
       });
     });
+
+    // Six dampers, eye-to-eye 90 mm at ride height. Upper eye is fixed on the tub.
+    var shockLinks = [];
+    wheelGroups.forEach(function (wgData) {
+      var lx = wgData.localPos.x;
+      var lz = wgData.localPos.z;
+      var sideSign = lz >= 0 ? 1 : -1;
+      var upperEye = new THREE.Object3D();
+      upperEye.position.set(lx, 0.18, lz - sideSign * 0.02);
+      root.add(upperEye);
+      var shock = new THREE.Group();
+      shock.name = 'shock-' + wgData.id;
+      var eyeTop = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0022, 6, 12), matAlloy);
+      eyeTop.position.y = 0.045;
+      var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0032, 0.0032, 0.09, 8), matAlloy);
+      var damper = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.05, 14), matWireRed);
+      damper.position.y = -0.01;
+      var eyeBot = new THREE.Mesh(new THREE.TorusGeometry(0.007, 0.002, 6, 12), matDarkAlloy);
+      eyeBot.position.y = -0.045;
+      shock.add(eyeTop, shaft, damper, eyeBot);
+      var coils = [];
+      for (var sc = 0; sc < 6; sc++) {
+        var coil = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.0018, 5, 12), matDarkAlloy);
+        coil.rotation.x = Math.PI / 2;
+        coil.position.y = -0.028 + sc * 0.008;
+        shock.add(coil);
+        coils.push(coil);
+      }
+      root.add(shock);
+      shockLinks.push({
+        shock: shock,
+        upper: upperEye,
+        lower: wgData.lowerEye,
+        rest: 0.09,
+        coils: coils
+      });
+    });
+    global.shockLinks = shockLinks;
 
     // =========================================================================
     // 5. INTERNAL AVIONICS BAY (VISIBLE IN EXPLODED VIEW)
@@ -528,277 +574,258 @@
     tray.position.set(0, 0, 0);
     internalsGroup.add(tray);
 
-    // (A) GOLDENMATE 12V 10Ah LiFePO4 Lithium Battery (128Wh)
+    // Straight duct, front (+X) to rear. Intake air hits the boards first.
+    // Battery sits low on the centerline, aft of the boards, under that stream.
+    var bom = global.NASA_RoverBOM;
+    var batSpec = bom ? bom.byId('battery') : null;
+    var piSpec = bom ? bom.byId('pi5') : null;
+    var unoSpec = bom ? bom.byId('uno') : null;
+    var buckSpec = bom ? bom.byId('buck') : null;
+    var drvSpec = bom ? bom.byId('driver') : null;
+    var fanSpec = bom ? bom.byId('fan') : null;
+
+    // (A) GOLDENMATE 12V 10Ah — 151 × 94 × 65 mm, low and centered
     var batGroup = new THREE.Group();
-    batGroup.position.set(-0.16, 0.070, -0.06);
+    batGroup.position.set(-0.06, 0.047, 0);
     internalsGroup.add(batGroup);
     var batMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.24, 0.130, 0.150),
+      new THREE.BoxGeometry(batSpec ? batSpec.size[0] : 0.151, batSpec ? batSpec.size[1] : 0.094, batSpec ? batSpec.size[2] : 0.065),
       new THREE.MeshStandardMaterial({ map: batTex, roughness: 0.35, metalness: 0.20 })
     );
     batMesh.castShadow = true;
     batGroup.add(batMesh);
-    var posPost = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.024, 12), matWireRed);
-    posPost.position.set(0.08, 0.075, 0.045);
-    var negPost = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.024, 12), matWireBlk);
-    negPost.position.set(0.08, 0.075, -0.045);
-    var batStrap = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.140, 0.165), matDarkAlloy);
+    var posPost = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.012, 10), matWireRed);
+    posPost.position.set(0.05, 0.050, 0.016);
+    var negPost = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.012, 10), matWireBlk);
+    negPost.position.set(0.05, 0.050, -0.016);
+    var batStrap = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.100, 0.070), matDarkAlloy);
     batGroup.add(posPost, negPost, batStrap);
 
-    // (B) SANOOV Raspberry Pi 5 4GB + Active Cooler
+    // (B) Pi 5 + kit active cooler, first in the intake stream
     var piGroup = new THREE.Group();
-    piGroup.position.set(0.16, 0.032, -0.09);
+    piGroup.position.set(0.18, 0.020, -0.05);
     internalsGroup.add(piGroup);
     var piPcb = new THREE.Mesh(
-      new THREE.BoxGeometry(0.156, 0.006, 0.102),
+      new THREE.BoxGeometry(piSpec ? piSpec.size[0] : 0.090, 0.006, piSpec ? piSpec.size[2] : 0.062),
       new THREE.MeshStandardMaterial({ map: piTex, roughness: 0.38, metalness: 0.30 })
     );
     piGroup.add(piPcb);
-    var coolerSink = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.024, 0.068), matAlloy);
-    coolerSink.position.set(-0.01, 0.028, 0);
+    var coolerSink = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.016, 0.040), matAlloy);
+    coolerSink.position.set(-0.008, 0.014, 0);
     piGroup.add(coolerSink);
-    // Radial Blower Fan
     var piBlower = new THREE.Group();
-    piBlower.position.set(0.01, 0.040, 0.01);
+    piBlower.position.set(0.012, 0.018, 0);
     var piRotor = new THREE.Group();
-    for (var pf = 0; pf < 9; pf++) {
-      var pBlade = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.004, 0.003), matDarkAlloy);
-      var pAng = (pf / 9) * Math.PI * 2;
-      pBlade.position.set(Math.cos(pAng) * 0.012, 0.002, Math.sin(pAng) * 0.012);
+    piRotor.userData.spin = 'y';
+    for (var pf = 0; pf < 7; pf++) {
+      var pBlade = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.003, 0.002), matDarkAlloy);
+      var pAng = (pf / 7) * Math.PI * 2;
+      pBlade.position.set(Math.cos(pAng) * 0.008, 0.002, Math.sin(pAng) * 0.008);
       pBlade.rotation.y = pAng;
       piRotor.add(pBlade);
     }
     piBlower.add(piRotor);
     piGroup.add(piBlower);
-    var usbPorts = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.028, 0.024), matArtemisBlue);
-    usbPorts.position.set(0.072, 0.028, -0.028);
+    var usbPorts = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.012, 0.014), matArtemisBlue);
+    usbPorts.position.set(0.040, 0.010, -0.016);
     piGroup.add(usbPorts);
 
-    // (C) Arduino Uno REV3 [A000066] ATmega328P
+    // (C) Arduino Uno REV3, beside the Pi in the same stream
     var unoGroup = new THREE.Group();
-    unoGroup.position.set(0.16, 0.026, 0.11);
+    unoGroup.position.set(0.16, 0.012, 0.07);
     internalsGroup.add(unoGroup);
     var unoMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.138, 0.006, 0.104),
+      new THREE.BoxGeometry(unoSpec ? unoSpec.size[0] : 0.0686, unoSpec ? unoSpec.size[1] : 0.015, unoSpec ? unoSpec.size[2] : 0.0534),
       new THREE.MeshStandardMaterial({ map: unoTex, roughness: 0.35, metalness: 0.25 })
     );
     unoGroup.add(unoMesh);
-    var usbBPort = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.020, 0.020), matAlloy);
-    usbBPort.position.set(-0.058, 0.012, -0.024);
-    var barrelJack = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.020, 0.016), matDarkAlloy);
-    barrelJack.position.set(-0.058, 0.012, 0.026);
-    var unoLed = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.004, 0.006), matGreenLed);
-    unoLed.position.set(-0.01, 0.005, -0.012);
+    var usbBPort = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.010, 0.012), matAlloy);
+    usbBPort.position.set(-0.028, 0.008, -0.012);
+    var barrelJack = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.010, 0.010), matDarkAlloy);
+    barrelJack.position.set(-0.028, 0.008, 0.012);
+    var unoLed = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.003, 0.004), matGreenLed);
+    unoLed.position.set(-0.004, 0.008, -0.006);
     unoGroup.add(usbBPort, barrelJack, unoLed);
 
-    // (D) YRDZXG 12V/24V to 5V 5A Buck Converter
+    // (D) Buck converter, downstream of the boards
     var buckGroup = new THREE.Group();
-    buckGroup.position.set(-0.15, 0.030, 0.13);
+    buckGroup.position.set(0.05, 0.014, 0.10);
     internalsGroup.add(buckGroup);
     var buckMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.11, 0.036, 0.068),
+      new THREE.BoxGeometry(buckSpec ? buckSpec.size[0] : 0.066, buckSpec ? buckSpec.size[1] : 0.018, buckSpec ? buckSpec.size[2] : 0.036),
       new THREE.MeshStandardMaterial({ map: buckTex, roughness: 0.35, metalness: 0.70 })
     );
     buckGroup.add(buckMesh);
-    for (var bf = -2; bf <= 2; bf++) {
-      var bFin = new THREE.Mesh(new THREE.BoxGeometry(0.114, 0.004, 0.072), matAlloy);
-      bFin.position.y = bf * 0.006;
+    for (var bf = -1; bf <= 1; bf++) {
+      var bFin = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.003, 0.038), matAlloy);
+      bFin.position.y = 0.012 + bf * 0.004;
       buckGroup.add(bFin);
     }
 
-    // (E) Cytron MDD10A Dual 10A Motor Driver Module
+    // (E) Motor driver, still in the duct, ahead of the battery
     var cytronGroup = new THREE.Group();
-    cytronGroup.position.set(0.00, 0.026, 0.00);
+    cytronGroup.position.set(0.04, 0.012, -0.11);
     internalsGroup.add(cytronGroup);
     var cytronPcb = new THREE.Mesh(
-      new THREE.BoxGeometry(0.095, 0.005, 0.065),
+      new THREE.BoxGeometry(drvSpec ? drvSpec.size[0] : 0.095, 0.005, drvSpec ? drvSpec.size[2] : 0.065),
       matArtemisBlue
     );
-    var cytronSink = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.022, 0.052), matDarkAlloy);
-    cytronSink.position.y = 0.012;
+    var cytronSink = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.014, 0.036), matDarkAlloy);
+    cytronSink.position.y = 0.010;
     cytronGroup.add(cytronPcb, cytronSink);
 
-    // 6x 3007 Brushless Chassis Ventilation Fans (Indices 0..5 in fanRotors)
-    [-1, 1].forEach(function (sideSign) {
-      [-0.22, 0.0, 0.22].forEach(function (fx) {
-        var fanGroup = new THREE.Group();
-        fanGroup.position.set(fx, 0.135, sideSign * 0.264);
-        var fFrame = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.072, 0.014), matDarkAlloy);
-        fanGroup.add(fFrame);
-        var fRotor = new THREE.Group();
-        var fHub = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.016, 12), matDarkAlloy);
-        fHub.rotation.x = Math.PI / 2;
-        fRotor.add(fHub);
-        for (var fb = 0; fb < 7; fb++) {
-          var blade = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.006, 0.003), matAlloy);
-          var bAng = (fb / 7) * Math.PI * 2;
-          blade.position.set(Math.cos(bAng) * 0.018, Math.sin(bAng) * 0.018, 0);
-          blade.rotation.z = bAng + 0.4;
-          blade.rotation.y = 0.45;
-          fRotor.add(blade);
-        }
-        fanGroup.add(fRotor);
-        fanRotors.push(fRotor); // Indices 0..5
-        root.add(fanGroup);
-      });
+    // 4× 30 mm fans on the avionics chamber only.
+    // Intakes on the front face. Exhausts on the side walls at the bulkhead, so the cargo bay is not the duct.
+    var fanFace = fanSpec ? fanSpec.size[0] : 0.030;
+    var fanThick = fanSpec ? fanSpec.size[2] : 0.007;
+    [
+      { role: 'intake', x: 0.43, y: 0.145, z: 0.06, rotY: -Math.PI / 2 },
+      { role: 'intake', x: 0.43, y: 0.145, z: -0.06, rotY: -Math.PI / 2 },
+      { role: 'exhaust', x: 0.08, y: 0.145, z: 0.26, rotY: 0 },
+      { role: 'exhaust', x: 0.08, y: 0.145, z: -0.26, rotY: Math.PI }
+    ].forEach(function (spot) {
+      var fanGroup = new THREE.Group();
+      fanGroup.position.set(spot.x, spot.y, spot.z);
+      fanGroup.rotation.y = spot.rotY;
+      var fFrame = new THREE.Mesh(new THREE.BoxGeometry(fanFace, fanFace, fanThick), matDarkAlloy);
+      fanGroup.add(fFrame);
+      var fRotor = new THREE.Group();
+      fRotor.userData.spin = 'z';
+      fRotor.userData.role = spot.role;
+      var fHub = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, fanThick + 0.002, 10), matDarkAlloy);
+      fHub.rotation.x = Math.PI / 2;
+      fRotor.add(fHub);
+      for (var fb = 0; fb < 7; fb++) {
+        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.003, 0.0015), matAlloy);
+        var bAng = (fb / 7) * Math.PI * 2;
+        blade.position.set(Math.cos(bAng) * 0.007, Math.sin(bAng) * 0.007, 0);
+        blade.rotation.z = bAng + 0.4;
+        fRotor.add(blade);
+      }
+      fanGroup.add(fRotor);
+      fanRotors.push(fRotor);
+      root.add(fanGroup);
     });
 
-    // Add Pi5 radial blower as index 6
     fanRotors.push(piRotor);
 
     // =========================================================================
-    // 6. UPPER CARAPACE & RECESSED CARGO HOPPER (Lifts smoothly on 'E' Exploded View)
+    // 6. TWO CHAMBERS — avionics lid lifts; cargo bay stays on the chassis
     // =========================================================================
     var upperShellGroup = new THREE.Group();
     root.add(upperShellGroup);
 
-    // Front Elevated Deck (Hosts Arm, Mast, and Perception Sensors)
-    var frontDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.060, 0.52),
+    // Avionics lid only. Shell-open lifts this group, not the cargo.
+    var avionicsLid = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.028, 0.50),
       matChassis
     );
-    frontDeck.position.set(0.25, 0.23, 0);
-    frontDeck.castShadow = true; frontDeck.receiveShadow = true;
-    upperShellGroup.add(frontDeck);
+    avionicsLid.position.set(0.20, 0.255, 0);
+    avionicsLid.castShadow = true;
+    upperShellGroup.add(avionicsLid);
+    var bulkhead = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.16, 0.50), matDarkAlloy);
+    bulkhead.position.set(0.0, 0.20, 0);
+    root.add(bulkhead);
 
-    // Recessed Cargo Hopper / Bed (Matching Template Images 1, 3, 4)
+    // Aft cargo chamber. Internal clear of two 305 × 152 × 152 mm pods by >= 15 mm.
+    var podSpec = global.NASA_RoverBOM && NASA_RoverBOM.pod;
+    var podH = podSpec ? podSpec.heightM : 0.152;
     var cargoBayGroup = new THREE.Group();
-    cargoBayGroup.position.set(-0.16, 0.20, 0);
-    upperShellGroup.add(cargoBayGroup);
-
-    // Ribbed Diamond Plate Bed Floor
-    var bayFloor = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.016, 0.42), matDarkAlloy);
+    cargoBayGroup.position.set(-0.22, 0.20, 0);
+    root.add(cargoBayGroup);
+    var bayFloor = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.012, 0.44), matDarkAlloy);
     bayFloor.receiveShadow = true;
     cargoBayGroup.add(bayFloor);
-
-    // Left, Right, Rear, and Front Perimeter Hopper Walls
-    var wallL = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.020), matChassis);
-    wallL.position.set(0, 0.062, 0.20);
-    var wallR = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.020), matChassis);
-    wallR.position.set(0, 0.062, -0.20);
-    var wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.12, 0.42), matChassis);
-    wallBack.position.set(-0.24, 0.062, 0);
-    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.12, 0.42), matChassis);
-    wallFront.position.set(0.24, 0.062, 0);
+    var wallL = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
+    wallL.position.set(0, 0.09, 0.212);
+    var wallR = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
+    wallR.position.set(0, 0.09, -0.212);
+    var wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
+    wallBack.position.set(-0.192, 0.09, 0);
+    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
+    wallFront.position.set(0.192, 0.09, 0);
     cargoBayGroup.add(wallL, wallR, wallBack, wallFront);
 
-    // Top Perimeter Containment Rails
-    var railL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.48, 8), matArtemisBlue);
-    railL.rotation.z = Math.PI / 2; railL.position.set(0, 0.125, 0.20);
-    var railR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.48, 8), matArtemisBlue);
-    railR.rotation.z = Math.PI / 2; railR.position.set(0, 0.125, -0.20);
-    cargoBayGroup.add(railL, railR);
-
-    // Standardized NASA HUNCH Lunar Logistics Container / Cask
-    var containerGroup = new THREE.Group();
-    containerGroup.position.set(0, 0.060, 0);
-    var caskBody = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.100, 0.20), matAlloy);
-    caskBody.castShadow = true;
-    var caskStripe = new THREE.Mesh(new THREE.BoxGeometry(0.244, 0.026, 0.204), matArtemisBlue);
-    var caskLatch = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.035, 0.016), matBrass);
-    caskLatch.position.set(0.122, 0, 0);
-    containerGroup.add(caskBody, caskStripe, caskLatch);
-    containerGroup.visible = false; // Initially empty until picked up from cargo lander
-    cargoBayGroup.add(containerGroup);
-    window.roverHopperContainer = containerGroup;
-
+    window.roverHopperContainer = null;
     window.cargoBaySlots = [];
-    [-0.14, 0.14].forEach(function (zSlot) {
+    var floorTop = 0.006;
+    [-0.088, 0.088].forEach(function (zSlot) {
       var slot = new THREE.Object3D();
-      slot.position.set(0, 0.04, zSlot);
+      slot.position.set(0, floorTop + podH * 0.5, zSlot);
       cargoBayGroup.add(slot);
+      var tieA = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.008, 0.012), matBrass);
+      tieA.position.set(0, podH * 0.5 + 0.01, 0.07);
+      var tieB = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.008, 0.012), matBrass);
+      tieB.position.set(0, podH * 0.5 + 0.01, -0.07);
+      tieA.visible = false;
+      tieB.visible = false;
+      slot.add(tieA, tieB);
+      slot.userData.ties = [tieA, tieB];
       window.cargoBaySlots.push(slot);
     });
 
     // =========================================================================
-    // 7. ARTICULATED ROBOTIC ARM WITH SPHERICAL SHOULDER & 2-PRONG CLAW (Images 1, 2, 5)
+    // 7. ARM — two straight links, same lengths solveArm uses (0.26 m, 0.24 m)
     // =========================================================================
+    var L1 = 0.26;
+    var L2 = 0.24;
     var armBase = new THREE.Group();
-    armBase.position.set(0.30, 0.26, 0.12);
-    upperShellGroup.add(armBase);
+    armBase.position.set(0.18, 0.30, 0.18);
+    root.add(armBase);
 
-    // Cylindrical Yaw Turret Base
-    var baseTurret = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.040, 0.024, 20), matDarkAlloy);
-    baseTurret.position.y = 0.012;
-    var baseBrassRing = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.006, 20), matBrass);
-    baseBrassRing.position.y = 0.026;
-    armBase.add(baseTurret, baseBrassRing);
+    var baseTurret = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.03, 16), matDarkAlloy);
+    baseTurret.position.y = 0.015;
+    armBase.add(baseTurret);
 
-    // Prominent Spherical Shoulder Ball Joint (Template Images 1, 2, 3!)
     var shoulder = new THREE.Group();
-    shoulder.position.set(0, 0.055, 0);
+    shoulder.position.set(0, 0.04, 0);
     armBase.add(shoulder);
 
-    var shoulderBall = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 24, 16),
-      matDarkAlloy
-    );
-    shoulderBall.castShadow = true;
-    shoulder.add(shoulderBall);
-
-    // Upper Arm Boom Link (Angled up and forward)
-    var upperArmLink = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.028, 0.028), matChassisTrim);
-    upperArmLink.position.set(0.10, 0.04, 0);
-    upperArmLink.rotation.z = 0.35;
+    var upperArmLink = new THREE.Mesh(new THREE.BoxGeometry(L1, 0.028, 0.028), matChassisTrim);
+    upperArmLink.position.set(L1 * 0.5, 0, 0);
     upperArmLink.castShadow = true;
     shoulder.add(upperArmLink);
 
-    // Hydraulic/Linear Actuator Cylinder along upper arm
-    var actuator = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.14, 12), matAlloy);
-    actuator.position.set(0.08, 0.018, 0);
-    actuator.rotation.z = 0.35;
-    shoulder.add(actuator);
-
-    // Elbow Dual-Shear Hinge Joint
     var elbow = new THREE.Group();
-    elbow.position.set(0.19, 0.075, 0);
+    elbow.position.set(L1, 0, 0);
     shoulder.add(elbow);
-
-    var elbowPin = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.036, 16), matBrass);
+    var elbowPin = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.036, 12), matBrass);
     elbowPin.rotation.x = Math.PI / 2;
     elbow.add(elbowPin);
 
-    // Forearm Link (Angled downward and forward)
-    var foreArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.024, 0.024), matChassisTrim);
-    foreArm.position.set(0.085, -0.045, 0);
-    foreArm.rotation.z = -0.55;
+    var foreArm = new THREE.Mesh(new THREE.BoxGeometry(L2, 0.024, 0.024), matChassisTrim);
+    foreArm.position.set(L2 * 0.5, 0, 0);
     foreArm.castShadow = true;
     elbow.add(foreArm);
 
-    // Wrist Pitch/Yaw Gimbal
     var wrist = new THREE.Group();
-    wrist.position.set(0.16, -0.095, 0);
+    wrist.position.set(L2, 0, 0);
     elbow.add(wrist);
-
-    var wristJoint = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.028, 12), matArtemisBlue);
-    wristJoint.rotation.x = Math.PI / 2;
-    wrist.add(wristJoint);
-
-    // Two-Prong Gripper Claw (End-Effector - Template Images 1, 2, 5!)
-    var gripperCrossbar = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.020, 0.130), matAlloy);
-    gripperCrossbar.position.set(0.015, 0, 0);
+    var gripperCrossbar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.016, 0.02), matAlloy);
     wrist.add(gripperCrossbar);
 
-    var fingerL = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.016, 0.016), matAlloy);
-    fingerL.position.set(0.052, 0, 0.052);
-    fingerL.castShadow = true;
-    var padL = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.012, 0.004), matDarkAlloy);
-    padL.position.set(0.052, 0, 0.043);
+    var fingerL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.01), matAlloy);
+    fingerL.position.set(0.03, 0, 0.055);
+    var padL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.008, 0.004), matDarkAlloy);
+    padL.position.set(0, 0, -0.007);
+    fingerL.add(padL);
+    var fingerR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.01), matAlloy);
+    fingerR.position.set(0.03, 0, -0.055);
+    var padR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.008, 0.004), matDarkAlloy);
+    padR.position.set(0, 0, 0.007);
+    fingerR.add(padR);
+    wrist.add(fingerL, fingerR);
 
-    var fingerR = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.016, 0.016), matAlloy);
-    fingerR.position.set(0.052, 0, -0.052);
-    fingerR.castShadow = true;
-    var padR = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.012, 0.004), matDarkAlloy);
-    padR.position.set(0.052, 0, -0.043);
-
-    wrist.add(fingerL, padL, fingerR, padR);
+    var tip = new THREE.Object3D();
+    tip.position.set(0.03, 0, 0);
+    wrist.add(tip);
 
     // =========================================================================
     // 8. PERCEPTION MAST WITH SPINNING EC BUYING YDLIDAR X2L 360° (Images 1, 2, 3, 4)
     // =========================================================================
     var mastGroup = new THREE.Group();
     mastGroup.position.set(0.28, 0.26, -0.14);
-    upperShellGroup.add(mastGroup);
+    root.add(mastGroup);
 
     // Black Anodized Mast Column
     var mastPole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.25, 20), matDarkAlloy);
@@ -833,21 +860,22 @@
       lidarHead.add(lOptic);
     });
 
-    // Forward Navigation Mastcam Module (Arducam 5MP OV5647)
-    var navCam = new THREE.Group();
-    navCam.position.set(0.044, 0.23, 0);
-    var camBezel = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.048, 0.048), matChassisTrim);
-    var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.018, 16), matLens);
-    camLens.rotation.z = Math.PI / 2;
-    camLens.position.x = 0.015;
-    navCam.add(camBezel, camLens);
-    mastGroup.add(navCam);
-
-    if (global.piCamera) {
-      navCam.add(global.piCamera);
-      global.piCamera.position.set(0.06, 0.01, 0);
-      global.piCamera.rotation.set(-0.16, -Math.PI / 2, 0);
-    }
+    // Stereo pair: two Arducam OV5647 boards, 25 × 24 mm
+    [-0.016, 0.016].forEach(function (cz, ci) {
+      var navCam = new THREE.Group();
+      navCam.position.set(0.046, 0.23, cz);
+      var camBoard = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.024, 0.004), matChassisTrim);
+      var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.007, 0.012, 14), matLens);
+      camLens.rotation.z = Math.PI / 2;
+      camLens.position.x = 0.008;
+      navCam.add(camBoard, camLens);
+      mastGroup.add(navCam);
+      if (ci === 0 && global.piCamera) {
+        navCam.add(global.piCamera);
+        global.piCamera.position.set(0.04, 0.01, 0);
+        global.piCamera.rotation.set(-0.16, -Math.PI / 2, 0);
+      }
+    });
 
     // =========================================================================
     // 9. FRONT FACE PERCEPTION APERTURES & HEADLIGHTS (Matching Template Image 2)
@@ -931,7 +959,10 @@
       wrist: wrist,
       gripper: wrist,
       fingerL: fingerL,
-      fingerR: fingerR
+      fingerR: fingerR,
+      tip: tip,
+      L1: L1,
+      L2: L2
     };
 
     return Promise.resolve(root);

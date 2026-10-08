@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NASA HUNCH Lunar Rover - CAD Autopilot Simulation</title>
+  <title>LLASO-P2-XPORT-2026 External Cargo Robot</title>
   <script>
     window.onerror = function(msg, url, line, col, error) {
       var errStr = '[CLIENT_ERROR] ' + msg + ' (' + url + ':' + line + ':' + col + ')' + (error ? ' ' + error.stack : '');
@@ -19,6 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/RoundedBoxGeometry.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="js/rover_bom.js"></script>
   <script src="js/fusion_rover.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
   <style>
@@ -34,13 +35,13 @@
     .blink-fast{animation:blinker .25s cubic-bezier(.5,0,1,1) infinite alternate}
     @keyframes blinker{0%{opacity:1}100%{opacity:.3}}
     ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(56,189,248,.5);border-radius:2px}
-    #picam-frame{position:absolute;bottom:24px;right:24px;width:320px;height:240px;border:2px solid rgba(56,189,248,.5);border-radius:12px;z-index:20;background:rgba(0,0,0,.6);overflow:hidden}
     #nav-map{cursor:crosshair;background:rgba(0,15,30,.9);border-radius:8px;border:1px solid rgba(56,189,248,.4)}
     #btn-hud-toggle{position:absolute;top:12px;left:12px;z-index:40}
-    #endurance-bar{position:absolute;top:12px;left:132px;z-index:40;display:flex;gap:6px;align-items:center}
-    #endurance-min{width:64px;background:#020617;color:#e2e8f0;border:1px solid rgba(56,189,248,.45);border-radius:6px;padding:4px 6px;font-size:11px}
-    #endurance-status{font-size:10px;color:#e2e8f0;max-width:420px}
+    #endurance-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    #endurance-min{width:52px;background:#020617;color:#e2e8f0;border:1px solid rgba(56,189,248,.45);border-radius:6px;padding:2px 4px;font-size:11px}
+    #endurance-status{font-size:10px;color:#94a3b8}
     #hud-panels.hud-hidden{display:none}
+    #picam-frame{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:200px;height:120px;border:1px solid rgba(56,189,248,.35);border-radius:10px;z-index:5;background:rgba(0,0,0,.55);overflow:hidden}
     .progress-bar-bg{background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.15);border-radius:4px;height:8px;overflow:hidden}
     .progress-fill{height:100%;transition:width .3s ease}
     .cam-btn{transition:all .2s;font-size:10px;padding:4px 8px;border-radius:6px;border:1px solid rgba(56,189,248,.3);background:rgba(0,0,0,.4)}
@@ -58,176 +59,172 @@
   <button id="btn-retry" class="px-8 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-lg transition shadow-[0_0_30px_rgba(220,38,38,.8)]">RESET SIMULATION</button>
 </div>
 
-<button id="btn-hud-toggle" class="cam-btn" onclick="toggleHud()">Show panels</button>
-<div id="endurance-bar">
-  <input id="endurance-min" type="number" min="1" max="240" value="60" title="Minutes of simulated driving" />
-  <button id="btn-endurance" class="cam-btn" type="button">RUN TEST</button>
-  <span id="endurance-status"></span>
-  <div class="w-px h-4 bg-slate-700 mx-1"></div>
-  <label for="rpm-input" class="text-[10px] text-cyan-300 font-mono font-bold tracking-wider cursor-pointer">RPM:</label>
-  <input id="rpm-input" type="number" min="10" max="600" step="5" value="100" class="cam-btn font-mono font-bold text-emerald-300 text-xs w-16 text-center outline-none focus:border-cyan-400" title="Variable Motor RPM (Controls rover max speed)" oninput="setRoverRPM(this.value)" onchange="setRoverRPM(this.value)" onkeydown="if(event.key==='Enter') this.blur()" />
-  <span id="rpm-speed-label" class="text-[10px] text-slate-300 font-mono">(0.94 m/s)</span>
+<button id="btn-hud-toggle" class="cam-btn" onclick="toggleHud()">Hide panels</button>
+<div id="hud-panels">
+<div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-2 glass rounded-2xl pointer-events-auto">
+  <select id="cam-select" onchange="setCamMode(this.value)" class="bg-black/80 border border-sky-500/40 rounded text-[10px] text-sky-100 px-2 py-1 font-mono outline-none">
+    <option value="chase" selected>Chase</option>
+    <option value="mast">Mast</option>
+    <option value="top">Top</option>
+    <option value="orbit">Orbit</option>
+  </select>
+  <button id="btn-explode-shell" class="cam-btn" onclick="toggleExplodeShell()">Shell</button>
+  <button id="btn-lights" class="cam-btn" onclick="toggleHeadlights()">Lights</button>
+  <button id="btn-audio" class="cam-btn" onclick="toggleAudio()">Audio</button>
+  <label for="rpm-input" class="text-[10px] text-slate-400 font-mono">RPM</label>
+  <input id="rpm-input" type="number" min="10" max="600" step="5" value="100" class="cam-btn font-mono text-emerald-300 text-xs w-14 text-center outline-none" title="Motor RPM" oninput="setRoverRPM(this.value)" onchange="setRoverRPM(this.value)" onkeydown="if(event.key==='Enter') this.blur()" />
+  <span id="rpm-speed-label" class="text-[10px] text-slate-400 font-mono">0.94 m/s</span>
 </div>
-<div id="hud-panels" class="hud-hidden">
-<!-- TOP HEADER -->
-<div class="absolute top-5 left-5 z-10 flex items-center p-3.5 glass rounded-2xl pointer-events-auto">
-  <div class="flex items-center space-x-3.5">
-    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-800 border border-blue-400/50 flex items-center justify-center text-white font-black text-lg shadow-lg">🚀</div>
+<div class="absolute top-16 left-3 w-[280px] glass rounded-2xl flex flex-col z-10 pointer-events-auto p-3 space-y-2 overflow-y-auto max-h-[calc(100dvh-76px)]">
+  <div class="flex justify-between items-center border-b border-sky-500/20 pb-1.5">
     <div>
-      <div class="flex items-center space-x-2.5 mb-0.5">
-        <span class="text-sm font-black text-white tracking-widest neon-text">NASA HUNCH LUNAR AUTOPILOT</span>
-        <span class="px-2 py-0.5 text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 rounded" id="sys-status">MANUAL MODE</span>
-      </div>
-      <div class="flex items-center space-x-3 text-[10px] text-slate-400 font-mono">
-        <span>WASD: Drive</span><span>&bull;</span><span>1-6: Views</span><span>&bull;</span><span>E: Explode Shell</span><span>&bull;</span><span>H: Lights</span><span>&bull;</span>
-        <span id="tailscale-badge" class="text-emerald-400 font-bold flex items-center"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse"></span>100.92.134.100</span>
-      </div>
+      <div class="text-[10px] font-black text-white tracking-wide whitespace-nowrap">LLASO-P2-XPORT-2026</div>
+      <div class="text-[9px] text-slate-500 font-mono">WASD drive · E shell</div>
     </div>
+    <span class="px-1.5 py-0.5 text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded" id="sys-status">MANUAL</span>
   </div>
-</div>
-<div class="absolute top-5 left-1/2 -translate-x-1/2 z-10 flex items-center p-2 glass rounded-2xl space-x-1.5 pointer-events-auto">
-  <span class="text-[9px] uppercase font-bold text-slate-400 px-2 tracking-wider">VIEW</span>
-  <button id="cam-chase" class="cam-btn active" onclick="setCamMode('chase')">1 CHASE</button>
-  <button id="cam-mast" class="cam-btn" onclick="setCamMode('mast')">2 MASTCAM</button>
-  <button id="cam-top" class="cam-btn" onclick="setCamMode('top')">3 SATELLITE</button>
-  <button id="cam-orbit" class="cam-btn" onclick="setCamMode('orbit')">4 CAD ORBIT</button>
-  <button id="cam-dock" class="cam-btn" onclick="setCamMode('dock')">5 DOCK</button>
-  <button id="cam-arm" class="cam-btn" onclick="setCamMode('arm')">6 ARM</button>
-  <button id="cam-side" class="cam-btn" onclick="setCamMode('side')">7 SIDE</button>
-  <button id="cam-front" class="cam-btn" onclick="setCamMode('front')">8 FRONT</button>
-  <button id="cam-base" class="cam-btn" onclick="setCamMode('base')">9 BASE</button>
-  <button id="cam-lander" class="cam-btn" onclick="setCamMode('lander')">0 LANDER</button>
-  <div class="w-px h-5 bg-slate-700 mx-1"></div>
-  <button id="btn-explode-shell" class="cam-btn" onclick="toggleExplodeShell()">🔧 EXPLODE (E)</button>
-  <button id="btn-lights" class="cam-btn" onclick="toggleHeadlights()">💡 LIGHTS</button>
-  <button id="btn-audio" class="cam-btn" onclick="toggleAudio()">🔊 AUDIO</button>
-</div>
-<div class="absolute top-24 left-5 w-[310px] glass rounded-2xl flex flex-col z-10 pointer-events-auto p-3.5 space-y-3 overflow-y-auto max-h-[calc(100dvh-120px)]">
-  <div class="flex justify-between items-center border-b border-purple-500/30 pb-2">
-    <h2 class="text-[11px] font-black text-purple-400 tracking-[.2em] flex items-center"><span class="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>TACTICAL AUTONOMY</h2>
+  <div class="flex justify-between items-center">
+    <span class="text-[9px] text-slate-500 font-mono">MAP</span>
     <span id="map-status" class="text-[10px] text-slate-400 font-mono">CLICK MAP</span>
   </div>
   <div class="space-y-1.5">
     <canvas id="nav-map" width="280" height="280" class="w-full h-auto rounded-lg shadow-inner"></canvas>
     <div class="flex justify-between text-[9px] text-slate-400 font-mono px-1"><span>GRID: 120m &bull; SECTOR ALPHA</span><span id="nav-dist-display">-- m</span></div>
   </div>
-  <div class="space-y-2 p-3 bg-purple-950/30 border border-purple-500/40 rounded-xl">
-    <div class="flex items-center justify-between"><span class="text-[10px] font-black tracking-widest text-purple-300">SYSTEM LOG</span><span id="auto-indicator" class="w-2 h-2 rounded-full bg-slate-500"></span></div>
-    <div class="flex items-center space-x-1.5">
-      <select id="llm-model-name" class="flex-1 bg-black/80 border border-purple-500/40 rounded text-[10px] text-purple-300 p-1.5 font-mono outline-none">
-        <option value="hunch-rover-nav:latest" selected>hunch-rover-nav:latest (Specialized Nav)</option>
-        <option value="llama3.2-vision">llama3.2-vision (VLM Camera)</option>
-        <option value="mistral-nemo:12b">mistral-nemo:12b</option>
-        <option value="llama3.2:3b">llama3.2:3b (Fast Local)</option>
-      </select>
-      <button id="btn-refresh-models" title="Refresh Models from Mac Mini" class="px-2 py-1 text-[10px] bg-purple-950/60 hover:bg-purple-800/80 border border-purple-500/40 rounded text-purple-300">🔄</button>
-    </div>
-    <div class="flex flex-wrap gap-1.5">
-      <button id="btn-autopilot" class="flex-1 min-w-[120px] px-3 py-1.5 border border-purple-500 bg-purple-600/30 hover:bg-purple-600/50 text-white rounded font-black text-[10px] tracking-wider">ENGAGE AI NAV</button>
-      <button id="btn-return-dock" class="px-3 py-1.5 border border-amber-500 bg-amber-600/30 hover:bg-amber-600/50 text-white rounded font-black text-[10px] tracking-wider">RTH</button>
-      <button id="btn-depart-dock" type="button" class="px-3 py-1.5 border border-lime-500/70 bg-lime-600/25 hover:bg-lime-600/40 text-white rounded font-black text-[10px] tracking-wider" title="Exit hangar (then set mission)">DEPART</button>
-    </div>
-    <div class="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-2">
-      <div class="flex items-center justify-between">
-        <span class="text-[9px] font-black tracking-widest text-emerald-300">CARGO MISSION CONTROL</span>
-        <span id="mission-status-tag" class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">READY</span>
-      </div>
-      <form id="mission-cmd-form" onsubmit="executeMissionTextCmd(event); return false;" class="flex space-x-1">
-        <input id="mission-cmd-input" type="text" placeholder="Type: 'cargo run', 'return to base', 'pick up'..." class="flex-1 bg-black/80 border border-emerald-500/40 rounded px-2 py-1 text-[9px] text-emerald-200 font-mono placeholder:text-slate-500 focus:outline-none focus:border-emerald-400" />
-        <button id="btn-mission-exec" type="submit" class="px-2.5 py-1 bg-emerald-600/80 hover:bg-emerald-500 text-white font-black text-[9px] rounded font-mono border border-emerald-400/60 shadow">EXEC</button>
-      </form>
-      <div class="grid grid-cols-3 gap-1">
-        <button id="btn-cargo-mission" type="button" class="px-1.5 py-1.5 border border-emerald-500/60 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-100 rounded font-bold text-[9px] transition">▶ CARGO RUN</button>
-        <button id="btn-arm-pickup" type="button" onclick="executeMissionTextCmd('pick up')" class="px-1.5 py-1.5 border border-cyan-500/60 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-100 rounded font-bold text-[9px] transition">🦾 PICK UP</button>
-        <button id="btn-arm-drop" type="button" onclick="executeMissionTextCmd('drop')" class="px-1.5 py-1.5 border border-teal-500/60 bg-teal-600/30 hover:bg-teal-600/50 text-teal-100 rounded font-bold text-[9px] transition">📦 DROP</button>
-        <button id="btn-go-base" type="button" onclick="executeMissionTextCmd('return to base')" class="px-1.5 py-1.5 border border-indigo-500/60 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-100 rounded font-bold text-[9px] transition">🏛️ BASE</button>
-        <button id="btn-go-lander" type="button" onclick="executeMissionTextCmd('return to lander')" class="px-1.5 py-1.5 border border-amber-500/60 bg-amber-600/30 hover:bg-amber-600/50 text-amber-100 rounded font-bold text-[9px] transition">🚀 LANDER</button>
-        <button id="btn-deploy-lander" type="button" class="px-1.5 py-1.5 border border-sky-500/60 bg-sky-600/30 hover:bg-sky-600/50 text-sky-100 rounded font-bold text-[9px] transition">🛬 TOUCHDOWN</button>
-      </div>
-      <div class="flex space-x-1">
-        <button id="btn-quick-mission" type="button" class="flex-1 px-2 py-1 border border-purple-500/50 bg-purple-600/20 text-purple-200 rounded font-bold text-[8px]">⚡ QUICK MISSION</button>
-        <button id="btn-mission-abort" type="button" onclick="executeMissionTextCmd('abort')" class="px-2 py-1 border border-rose-500/50 bg-rose-600/20 text-rose-200 rounded font-bold text-[8px]">🛑 ABORT</button>
-      </div>
-    </div>
-    <div class="flex flex-wrap gap-1.5">
-      <button id="btn-tel-toggle" type="button" class="flex-1 px-2 py-1.5 border border-blue-500/50 bg-blue-600/20 text-blue-100 rounded font-bold text-[9px]">● LOG TELEMETRY</button>
-      <button id="btn-tel-export" type="button" class="px-2 py-1.5 border border-blue-500/40 bg-blue-950/40 text-blue-200 rounded font-bold text-[9px]">CSV EXPORT</button>
-      <button id="btn-tel-metrics" type="button" class="px-2 py-1.5 border border-emerald-500/40 bg-emerald-950/40 text-emerald-200 rounded font-bold text-[9px]">METRICS JSON</button>
-    </div>
-    <div id="policy-version-tag" class="text-[8px] font-mono text-purple-400/80 px-1">Policy loading…</div>
-    <div id="sim-build-tag" class="text-[8px] font-mono text-cyan-500/75 px-1">SIM NAV · …</div>
-    <div class="relative rounded-lg overflow-hidden border border-purple-500/30 bg-black/80 p-1.5">
-      <div class="flex justify-between items-center text-[9px] font-mono text-purple-300 px-0.5 mb-1"><span>AI VISION STREAM</span><span id="ai-latency-badge" class="text-emerald-400 font-bold">READY</span></div>
-      <img id="ai-vision-thumb" class="w-full h-24 object-cover rounded bg-slate-950 border border-purple-500/20" alt="Live Mastcam View for AI" />
-    </div>
-    <div class="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/40 space-y-2">
-      <div class="flex items-center justify-between"><span class="text-[9px] font-black tracking-widest text-blue-300">HUMAN FLIGHT RECORDER</span><span id="rec-status-tag" class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">IDLE</span></div>
-      <div class="flex items-center justify-between text-[9px] font-mono text-slate-300"><span>Samples: <b id="rec-count" class="text-white">0</b></span><span>Duration: <b id="rec-time" class="text-white">0.0s</b></span></div>
-      <div class="flex space-x-1.5">
-        <button id="btn-rec-toggle" class="flex-1 px-2.5 py-1.5 border border-rose-500 bg-rose-600/30 text-white rounded font-bold text-[9px]"><span id="rec-btn-text">REC FLIGHT</span></button>
-        <button id="btn-rec-download" class="px-2.5 py-1.5 border border-blue-500/50 bg-blue-600/20 text-blue-200 rounded font-bold text-[9px]" disabled>💾 EXPORT</button>
-        <button id="btn-rec-clear" class="px-2 py-1.5 border border-slate-700 bg-slate-800/40 text-slate-400 rounded text-[9px]" title="Clear recorded frames">🗑️</button>
-      </div>
-    </div>
-    <div class="p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/50 space-y-2">
-      <div class="flex items-center justify-between"><span class="text-[9px] font-black tracking-widest text-purple-300">NEURAL IMITATION PILOT</span><span id="neural-status-tag" class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">STANDBY</span></div>
-      <div class="flex items-center justify-between text-[9px] font-mono text-slate-300"><span>Inference: <b id="neural-latency" class="text-emerald-400">-- ms</b></span><span>Steer/Thr: <b id="neural-act" class="text-cyan-300">0.0 / 0.0</b></span></div>
-      <button id="btn-neural-pilot" class="w-full px-2.5 py-1.5 border border-purple-400 bg-purple-600/30 text-white rounded font-bold text-[9px]">🧠 ENGAGE NEURAL PILOT</button>
-    </div>
-    <div class="bg-black/60 p-2 rounded text-[9px] font-mono text-slate-300 h-32 overflow-y-auto" id="llm-log">
-      <div class="text-purple-400">[SYS] NASA HUNCH Manual Teleoperation Online.</div>
-      <div class="text-cyan-400">[SYS] Mastcam runs before LiDAR for path context.</div>
-    </div>
+  <div class="flex flex-wrap gap-1">
+    <button id="btn-autopilot" class="flex-1 min-w-[88px] px-2 py-1.5 border border-purple-500 bg-purple-600/30 text-white rounded font-bold text-[10px]">AI NAV</button>
+    <button id="btn-depart-dock" type="button" class="px-2 py-1.5 border border-lime-500/70 bg-lime-600/20 text-white rounded text-[10px]">Depart</button>
+    <button id="btn-return-dock" class="px-2 py-1.5 border border-amber-500 bg-amber-600/20 text-white rounded text-[10px]">Charge</button>
+    <span id="auto-indicator" class="w-2 h-2 rounded-full bg-slate-500 self-center"></span>
   </div>
-</div>
-<div class="absolute top-5 right-5 w-[320px] glass rounded-2xl flex flex-col z-10 pointer-events-auto p-4 space-y-3 max-h-[calc(100dvh-300px)] overflow-y-auto">
-  <div class="flex justify-between items-center border-b border-emerald-500/30 pb-2">
-    <h2 class="text-[11px] font-black text-emerald-400 tracking-[.2em]">FLIGHT TELEMETRY</h2>
-    <span class="text-[9px] text-emerald-400/80 font-mono" id="ctrl-layer-tag">LAYER: MANUAL</span>
+  <div class="grid grid-cols-2 gap-1">
+    <button id="btn-m1-drive" type="button" class="px-2 py-1.5 border border-slate-600 bg-slate-800/60 text-slate-100 rounded text-[10px]">1 Drive</button>
+    <button id="btn-m2-approach" type="button" class="px-2 py-1.5 border border-slate-600 bg-slate-800/60 text-slate-100 rounded text-[10px]">2 Approach</button>
+    <button id="btn-m3-secure" type="button" class="px-2 py-1.5 border border-slate-600 bg-slate-800/60 text-slate-100 rounded text-[10px]">3 Secure</button>
+    <button id="btn-m4-haul" type="button" class="px-2 py-1.5 border border-slate-600 bg-slate-800/60 text-slate-100 rounded text-[10px]">4 Haul</button>
+    <button id="btn-m5-place" type="button" class="px-2 py-1.5 border border-slate-600 bg-slate-800/60 text-slate-100 rounded text-[10px]">5 Place</button>
+    <button id="btn-m6-cycle" type="button" class="px-2 py-1.5 border border-emerald-600/60 bg-emerald-700/30 text-emerald-100 rounded text-[10px]">6 Cycle</button>
   </div>
-  <div class="bg-black/60 rounded-xl p-2.5 border border-slate-800 flex items-center justify-between">
-    <canvas id="horizon-canvas" width="90" height="70" class="rounded-lg border border-slate-700 bg-slate-950"></canvas>
-    <div class="flex-1 ml-3 space-y-1 text-[10px] font-mono">
-      <div class="flex justify-between"><span class="text-slate-400">Heading:</span><span id="stat-heading" class="text-cyan-300 font-bold">000&deg; N</span></div>
-      <div class="flex justify-between"><span class="text-slate-400">Pitch:</span><span id="stat-pitch" class="text-slate-200">0.0&deg;</span></div>
-      <div class="flex justify-between"><span class="text-slate-400">Roll:</span><span id="stat-roll" class="text-slate-200">0.0&deg;</span></div>
-      <div class="flex justify-between"><span class="text-slate-400">G-Force:</span><span class="text-slate-300">0.166 g</span></div>
-    </div>
+  <form id="mission-cmd-form" onsubmit="executeMissionTextCmd(event); return false;" class="flex space-x-1">
+    <input id="mission-cmd-input" type="text" placeholder="Tell the rover: cap rpm at 40, haul the pod…" class="flex-1 bg-black/80 border border-emerald-500/40 rounded px-2 py-1 text-[10px] text-emerald-100 font-mono placeholder:text-slate-500 outline-none" />
+    <button id="btn-voice-cmd" type="button" class="px-2 py-1 border border-emerald-500/50 text-emerald-200 text-[10px] rounded" title="Speak a command">Mic</button>
+    <button id="btn-mission-exec" type="submit" class="px-2 py-1 bg-emerald-700 text-white text-[10px] rounded">Ask</button>
+  </form>
+  <div class="flex items-center justify-between">
+    <span id="mission-status-tag" class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">READY</span>
+    <button id="btn-mission-abort" type="button" onclick="executeMissionTextCmd('abort')" class="px-2 py-1 border border-rose-500/50 bg-rose-600/20 text-rose-200 rounded text-[10px]">Abort</button>
   </div>
-  <div class="bg-black/60 rounded-xl p-3 text-xs font-mono space-y-2 border border-slate-800">
-    <div class="flex justify-between items-center pb-1.5 border-b border-slate-800/80">
-      <div class="flex items-center space-x-1.5">
-        <label for="input-rpm-panel" class="text-slate-400 text-[10px] font-bold">Rated RPM:</label>
-        <span id="panel-max-spd" class="text-cyan-400 text-[10px]">(0.94 m/s)</span>
+  <details class="rounded-lg border border-slate-700/80 bg-black/30">
+    <summary class="cursor-pointer px-2 py-1.5 text-[10px] text-slate-400">Bench</summary>
+    <div class="p-2 space-y-2">
+      <div id="endurance-bar">
+        <input id="endurance-min" type="number" min="1" max="240" value="60" title="Minutes" />
+        <button id="btn-endurance" class="cam-btn" type="button">Run test</button>
+        <span id="endurance-status"></span>
       </div>
       <div class="flex items-center space-x-1">
-        <input id="input-rpm-panel" type="number" min="10" max="600" step="5" value="100" class="w-16 bg-slate-900 border border-emerald-500/50 focus:border-emerald-400 text-emerald-300 font-mono font-bold text-xs rounded px-1.5 py-0.5 text-right outline-none" title="Variable Motor RPM" oninput="setRoverRPM(this.value)" onchange="setRoverRPM(this.value)" onkeydown="if(event.key==='Enter') this.blur()" />
-        <span class="text-slate-400 text-[10px]">rpm</span>
+        <select id="llm-model-name" class="flex-1 bg-black/80 border border-slate-600 rounded text-[10px] text-slate-300 p-1 font-mono outline-none">
+          <option value="hunch-rover-nav:latest" selected>hunch-rover-nav</option>
+          <option value="llama3.2-vision">llama3.2-vision</option>
+          <option value="mistral-nemo:12b">mistral-nemo:12b</option>
+          <option value="llama3.2:3b">llama3.2:3b</option>
+        </select>
+        <button id="btn-refresh-models" title="Refresh models" class="px-2 py-1 text-[10px] border border-slate-600 rounded text-slate-300">Refresh</button>
+      </div>
+      <div class="hidden">
+        <button id="btn-cargo-mission" type="button">cargo</button>
+        <button id="btn-arm-pickup" type="button">pick</button>
+        <button id="btn-arm-drop" type="button">drop</button>
+        <button id="btn-go-base" type="button">base</button>
+        <button id="btn-go-lander" type="button">lander</button>
+        <button id="btn-deploy-lander" type="button">touchdown</button>
+        <button id="btn-quick-mission" type="button">quick</button>
+      </div>
+      <div class="flex flex-wrap gap-1">
+        <button id="btn-tel-toggle" type="button" class="px-2 py-1 border border-slate-600 text-slate-200 rounded text-[9px]">Log</button>
+        <button id="btn-tel-export" type="button" class="px-2 py-1 border border-slate-600 text-slate-200 rounded text-[9px]">CSV</button>
+        <button id="btn-tel-metrics" type="button" class="px-2 py-1 border border-slate-600 text-slate-200 rounded text-[9px]">Metrics</button>
+        <button id="btn-deploy-show" type="button" class="px-2 py-1 border border-slate-600 text-slate-200 rounded text-[9px]">Touchdown</button>
+      </div>
+      <div id="policy-version-tag" class="text-[8px] font-mono text-slate-500">Policy loading…</div>
+      <div id="sim-build-tag" class="text-[8px] font-mono text-slate-500">SIM NAV · …</div>
+      <img id="ai-vision-thumb" class="w-full h-16 object-cover rounded bg-slate-950" alt="Mastcam" />
+      <span id="ai-latency-badge" class="text-[8px] text-emerald-400 font-mono">READY</span>
+      <div class="flex items-center justify-between text-[9px] text-slate-400">
+        <span>Recorder <b id="rec-count" class="text-white">0</b> · <b id="rec-time" class="text-white">0.0s</b></span>
+        <span id="rec-status-tag" class="text-[8px]">IDLE</span>
+      </div>
+      <div class="flex gap-1">
+        <button id="btn-rec-toggle" class="px-2 py-1 border border-slate-600 text-white rounded text-[9px]"><span id="rec-btn-text">Record</span></button>
+        <button id="btn-rec-download" class="px-2 py-1 border border-slate-600 text-slate-300 rounded text-[9px]" disabled>Export</button>
+        <button id="btn-rec-clear" class="px-2 py-1 border border-slate-700 text-slate-400 rounded text-[9px]">Clear</button>
+      </div>
+      <div class="flex justify-between text-[9px] text-slate-400">
+        <span id="neural-status-tag">STANDBY</span>
+        <span><b id="neural-latency" class="text-emerald-400">-- ms</b> · <b id="neural-act" class="text-cyan-300">0 / 0</b></span>
+      </div>
+      <button id="btn-neural-pilot" class="w-full px-2 py-1 border border-slate-600 text-white rounded text-[9px]">Neural pilot</button>
+      <div class="bg-black/60 p-2 rounded text-[9px] font-mono text-slate-400 h-20 overflow-y-auto" id="llm-log">
+        <div>Manual drive online.</div>
       </div>
     </div>
-    <div class="flex justify-between"><span class="text-slate-400 text-[10px]">Speed:</span><span id="stat-spd" class="text-emerald-300 font-bold text-sm">0.00 m/s</span></div>
-    <div class="flex justify-between"><span class="text-slate-400 text-[10px]">Traction:</span><span id="stat-slip" class="text-emerald-300 font-bold text-[10px]">NOMINAL</span></div>
-    <div class="flex justify-between"><span class="text-slate-400 text-[10px]">Proximity:</span><span id="stat-prox" class="text-cyan-300 font-bold text-[10px]">CLEAR (&gt;8m)</span></div>
+  </details>
+</div>
+<div class="absolute top-16 right-3 w-[260px] glass rounded-2xl flex flex-col z-10 pointer-events-auto p-3 space-y-2 max-h-[calc(100dvh-76px)] overflow-y-auto">
+  <div class="flex justify-between items-center">
+    <span class="text-[10px] font-bold text-slate-300">Flight</span>
+    <span class="text-[9px] text-slate-500 font-mono" id="ctrl-layer-tag">MANUAL</span>
   </div>
-  <div class="bg-black/60 rounded-xl p-3 text-xs font-mono border border-slate-800 space-y-1.5">
-    <div class="flex justify-between text-[10px]"><span class="text-slate-400">GOLDENMATE LiFePO4 (128 Wh)</span><span id="txt-rover-bat" class="text-white font-bold">100.0%</span></div>
+  <div class="flex items-center gap-2 text-[10px] font-mono">
+    <canvas id="horizon-canvas" width="72" height="56" class="rounded border border-slate-700 bg-slate-950"></canvas>
+    <div class="flex-1 space-y-0.5">
+      <div class="flex justify-between"><span class="text-slate-500">Hdg</span><span id="stat-heading" class="text-cyan-300">000°</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">Pitch</span><span id="stat-pitch">0.0°</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">Roll</span><span id="stat-roll">0.0°</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">Speed</span><span id="stat-spd" class="text-emerald-300">0.00 m/s</span></div>
+    </div>
+  </div>
+  <div class="flex justify-between text-[10px] font-mono"><span class="text-slate-500">Traction</span><span id="stat-slip" class="text-emerald-300">NOMINAL</span></div>
+  <div class="flex justify-between text-[10px] font-mono"><span class="text-slate-500">Shock stroke</span><span id="shock-stroke" class="text-slate-200">0 mm</span></div>
+  <div class="flex justify-between text-[10px] font-mono"><span class="text-slate-500">Range</span><span id="stat-prox" class="text-cyan-300">CLEAR</span></div>
+  <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
+    <div class="flex justify-between"><span class="text-slate-500">Battery 128 Wh</span><span id="txt-rover-bat" class="text-white">100.0%</span></div>
     <div class="progress-bar-bg"><div id="bar-rover-bat" class="progress-fill bg-emerald-500" style="width:100%"></div></div>
-    <div class="flex justify-between text-[9px]"><span id="txt-pwr-source" class="text-slate-400">POWER: BATTERY ONLY</span><span id="txt-draw" class="text-amber-400 font-bold">DRAW: 15W</span></div>
+    <div class="flex justify-between"><span id="txt-pwr-source" class="text-slate-500">BATTERY</span><span id="txt-draw" class="text-amber-300">0 W</span></div>
   </div>
-  <div class="bg-black/60 rounded-xl p-3 text-[10px] font-mono border border-amber-500/30 space-y-1.5">
-    <div class="flex justify-between items-center"><span class="text-amber-300 font-black tracking-widest text-[9px]">LUNAR LOGISTICS</span><span id="log-phase" class="text-amber-200">IDLE</span></div>
-    <div class="flex justify-between text-slate-400"><span>Bay (2×2 ft)</span><span id="log-bay" class="text-white">0 / 0.0 kg</span></div>
-    <div class="flex justify-between text-slate-400"><span>Depot</span><span id="log-depot" class="text-white">0/12 · 0.0 kg</span></div>
+  <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
+    <div class="text-slate-400">Mass</div>
+    <div class="flex justify-between"><span class="text-slate-500">Curb</span><span id="mass-curb">—</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Payload</span><span id="mass-payload">0 kg</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Total</span><span id="mass-total">—</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">CoM xyz</span><span id="mass-com" class="text-right">—</span></div>
+  </div>
+  <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
+    <div class="text-slate-400">Earth air · 4 fans</div>
+    <div class="flex justify-between"><span class="text-slate-500">Intake</span><span id="cool-intake">22 °C</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Exhaust</span><span id="cool-exhaust">—</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Flow</span><span id="cool-flow">—</span></div>
+    <div class="text-[9px] text-slate-500">These fans do not convect on the Moon.</div>
+  </div>
+  <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
+    <div class="flex justify-between"><span class="text-slate-400">Mission 6</span><span id="log-phase" class="text-amber-200">IDLE</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Time</span><span id="m6-time">0 s</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Distance</span><span id="m6-dist">0 m</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Energy</span><span id="m6-wh">0 Wh</span></div>
+    <div class="flex justify-between"><span class="text-slate-500">Place error</span><span id="m6-err">—</span></div>
+    <div id="pod-note" class="text-[9px] text-slate-500">Pod 4×2 ft at 1:4</div>
+    <div class="flex justify-between text-slate-500"><span>Bay</span><span id="log-bay" class="text-slate-200">0 / 0.0 kg</span></div>
+    <div class="flex justify-between text-slate-500"><span>Depot</span><span id="log-depot" class="text-slate-200">0/12</span></div>
     <div class="progress-bar-bg"><div id="log-depot-bar" class="progress-fill bg-amber-500" style="width:0%"></div></div>
-    <div class="flex justify-between text-slate-400"><span>At lander</span><span id="log-lander" class="text-white">--</span></div>
-    <div class="flex justify-between text-slate-400"><span>Needs hauler</span><span id="log-hauler" class="text-white">--</span></div>
-    <div class="flex justify-between text-slate-400"><span>Trips</span><span id="log-trips" class="text-white">0</span></div>
-    <div class="flex justify-between text-slate-400"><span>Bekker Sink</span><span id="log-sink" class="text-amber-300 font-bold">1.25 cm</span></div>
-    <div class="flex justify-between text-slate-400"><span>Speed Scale</span><span id="log-speed-scale" class="text-cyan-300 font-bold">100%</span></div>
+    <div class="flex justify-between text-slate-500"><span>Lander</span><span id="log-lander">--</span></div>
+    <div class="flex justify-between text-slate-500"><span>Hauler</span><span id="log-hauler">--</span></div>
+    <div class="flex justify-between text-slate-500"><span>Trips</span><span id="log-trips">0</span></div>
+    <div class="flex justify-between text-slate-500"><span>Sink</span><span id="log-sink">—</span></div>
+    <div class="flex justify-between text-slate-500"><span>Speed</span><span id="log-speed-scale">100%</span></div>
   </div>
-  <div class="bg-black/60 rounded-xl p-2.5 text-[9px] font-mono border border-slate-800 grid grid-cols-3 gap-1 text-slate-400 text-center" id="lidar-debug">
+  <div class="text-[9px] font-mono grid grid-cols-3 gap-1 text-slate-500 text-center" id="lidar-debug">
     <div id="ld-FL">FL:--</div><div id="ld-F">F:--</div><div id="ld-FR">FR:--</div>
-    <div id="ld-L">L:--</div><div class="text-cyan-500 font-bold">LIDAR</div><div id="ld-R">R:--</div>
+    <div id="ld-L">L:--</div><div class="text-cyan-500">LiDAR</div><div id="ld-R">R:--</div>
     <div id="ld-BL">BL:--</div><div id="ld-B">B:--</div><div id="ld-BR">BR:--</div>
   </div>
 </div>
@@ -242,7 +239,7 @@
 <script src="js/nav_corridor_fusion.js"></script>
 <script src="js/telemetry_export.js"></script>
 <script>
-var SIM_BUILD = '2026.10.03.fusion-solid';
+var SIM_BUILD = '2026.10.07.bom-hud';
 (function () {
   var el = document.getElementById('sim-build-tag');
   if (el) el.textContent = 'SIM NAV · ' + SIM_BUILD;
@@ -1121,39 +1118,31 @@ dockGroup.add(roof);
   dockGroup.add(ledBar);
 });
 
-// 3. HQST 100W 12V 9BB Monocrystalline Solar Roof Array on Adjustable Aluminum Tilt-Strut Rack
-// Exact 31.8" x 27.5" x 1.18" aspect ratio scaled for dual/primary hangar roof array
+// HQST 100W panel at catalog size: 808 × 30 × 698 mm, about 6.5 kg.
+// It stays on the habitat dock. That mass is not in the rover curb weight.
+var solarSpec = (window.NASA_RoverBOM && NASA_RoverBOM.solar) ? NASA_RoverBOM.solar.size : [0.808, 0.030, 0.698];
 var solarRackGroup = new THREE.Group();
-solarRackGroup.position.set(-0.35, 1.56, 0);
+solarRackGroup.position.set(-0.15, 1.52, 0);
 dockGroup.add(solarRackGroup);
-
-// Anodized Aluminum Tilt Struts (front low, rear elevated toward sun)
-[-1.15, 0, 1.15].forEach(function(zs) {
-  var frontLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), matBayTrim);
-  frontLeg.position.set(1.35, 0.06, zs - 0.95);
-  var rearLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.48, 8), matBayTrim);
-  rearLeg.position.set(-1.35, 0.22, zs + 0.95);
-  var diagBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 2.8, 8), matBayDark);
-  diagBrace.position.set(0, 0.14, zs);
-  diagBrace.rotation.x = 0.14;
-  diagBrace.rotation.z = Math.PI / 2;
-  solarRackGroup.add(frontLeg, rearLeg, diagBrace);
+[-0.28, 0.28].forEach(function(zs) {
+  var frontLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.10, 8), matBayTrim);
+  frontLeg.position.set(0.32, 0.04, zs);
+  var rearLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), matBayTrim);
+  rearLeg.position.set(-0.32, 0.10, zs);
+  solarRackGroup.add(frontLeg, rearLeg);
 });
-
 var dockRoofSolar = new THREE.Group();
-dockRoofSolar.position.set(0, 0.24, 0);
-dockRoofSolar.rotation.x = -0.15; // Tilted toward solar incidence
+dockRoofSolar.position.set(0, 0.16, 0);
+dockRoofSolar.rotation.x = -0.22;
 solarRackGroup.add(dockRoofSolar);
-
-// Anodized 1.18-inch Aluminum Solar Frame + 9BB Monocrystalline Glass Laminate
-var solarFrame = new THREE.Mesh(new THREE.BoxGeometry(3.56, 0.07, 2.72), matBayTrim);
+var solarFrame = new THREE.Mesh(new THREE.BoxGeometry(solarSpec[0], solarSpec[1], solarSpec[2]), matBayTrim);
 solarFrame.castShadow = true;
 dockRoofSolar.add(solarFrame);
-var solarCellsMesh = new THREE.Mesh(new THREE.BoxGeometry(3.46, 0.076, 2.62), matDockSolar);
+var solarCellsMesh = new THREE.Mesh(new THREE.BoxGeometry(solarSpec[0] - 0.04, 0.008, solarSpec[2] - 0.04), matDockSolar);
+solarCellsMesh.position.y = 0.012;
 dockRoofSolar.add(solarCellsMesh);
-// Rear IP65 Junction Box & MC4 Solar Conduit
-var jBox = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 0.24), matBayDark);
-jBox.position.set(-1.4, -0.05, 0);
+var jBox = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.025, 0.06), matBayDark);
+jBox.position.set(-solarSpec[0] * 0.35, -0.02, 0);
 dockRoofSolar.add(jBox);
 
 // 4. Wall-Mounted HQST MPPT Solar Charge Controller & LiFePO4 BMS Telemetry Cabinet
@@ -5017,6 +5006,8 @@ function setCamMode(mode) {
   });
   var activeEl = document.getElementById('cam-' + mode);
   if (activeEl) activeEl.classList.add('active');
+  var camSelect = document.getElementById('cam-select');
+  if (camSelect && camSelect.value !== mode) camSelect.value = mode;
   controls.enabled = (mode === 'orbit' || mode === 'dock' || mode === 'side' || mode === 'front' || mode === 'base' || mode === 'lander');
   if (mode === 'orbit') {
     var rp = roverGroup.position;
@@ -5078,7 +5069,7 @@ function lunarSpeedCap(clearance) {
   var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
   return Math.max(0.88, Math.min(1, vStop / ms));
 }
-var ROVER_MASS_KG = 8.0;
+var ROVER_MASS_KG = (window.NASA_RoverBOM && NASA_RoverBOM.curbKg) ? NASA_RoverBOM.curbKg() : 6.39;
 // Two drive motors, ~3.4 N·m stall, 0.09 m wheel radius.
 var MOTOR_STALL_N = 76;
 function roverPayloadKg() {
@@ -5184,11 +5175,15 @@ function updatePhysics(dt) {
   var rpmInput = roverTargetRPM;
   activeMotor.maxSpeed = (rpmInput * 2 * Math.PI * 0.09) / 60;
 
-  // Spin YDLIDAR X2L Optical Turret & 3007 / Pi5 Brushless Cooling Fans
+  // Earth-air cooling. Two 1 CFM intakes set the flow. Lunar vacuum would not convect.
+  var airNow = (window.NASA_RoverBOM && NASA_RoverBOM.stepAir) ? NASA_RoverBOM.stepAir() : null;
+  var fanSpin = airNow ? airNow.spinRad : 18;
   lidarHead.rotation.y += 12 * dt;
   for (var fi2 = 0; fi2 < fanRotors.length; fi2++) {
-    if (fi2 === 6) fanRotors[fi2].rotation.y += 28 * dt; // Pi 5 Active Cooler radial blower
-    else fanRotors[fi2].rotation.z += 24 * dt;           // 6x 3007 chassis cooling fans
+    var rotor = fanRotors[fi2];
+    if (!rotor) continue;
+    if (rotor.userData && rotor.userData.spin === 'y') rotor.rotation.y += fanSpin * 1.35 * dt;
+    else rotor.rotation.z += fanSpin * dt;
   }
 
   // Smooth Exploded Upper PETG Armored Shell Cutaway Animation
@@ -5634,6 +5629,34 @@ function updatePhysics(dt) {
       wgData.group.position.y += ((0.09 + suspTravel) - wgData.group.position.y) * Math.min(1.0, 20.0 * dt);
     }
   }
+  if (window.shockLinks && window.shockLinks.length) {
+    var shockUp = new THREE.Vector3(0, 1, 0);
+    var maxStroke = 0;
+    for (var si = 0; si < window.shockLinks.length; si++) {
+      var link = window.shockLinks[si];
+      var parent = link.shock.parent;
+      if (!parent || !link.upper || !link.lower) continue;
+      var wa = new THREE.Vector3();
+      var wb = new THREE.Vector3();
+      link.upper.getWorldPosition(wa);
+      link.lower.getWorldPosition(wb);
+      var la = wa.clone();
+      var lb = wb.clone();
+      parent.worldToLocal(la);
+      parent.worldToLocal(lb);
+      var along = lb.clone().sub(la);
+      var len = along.length();
+      if (len < 0.02) len = 0.02;
+      along.multiplyScalar(1 / len);
+      link.shock.position.copy(la).add(lb).multiplyScalar(0.5);
+      link.shock.quaternion.setFromUnitVectors(shockUp, along);
+      link.shock.scale.set(1, len / (link.rest || 0.09), 1);
+      var stroke = Math.abs(len - (link.rest || 0.09));
+      if (stroke > maxStroke) maxStroke = stroke;
+    }
+    var strokeEl = document.getElementById('shock-stroke');
+    if (strokeEl) strokeEl.textContent = (maxStroke * 1000).toFixed(0) + ' mm';
+  }
 
   // Telemetry HUD updates
   var pitchDeg = (smoothPitch * 180 / Math.PI);
@@ -5714,7 +5737,7 @@ function updatePhysics(dt) {
   var pwrDrawEl = document.getElementById('txt-draw');
   if (pwrSrcEl && pwrDrawEl) {
     if (isDocked) {
-      pwrSrcEl.innerHTML = '<span class="text-emerald-400 font-bold">⚡ HANGAR SOLAR: +100W</span>';
+      pwrSrcEl.innerHTML = '<span class="text-emerald-400 font-bold">HQST 100W DOCK ARRAY</span>';
       pwrDrawEl.innerText = 'CHARGING (DOCK)';
       pwrDrawEl.className = 'text-emerald-300 font-bold';
     } else {
@@ -5724,6 +5747,28 @@ function updatePhysics(dt) {
     }
   } else if (pwrDrawEl) {
     pwrDrawEl.innerText = isDocked ? 'HQST SOLAR +100W' : ('DRAW: ' + drawW.toFixed(0) + 'W');
+  }
+
+  if (window.NASA_RoverBOM) {
+    var curbKg = NASA_RoverBOM.curbKg();
+    var payKg = roverPayloadKg();
+    var com = NASA_RoverBOM.com();
+    var curbEl = document.getElementById('mass-curb');
+    var payEl = document.getElementById('mass-payload');
+    var massEl = document.getElementById('mass-total');
+    var comEl = document.getElementById('mass-com');
+    if (curbEl) curbEl.textContent = curbKg.toFixed(2) + ' kg';
+    if (payEl) payEl.textContent = payKg.toFixed(2) + ' kg';
+    if (massEl) massEl.textContent = (curbKg + payKg).toFixed(2) + ' kg';
+    if (comEl) comEl.textContent = (com.x * 1000).toFixed(0) + ', ' + (com.y * 1000).toFixed(0) + ', ' + (com.z * 1000).toFixed(0) + ' mm';
+  }
+  if (airNow) {
+    var inEl = document.getElementById('cool-intake');
+    var outEl = document.getElementById('cool-exhaust');
+    var flowEl = document.getElementById('cool-flow');
+    if (inEl) inEl.textContent = airNow.intakeC.toFixed(1) + ' °C';
+    if (outEl) outEl.textContent = airNow.exhaustC.toFixed(1) + ' °C';
+    if (flowEl) flowEl.textContent = airNow.flowLs.toFixed(2) + ' L/s · ' + airNow.heatW.toFixed(1) + ' W';
   }
 
   roverGroup.updateMatrixWorld(true);
@@ -6006,37 +6051,25 @@ addEventListener('resize', function() {
   renderer.setSize(w, h);
 });
 
-function executeMissionTextCmd(arg) {
-  var cmd = '';
-  if (typeof arg === 'string') {
-    cmd = arg;
-  } else if (arg && arg.preventDefault) {
-    arg.preventDefault();
-    var inp = document.getElementById('mission-cmd-input');
-    cmd = inp ? inp.value : '';
-    if (inp) inp.value = '';
-  }
+function applyRoverCommand(cmd) {
   cmd = (cmd || '').trim().toLowerCase();
-  if (!cmd) return;
-
-  llog('<span class="text-emerald-400 font-bold">[CMD] &gt; ' + cmd.toUpperCase() + '</span>');
-  playBeep(650, 0.08);
-
+  if (!cmd) return false;
   if (!window.NASA_Logistics) {
     llog('<span class="text-rose-400 font-bold">[ERR] NASA Logistics subsystem initializing...</span>');
-    return;
+    return false;
   }
-
-  if (cmd.includes('cargo run') || cmd === 'run' || cmd === 'start' || cmd === 'mission' || cmd.includes('start cargo')) {
+  if (cmd.includes('cargo run') || cmd === 'run' || cmd === 'start' || cmd === 'mission' || cmd.includes('start cargo') || cmd.includes('cycle') || cmd.includes('mission 6')) {
     window.NASA_Logistics.startMission();
-  } else if (cmd.includes('pick') || cmd.includes('grab') || cmd.includes('lift')) {
-    window.NASA_Logistics.pickupCargo();
-  } else if (cmd.includes('drop') || cmd.includes('place') || cmd.includes('deliver') || cmd.includes('unload')) {
-    window.NASA_Logistics.dropCargo();
-  } else if (cmd.includes('base') || cmd.includes('habitat') || cmd.includes('depot')) {
-    window.NASA_Logistics.goToBase();
-  } else if (cmd.includes('lander') || cmd.includes('pad') || cmd.includes('rack')) {
+  } else if (cmd === 'drive' || cmd.includes('mission 1') || cmd.includes('staging') || cmd.includes('leave')) {
+    window.NASA_Logistics.missionDrive();
+  } else if (cmd.includes('approach') || cmd.includes('mission 2') || cmd.includes('lander') || cmd.includes('pad') || cmd.includes('rack')) {
     window.NASA_Logistics.goToLander();
+  } else if (cmd.includes('secure') || cmd.includes('mission 3') || cmd.includes('pick') || cmd.includes('grab') || cmd.includes('lift')) {
+    window.NASA_Logistics.pickupCargo();
+  } else if (cmd.includes('haul') || cmd.includes('mission 4') || cmd.includes('base') || cmd.includes('habitat') || cmd.includes('depot')) {
+    window.NASA_Logistics.goToBase();
+  } else if (cmd.includes('place') || cmd.includes('mission 5') || cmd.includes('drop') || cmd.includes('deliver') || cmd.includes('unload')) {
+    window.NASA_Logistics.dropCargo();
   } else if (cmd.includes('hangar') || cmd.includes('dock') || cmd.includes('rth') || cmd.includes('home')) {
     if (typeof startReturnToDock === 'function') startReturnToDock();
   } else if (cmd.includes('abort') || cmd.includes('cancel') || cmd.includes('stop')) {
@@ -6044,10 +6077,171 @@ function executeMissionTextCmd(arg) {
   } else if (cmd.includes('deploy') || cmd.includes('touchdown')) {
     window.NASA_Logistics.deployLander();
   } else {
-    llog('<span class="text-amber-300">[CMD] Unrecognized instruction. Available: "cargo run", "pick up", "drop", "return to base", "return to lander", "return to hangar", "abort".</span>');
+    return false;
+  }
+  return true;
+}
+
+function applyAiCommand(parsed, spoken) {
+  if (!parsed || !parsed.action || parsed.action === 'none') {
+    if (!applyRoverCommand(spoken)) {
+      llog('<span class="text-amber-300">[AI] No rover command in that. Try “cap rpm at 40” or “haul the pod”.</span>');
+    }
+    return;
+  }
+  var action = String(parsed.action).toLowerCase();
+  if (action === 'rpm') {
+    var rpm = parseFloat(parsed.rpm);
+    if (!isNaN(rpm)) {
+      setRoverRPM(rpm);
+      llog('<span class="text-emerald-300">[AI] RPM capped at ' + roverTargetRPM + '.</span>');
+    } else if (!applyRoverCommand(spoken)) {
+      llog('<span class="text-amber-300">[AI] Say a number with the rpm cap.</span>');
+    }
+    return;
+  }
+  if (action === 'lights_on' || action === 'lights_off') {
+    var wantOn = action === 'lights_on';
+    var lampOn = headlights && headlights[0] && headlights[0].visible;
+    if (lampOn !== wantOn && typeof toggleHeadlights === 'function') toggleHeadlights();
+    llog('<span class="text-emerald-300">[AI] Lights ' + (wantOn ? 'on' : 'off') + '.</span>');
+    return;
+  }
+  if (action === 'shell') {
+    if (typeof toggleExplodeShell === 'function') toggleExplodeShell();
+    return;
+  }
+  if (action === 'autopilot_on' || action === 'autopilot_off') {
+    var btn = document.getElementById('btn-autopilot');
+    if (btn) btn.click();
+    return;
+  }
+  var alias = {
+    cycle: 'cycle', drive: 'drive', approach: 'approach', secure: 'secure',
+    haul: 'haul', place: 'place', abort: 'abort', hangar: 'hangar',
+    touchdown: 'touchdown', pickup: 'pick up', drop: 'drop'
+  };
+  if (!applyRoverCommand(alias[action] || action)) {
+    llog('<span class="text-amber-300">[AI] ' + (parsed.note || 'Could not run that.') + '</span>');
+  }
+}
+
+function localCommandGuess(text) {
+  var t = (text || '').toLowerCase();
+  var rpm = t.match(/(?:cap|limit|set|max)?\s*rpm\s*(?:at|to|of|=)?\s*(\d+(?:\.\d+)?)/);
+  if (!rpm) rpm = t.match(/(\d+(?:\.\d+)?)\s*rpm/);
+  if (rpm) return { action: 'rpm', rpm: parseFloat(rpm[1]), note: 'local' };
+  return null;
+}
+
+async function askCommandAI(text) {
+  var spoken = (text || '').trim();
+  if (!spoken) return;
+  llog('<span class="text-emerald-400 font-bold">[CMD] &gt; ' + spoken + '</span>');
+  playBeep(650, 0.08);
+  var local = localCommandGuess(spoken);
+  var ollamaBase = (typeof NASA_Autonomy !== 'undefined') ? NASA_Autonomy.getOllamaBase() : null;
+  if (!ollamaBase) {
+    if (local) applyAiCommand(local, spoken);
+    else applyAiCommand(null, spoken);
+    return;
+  }
+  var modelSelect = document.getElementById('llm-model-name');
+  var modelName = (modelSelect && modelSelect.value) ? modelSelect.value : 'hunch-rover-nav:latest';
+  var prompt = 'You are the rover operator interface. Turn one spoken order into one command.\n'
+    + 'Order: "' + spoken.replace(/"/g, "'") + '"\n'
+    + 'Current RPM cap: ' + roverTargetRPM + '.\n'
+    + 'Reply JSON only: {"action":"cycle|drive|approach|secure|haul|place|abort|hangar|touchdown|pickup|drop|rpm|lights_on|lights_off|shell|autopilot_on|autopilot_off|none","rpm":number or null,"note":"short"}\n'
+    + 'Use rpm when they cap, limit, or set motor speed. Put the number in rpm.';
+  try {
+    var res = await fetch(ollamaBase + '/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: modelName,
+        prompt: prompt,
+        stream: false,
+        format: 'json',
+        options: { temperature: 0.1, num_predict: 80 }
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    var parsed = JSON.parse(data.response);
+    if (local && (!parsed || parsed.action === 'none' || (parsed.action === 'rpm' && parsed.rpm == null))) {
+      parsed = local;
+    }
+    llog('<span class="text-cyan-300">[AI] ' + (parsed.note || parsed.action) + '</span>');
+    applyAiCommand(parsed, spoken);
+  } catch (err) {
+    llog('<span class="text-amber-300">[AI] Model offline (' + err.message + '). Using the local reader.</span>');
+    if (local) applyAiCommand(local, spoken);
+    else applyAiCommand(null, spoken);
+  }
+}
+
+function executeMissionTextCmd(arg) {
+  if (arg && arg.preventDefault) {
+    arg.preventDefault();
+    var inp = document.getElementById('mission-cmd-input');
+    var typed = inp ? inp.value : '';
+    if (inp) inp.value = '';
+    askCommandAI(typed);
+    return;
+  }
+  var cmd = (typeof arg === 'string' ? arg : '').trim().toLowerCase();
+  if (!cmd) return;
+  llog('<span class="text-emerald-400 font-bold">[CMD] &gt; ' + cmd.toUpperCase() + '</span>');
+  playBeep(650, 0.08);
+  if (!applyRoverCommand(cmd)) {
+    llog('<span class="text-amber-300">[CMD] Unrecognized button command.</span>');
   }
 }
 window.executeMissionTextCmd = executeMissionTextCmd;
+
+var voiceBtn = document.getElementById('btn-voice-cmd');
+if (voiceBtn) {
+  voiceBtn.onclick = function () {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      llog('<span class="text-amber-300">[AI] This browser has no speech recognition. Type the order instead.</span>');
+      return;
+    }
+    var rec = new SR();
+    rec.lang = 'en-US';
+    rec.onresult = function (ev) {
+      var said = ev.results[0][0].transcript;
+      var box = document.getElementById('mission-cmd-input');
+      if (box) box.value = said;
+      askCommandAI(said);
+    };
+    rec.onerror = function () {
+      llog('<span class="text-amber-300">[AI] Mic did not catch that.</span>');
+    };
+    voiceBtn.textContent = '…';
+    rec.onend = function () { voiceBtn.textContent = 'Mic'; };
+    rec.start();
+    llog('<span class="text-cyan-300">[AI] Listening.</span>');
+  };
+}
+
+[
+  ['btn-m1-drive', 'drive'],
+  ['btn-m2-approach', 'approach'],
+  ['btn-m3-secure', 'secure'],
+  ['btn-m4-haul', 'haul'],
+  ['btn-m5-place', 'place'],
+  ['btn-m6-cycle', 'cycle']
+].forEach(function (pair) {
+  var el = document.getElementById(pair[0]);
+  if (el) el.onclick = function () { executeMissionTextCmd(pair[1]); };
+});
+var touchdownBtn = document.getElementById('btn-deploy-show');
+if (touchdownBtn) {
+  touchdownBtn.onclick = function () {
+    if (window.NASA_Logistics) NASA_Logistics.deployLander();
+  };
+}
 
 if (document.getElementById('btn-quick-mission')) {
   document.getElementById('btn-quick-mission').onclick = engageQuickMission;
