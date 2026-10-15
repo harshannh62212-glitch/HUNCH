@@ -9,6 +9,7 @@ DEST="harshan@192.168.1.27:/home/harshan/hunch_telemetry_sync"
 # Use rsync to only push updated data efficiently
 rsync -avz --update \
   "$SOURCE_DIR/rover_actions.log" \
+  "$SOURCE_DIR/battery_telemetry.jsonl" \
   "$SOURCE_DIR/dataset_latest.json" \
   "$SOURCE_DIR/lunar_logistics_manifest.json" \
   "$DEST/"

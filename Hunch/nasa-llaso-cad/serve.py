@@ -53,14 +53,19 @@ class ReliableHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(resp)
             return
-        if self.path == '/api/log' or self.path == '/api/navstudy':
+        if self.path in ('/api/log', '/api/navstudy', '/api/battery'):
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length > 200000:
                 self.send_error(413, "Payload too large")
                 return
             post_data = self.rfile.read(content_length)
             msg = post_data.decode('utf-8', errors='ignore').replace('\n', ' ').strip()
-            name = 'nav_study.jsonl' if self.path == '/api/navstudy' else 'rover_actions.log'
+            if self.path == '/api/navstudy':
+                name = 'nav_study.jsonl'
+            elif self.path == '/api/battery':
+                name = 'battery_telemetry.jsonl'
+            else:
+                name = 'rover_actions.log'
             with open(name, 'a') as f:
                 f.write(msg + '\n')
             resp = b'{"status":"ok"}'

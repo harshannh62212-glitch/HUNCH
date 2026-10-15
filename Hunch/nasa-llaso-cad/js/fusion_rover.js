@@ -235,11 +235,19 @@
     var fanRotors = [];
     var headlights = [];
 
+    var bomDims = global.NASA_RoverBOM;
+    var chSpec = bomDims ? bomDims.byId('chassis') : null;
+    var CH_L = chSpec ? chSpec.size[0] : 0.6096;
+    var CH_H = chSpec ? chSpec.size[1] : 0.14;
+    var CH_W = chSpec ? chSpec.size[2] : 0.6096;
+    var dX = bomDims && bomDims.dX ? bomDims.dX : function (v) { return v * (CH_L / 0.86); };
+    var dZ = bomDims && bomDims.dZ ? bomDims.dZ : function (v) { return v * (CH_W / 0.52); };
+
     // =========================================================================
-    // 1. LOWER MONOCOQUE CHASSIS TUB & UNDERBODY SKID (Template Images 1, 2, 3, 5)
+    // 1. LOWER MONOCOQUE CHASSIS TUB & UNDERBODY SKID (2 ft × 2 ft planform)
     // =========================================================================
     var lowerTub = new THREE.Mesh(
-      new THREE.BoxGeometry(0.86, 0.14, 0.52),
+      new THREE.BoxGeometry(CH_L, CH_H, CH_W),
       matChassis
     );
     lowerTub.position.set(0, 0.13, 0);
@@ -247,16 +255,16 @@
     root.add(lowerTub);
 
     // Front & Rear Underbody Approach Skid Plates
-    var frontSkid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, 0.48), matAlloy);
-    frontSkid.position.set(0.42, 0.065, 0); frontSkid.rotation.z = 0.36;
+    var frontSkid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, dZ(0.48)), matAlloy);
+    frontSkid.position.set(dX(0.42), 0.065, 0); frontSkid.rotation.z = 0.36;
     root.add(frontSkid);
-    var rearSkid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, 0.48), matAlloy);
-    rearSkid.position.set(-0.42, 0.065, 0); rearSkid.rotation.z = -0.36;
+    var rearSkid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, dZ(0.48)), matAlloy);
+    rearSkid.position.set(dX(-0.42), 0.065, 0); rearSkid.rotation.z = -0.36;
     root.add(rearSkid);
 
     // Perimeter M3/M4 Brass Heat-Set Threaded Inserts
-    for (var bx = -0.36; bx <= 0.37; bx += 0.145) {
-      [-0.245, 0.245].forEach(function (bz) {
+    for (var bx = -dX(0.36); bx <= dX(0.37); bx += dX(0.145)) {
+      [-dZ(0.245), dZ(0.245)].forEach(function (bz) {
         var boss = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.012, 0.02, 10), matChassisTrim);
         boss.position.set(bx, 0.20, bz);
         var insert = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.022, 10), matBrass);
@@ -324,18 +332,18 @@
 
     [-1, 1].forEach(function (sideSign) {
       var badgeGroup = new THREE.Group();
-      badgeGroup.position.set(0, 0.210, sideSign * 0.264);
+      badgeGroup.position.set(0, 0.210, sideSign * dZ(0.264));
       if (sideSign < 0) badgeGroup.rotation.y = Math.PI;
 
       // Inset plaque plate
-      var plaque = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.082, 0.006), matBadgeBack);
+      var plaque = new THREE.Mesh(new THREE.BoxGeometry(dX(0.44), 0.082, 0.006), matBadgeBack);
       plaque.receiveShadow = true;
       badgeGroup.add(plaque);
 
       // Artemis blue border frame
-      var frameTop = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.005, 0.008), matArtemisBlue);
+      var frameTop = new THREE.Mesh(new THREE.BoxGeometry(dX(0.44), 0.005, 0.008), matArtemisBlue);
       frameTop.position.set(0, 0.040, 0.002);
-      var frameBot = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.005, 0.008), matArtemisBlue);
+      var frameBot = new THREE.Mesh(new THREE.BoxGeometry(dX(0.44), 0.005, 0.008), matArtemisBlue);
       frameBot.position.set(0, -0.040, 0.002);
       badgeGroup.add(frameTop, frameBot);
 
@@ -353,10 +361,10 @@
     // =========================================================================
     // 3. 3 TRANSVERSE AXLE TUBES WITH CENTRAL CHASSIS CLAMPS (Matching Template Image 5)
     // =========================================================================
-    var axleXPositions = [0.38, 0.00, -0.38];
+    var axleXPositions = [dX(0.38), 0.00, dX(-0.38)];
     axleXPositions.forEach(function (ax) {
       var transverseTube = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.014, 0.014, 0.68, 20),
+        new THREE.CylinderGeometry(0.014, 0.014, dZ(0.68), 20),
         matAlloy
       );
       transverseTube.rotation.x = Math.PI / 2;
@@ -385,12 +393,12 @@
     // 4. VERTICAL WHEEL DROP YOKES & 6x GREARTISAN 37mm MOTORS (Matching Template Images 1, 3, 5)
     // =========================================================================
     var wheelDefs = [
-      { id: 'FL', x: 0.38, z: 0.34 },
-      { id: 'ML', x: 0.00, z: 0.34 },
-      { id: 'BL', x: -0.38, z: 0.34 },
-      { id: 'FR', x: 0.38, z: -0.34 },
-      { id: 'MR', x: 0.00, z: -0.34 },
-      { id: 'BR', x: -0.38, z: -0.34 }
+      { id: 'FL', x: dX(0.38), z: dZ(0.34) },
+      { id: 'ML', x: 0.00, z: dZ(0.34) },
+      { id: 'BL', x: dX(-0.38), z: dZ(0.34) },
+      { id: 'FR', x: dX(0.38), z: dZ(-0.34) },
+      { id: 'MR', x: 0.00, z: dZ(-0.34) },
+      { id: 'BR', x: dX(-0.38), z: dZ(-0.34) }
     ];
 
     wheels.length = 0;
@@ -570,7 +578,7 @@
     root.add(internalsGroup);
 
     // Gold Kapton Thermal MLI Deck Tray
-    var tray = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.010, 0.44), matGoldFoil);
+    var tray = new THREE.Mesh(new THREE.BoxGeometry(dX(0.76), 0.010, dZ(0.44)), matGoldFoil);
     tray.position.set(0, 0, 0);
     internalsGroup.add(tray);
 
@@ -584,12 +592,12 @@
     var drvSpec = bom ? bom.byId('driver') : null;
     var fanSpec = bom ? bom.byId('fan') : null;
 
-    // (A) GOLDENMATE 12V 10Ah — 151 × 94 × 65 mm, low and centered
+    // (A) GOLDENMATE 12V 10Ah — 151 × 65 × 95 mm (Amazon LFP1210), low and centered
     var batGroup = new THREE.Group();
     batGroup.position.set(-0.06, 0.047, 0);
     internalsGroup.add(batGroup);
     var batMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(batSpec ? batSpec.size[0] : 0.151, batSpec ? batSpec.size[1] : 0.094, batSpec ? batSpec.size[2] : 0.065),
+      new THREE.BoxGeometry(batSpec ? batSpec.size[0] : 0.151, batSpec ? batSpec.size[1] : 0.095, batSpec ? batSpec.size[2] : 0.065),
       new THREE.MeshStandardMaterial({ map: batTex, roughness: 0.35, metalness: 0.20 })
     );
     batMesh.castShadow = true;
@@ -679,10 +687,10 @@
     var fanFace = fanSpec ? fanSpec.size[0] : 0.030;
     var fanThick = fanSpec ? fanSpec.size[2] : 0.007;
     [
-      { role: 'intake', x: 0.43, y: 0.145, z: 0.06, rotY: -Math.PI / 2 },
-      { role: 'intake', x: 0.43, y: 0.145, z: -0.06, rotY: -Math.PI / 2 },
-      { role: 'exhaust', x: 0.08, y: 0.145, z: 0.26, rotY: 0 },
-      { role: 'exhaust', x: 0.08, y: 0.145, z: -0.26, rotY: Math.PI }
+      { role: 'intake', x: dX(0.43), y: 0.145, z: dZ(0.06), rotY: -Math.PI / 2 },
+      { role: 'intake', x: dX(0.43), y: 0.145, z: dZ(-0.06), rotY: -Math.PI / 2 },
+      { role: 'exhaust', x: dX(0.08), y: 0.145, z: dZ(0.26), rotY: 0 },
+      { role: 'exhaust', x: dX(0.08), y: 0.145, z: dZ(-0.26), rotY: Math.PI }
     ].forEach(function (spot) {
       var fanGroup = new THREE.Group();
       fanGroup.position.set(spot.x, spot.y, spot.z);
@@ -717,13 +725,13 @@
 
     // Avionics lid only. Shell-open lifts this group, not the cargo.
     var avionicsLid = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.028, 0.50),
+      new THREE.BoxGeometry(dX(0.42), 0.028, dZ(0.50)),
       matChassis
     );
-    avionicsLid.position.set(0.20, 0.255, 0);
+    avionicsLid.position.set(dX(0.20), 0.255, 0);
     avionicsLid.castShadow = true;
     upperShellGroup.add(avionicsLid);
-    var bulkhead = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.16, 0.50), matDarkAlloy);
+    var bulkhead = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.16, dZ(0.50)), matDarkAlloy);
     bulkhead.position.set(0.0, 0.20, 0);
     root.add(bulkhead);
 
@@ -731,18 +739,18 @@
     var podSpec = global.NASA_RoverBOM && NASA_RoverBOM.pod;
     var podH = podSpec ? podSpec.heightM : 0.152;
     var cargoBayGroup = new THREE.Group();
-    cargoBayGroup.position.set(-0.22, 0.20, 0);
+    cargoBayGroup.position.set(dX(-0.22), 0.20, 0);
     root.add(cargoBayGroup);
-    var bayFloor = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.012, 0.44), matDarkAlloy);
+    var bayFloor = new THREE.Mesh(new THREE.BoxGeometry(dX(0.40), 0.012, dZ(0.44)), matDarkAlloy);
     bayFloor.receiveShadow = true;
     cargoBayGroup.add(bayFloor);
-    var wallL = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
+    var wallL = new THREE.Mesh(new THREE.BoxGeometry(dX(0.40), 0.18, 0.016), matChassis);
     wallL.position.set(0, 0.09, 0.212);
-    var wallR = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
+    var wallR = new THREE.Mesh(new THREE.BoxGeometry(dX(0.40), 0.18, 0.016), matChassis);
     wallR.position.set(0, 0.09, -0.212);
-    var wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
+    var wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, dZ(0.44)), matChassis);
     wallBack.position.set(-0.192, 0.09, 0);
-    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
+    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, dZ(0.44)), matChassis);
     wallFront.position.set(0.192, 0.09, 0);
     cargoBayGroup.add(wallL, wallR, wallBack, wallFront);
 
@@ -819,6 +827,34 @@
     var tip = new THREE.Object3D();
     tip.position.set(0.03, 0, 0);
     wrist.add(tip);
+
+    // =========================================================================
+    // GRABBER CAMERA (Eye-in-Hand Vision System mounted on wrist facing claw)
+    // =========================================================================
+    var grabberCamBracket = new THREE.Group();
+    grabberCamBracket.name = 'grabberCamBracket';
+    grabberCamBracket.position.set(0.012, 0.026, 0);
+
+    var grabberCamBody = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.018, 0.022), matDarkAlloy);
+    grabberCamBody.castShadow = true;
+    var grabberCamBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.008, 0.010, 14), matBrass);
+    grabberCamBezel.rotation.z = -Math.PI / 2;
+    grabberCamBezel.position.x = 0.012;
+    var grabberCamLens = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.004, 14), matLens);
+    grabberCamLens.rotation.z = -Math.PI / 2;
+    grabberCamLens.position.x = 0.016;
+    grabberCamBracket.add(grabberCamBody, grabberCamBezel, grabberCamLens);
+    grabberCamBracket.rotation.z = -0.42;
+    wrist.add(grabberCamBracket);
+
+    var grabberCam = new THREE.PerspectiveCamera(62, 320 / 240, 0.02, 25);
+    grabberCam.name = 'aiGrabberCamera';
+    grabberCam.position.set(0.022, 0.032, 0);
+    grabberCam.rotation.order = 'YXZ';
+    grabberCam.rotation.set(0, -Math.PI / 2, -0.45);
+    wrist.add(grabberCam);
+    global.grabberCamera = grabberCam;
+    window.grabberCamera = grabberCam;
 
     // =========================================================================
     // 8. PERCEPTION MAST WITH SPINNING EC BUYING YDLIDAR X2L 360° (Images 1, 2, 3, 4)
@@ -961,6 +997,8 @@
       fingerL: fingerL,
       fingerR: fingerR,
       tip: tip,
+      grabberCam: grabberCam,
+      grabberBracket: grabberCamBracket,
       L1: L1,
       L2: L2
     };
@@ -972,7 +1010,7 @@
     init: initFusionRover,
     loadManifest: function () {
       return Promise.resolve({
-        roverRadius: 0.35,
+        roverRadius: Math.max(CH_L, CH_W) * 0.52,
         modelCenter: { x: 0, y: 0, z: 0 }
       });
     }

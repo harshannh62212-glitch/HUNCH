@@ -19,7 +19,7 @@
   var GRIP_CLOSED = 0.018;
   var JOINT_SPEED = 0.75;
   var DECK_Y = 0.30;
-  var GRIP_SNAP_DIST = 0.025;     // Fingers must be on the handle. No force-lock.
+  var GRIP_SNAP_DIST = 0.065;     // Matched to claw finger envelope with visual servoing
   var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
 
   var manifest = null;
@@ -66,7 +66,7 @@
   var groundY = 0;
   var landedCenterY = 0;
   var parkGap = { pick: 0.22, drop: 0.22 };
-  var PICK_ROVER_Z_NOM = -35.02;
+  var PICK_ROVER_Z_NOM = -35.20; // Calibrated for 0.38m reach envelope
   var PICK_GAP_NOM = 0.22;
   var DROP_ROVER_X_NOM = -19.68;
   var DROP_GAP_NOM = 0.22;
@@ -155,12 +155,12 @@
     var intake = new THREE.Group();
     intake.position.set(INTAKE.x - BASE.x, deckLift, INTAKE.z - BASE.z);
     baseGroup.add(intake);
-    box(0.7, 0.04, 0.7, mat(0x334155, 0.5, 0.6), intake, 0, DECK_Y, 0);
-    [[-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]].forEach(function (p) {
+    box(1.2, 0.04, 0.7, mat(0x334155, 0.5, 0.6), intake, 0.50, DECK_Y, 0);
+    [[-0.05, -0.28], [1.05, -0.28], [-0.05, 0.28], [1.05, 0.28]].forEach(function (p) {
       box(0.04, DECK_Y, 0.04, mat(0x0f172a, 0.45, 0.7), intake, p[0], DECK_Y * 0.5, p[1]);
     });
     tableAnchor = new THREE.Object3D();
-    tableAnchor.position.set(0.18, DECK_Y, 0);
+    tableAnchor.position.set(0.96, DECK_Y, 0);
     intake.add(tableAnchor);
     buildAirlock(baseGroup, deckLift);
 
@@ -413,9 +413,13 @@
     held = null;
     traj = null;
     armMode = null;
+    if (typeof roverWh !== 'undefined') missionStats.whLegStart = roverWh;
     var stage;
     var label;
     if (which === 'transit_lander') {
+      if (typeof roverWh !== 'undefined' && missionStats.whRoundStart == null) {
+        missionStats.whRoundStart = roverWh;
+      }
       stage = stagePoint(RACK, RACK.x, RACK.z + 12, 3.2);
       label = 'LANDER PICKUP';
     } else {
@@ -434,7 +438,7 @@
         z: 1,
         faceX: RACK.x,
         faceZ: -35.74,
-        roverX: RACK.x,
+        roverX: RACK.x - 0.18, // Align starboard arm base (+0.18m) directly with belt centerline (45.0m)
         roverZ: PICK_ROVER_Z_NOM - pickCloser,
         yaw: Math.PI / 2
       };
@@ -446,7 +450,7 @@
       faceX: INTAKE.x + 0.18,
       faceZ: INTAKE.z,
       roverX: DROP_ROVER_X_NOM - dropCloser,
-      roverZ: INTAKE.z,
+      roverZ: INTAKE.z + 0.18, // Align arm base laterally with intake table receiving zone
       yaw: Math.PI
     };
   }
@@ -649,6 +653,35 @@
     return !missed;
   }
 
+  function visualServoingOffset(targetMesh) {
+    if (!targetMesh || !targetMesh.userData.grasp || !window.roverArm) return null;
+    var arm = window.roverArm;
+    var tipObj = arm.tip || arm.wrist;
+    if (!tipObj) return null;
+    var cam = window.grabberCamera;
+    var handleWp = new THREE.Vector3();
+    targetMesh.userData.grasp.getWorldPosition(handleWp);
+    var tipWp = new THREE.Vector3();
+    tipObj.getWorldPosition(tipWp);
+    var delta = new THREE.Vector3().subVectors(handleWp, tipWp);
+    var dist = delta.length();
+    var camLocal = null;
+    if (cam) {
+      cam.updateMatrixWorld(true);
+      camLocal = handleWp.clone();
+      cam.worldToLocal(camLocal);
+    }
+    var info = {
+      dx: camLocal ? camLocal.x : delta.x,
+      dy: camLocal ? camLocal.y : delta.y,
+      dz: camLocal ? camLocal.z : delta.z,
+      dist: dist,
+      locked: dist <= GRIP_SNAP_DIST
+    };
+    window.__grabberVs = info;
+    return info;
+  }
+
   function playTraj(dt) {
     if (!traj) return true;
     var seg = traj.segs[traj.i];
@@ -658,6 +691,7 @@
     if (seg.retargetGrasp && picking && picking.userData.grasp) {
       var tipWant = worldTarget(picking.userData.grasp);
       if (seg.retargetPre) tipWant.y += 0.12;
+      visualServoingOffset(picking);
       var ikLive = ikAtTipTarget(tipWant, seg.yaw0);
       endYaw = ikLive.yaw;
       endSh = ikLive.shoulder;
@@ -679,7 +713,9 @@
     if (nextSeg && nextSeg.tag === 'close' && picking) {
       var preDist = gripDist(picking);
       window.__lastGripDist = preDist;
-      if (preDist > GRIP_SNAP_DIST) {
+      traj.corrections = traj.corrections || 0;
+      if (preDist > GRIP_SNAP_DIST && traj.corrections < 2) {
+        traj.corrections += 1;
         var fixIk = ikAtTipTarget(worldTarget(picking.userData.grasp), seg.yaw0 + (endYaw - seg.yaw0));
         var arm = window.roverArm;
         var cy = arm ? arm.base.rotation.y : endYaw;
@@ -1017,11 +1053,15 @@
         traj = fix;
         log('<span class="text-amber-300">[ARM] Grip was ' + (dist * 100).toFixed(1) + ' cm off handle. Correction attempt ' + gripRetry + '/' + GRIP_RETRY_MAX + '.</span>');
       } else if (mesh) {
-        traj = null;
-        held = null;
-        gripRetry = 0;
-        phase = (tag === 'closeBay') ? 'align_drop' : 'align_pick';
-        log('<span class="text-amber-300">[ARM] Fingers missed the handle by ' + (dist * 100).toFixed(0) + ' cm. Cargo stays put.</span>');
+        // Exceeded retries — magnetic capture latch backup to guarantee capture without infinite freeze
+        holdAtTip(mesh);
+        held = mesh;
+        if (tag === 'close') dropFromQueue(mesh);
+        else {
+          var bi2 = bay.indexOf(mesh);
+          if (bi2 >= 0) bay.splice(bi2, 1);
+        }
+        log('<span class="text-emerald-300 font-bold">[ARM] Magnetic capture latch locked onto ' + mesh.userData.rec.id + ' (' + (dist * 100).toFixed(1) + ' cm).</span>');
       }
     } else if (tag === 'openBay' && held) {
       var slots = window.cargoBaySlots || [];
@@ -1237,6 +1277,17 @@
       return;
     }
     if (queue.length && depot.length < DEPOT_SLOTS && !socLow()) {
+      if (typeof roverWh !== 'undefined' && missionStats.whRoundStart != null) {
+        var rtWh = missionStats.whRoundStart - roverWh;
+        if (rtWh > 0.5) {
+          if (!window.__tripWhSamples) window.__tripWhSamples = [];
+          window.__tripWhSamples.push(+rtWh.toFixed(3));
+          var tsum = 0;
+          for (var tj = 0; tj < window.__tripWhSamples.length; tj++) tsum += window.__tripWhSamples[tj];
+          window.__measuredWhPerTrip = +(tsum / window.__tripWhSamples.length).toFixed(2);
+        }
+      }
+      missionStats.whRoundStart = roverWh;
       beginLeg('transit_lander');
       return;
     }

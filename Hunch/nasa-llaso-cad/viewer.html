@@ -64,6 +64,8 @@
 <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-2 glass rounded-2xl pointer-events-auto">
   <select id="cam-select" onchange="setCamMode(this.value)" class="bg-black/80 border border-sky-500/40 rounded text-[10px] text-sky-100 px-2 py-1 font-mono outline-none">
     <option value="chase" selected>Chase</option>
+    <option value="grabber">Grabber Cam</option>
+    <option value="arm">Arm Cam</option>
     <option value="mast">Mast</option>
     <option value="top">Top</option>
     <option value="orbit">Orbit</option>
@@ -188,9 +190,10 @@
   <div class="flex justify-between text-[10px] font-mono"><span class="text-slate-500">Shock stroke</span><span id="shock-stroke" class="text-slate-200">0 mm</span></div>
   <div class="flex justify-between text-[10px] font-mono"><span class="text-slate-500">Range</span><span id="stat-prox" class="text-cyan-300">CLEAR</span></div>
   <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
-    <div class="flex justify-between"><span class="text-slate-500">Battery 128 Wh</span><span id="txt-rover-bat" class="text-white">100.0%</span></div>
+    <div class="flex justify-between"><span class="text-slate-500" id="bat-cap-label">10 Ah · 128 Wh</span><span id="txt-rover-bat" class="text-white">100.0%</span></div>
     <div class="progress-bar-bg"><div id="bar-rover-bat" class="progress-fill bg-emerald-500" style="width:100%"></div></div>
     <div class="flex justify-between"><span id="txt-pwr-source" class="text-slate-500">BATTERY</span><span id="txt-draw" class="text-amber-300">0 W</span></div>
+    <div class="flex justify-between text-[9px] text-slate-500"><span id="txt-bat-amps">— A</span><span id="txt-bat-trips" title="Est. lander↔habitat round trips from 90% SOC">— trips @90%</span></div>
   </div>
   <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
     <div class="text-slate-400">Mass</div>
@@ -199,12 +202,51 @@
     <div class="flex justify-between"><span class="text-slate-500">Total</span><span id="mass-total">—</span></div>
     <div class="flex justify-between"><span class="text-slate-500">CoM xyz</span><span id="mass-com" class="text-right">—</span></div>
   </div>
-  <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
-    <div class="text-slate-400">Earth air · 4 fans</div>
-    <div class="flex justify-between"><span class="text-slate-500">Intake</span><span id="cool-intake">22 °C</span></div>
-    <div class="flex justify-between"><span class="text-slate-500">Exhaust</span><span id="cool-exhaust">—</span></div>
-    <div class="flex justify-between"><span class="text-slate-500">Flow</span><span id="cool-flow">—</span></div>
-    <div class="text-[9px] text-slate-500">These fans do not convect on the Moon.</div>
+  <div class="border-t border-slate-800 pt-2 space-y-1.5 text-[10px] font-mono">
+    <div class="flex justify-between items-center">
+      <span class="text-slate-300 font-bold">Thermal Subsystem</span>
+      <span id="thermal-status-tag" class="px-1.5 py-0.5 rounded text-[8px] bg-emerald-500/20 text-emerald-400 font-bold">NOMINAL</span>
+    </div>
+    <div class="space-y-1">
+      <div class="flex justify-between items-center">
+        <span class="text-slate-400">4× 3007 Fans Speed</span>
+        <span id="fan-rpm-label" class="text-cyan-300 font-bold">4500 RPM</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <input id="fan-rpm-slider" type="range" min="0" max="8000" step="100" value="4500" class="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded cursor-pointer" oninput="setFanRPM(this.value)" />
+        <button type="button" onclick="setFanRPM(4500)" class="text-[8px] px-1.5 py-0.5 border border-slate-700 bg-slate-800/80 rounded text-slate-300 hover:text-white" title="Nominal 4500 RPM">Auto</button>
+        <button type="button" onclick="setFanRPM(0)" class="text-[8px] px-1 py-0.5 border border-rose-800/60 bg-rose-900/30 rounded text-rose-300 hover:text-rose-100" title="Cut fans">Off</button>
+        <button type="button" onclick="setFanRPM(8000)" class="text-[8px] px-1 py-0.5 border border-cyan-800/60 bg-cyan-900/30 rounded text-cyan-300 hover:text-cyan-100" title="Max 8000 RPM">Max</button>
+      </div>
+      <div class="text-[9px] text-slate-400 mb-0.5">Energy mode</div>
+      <div class="grid grid-cols-4 gap-0.5 text-[8px] font-mono" id="power-mode-bar">
+        <button type="button" data-pmode="range" onclick="setPowerMode('range')" class="pwr-mode-btn px-0.5 py-1 border border-slate-700 rounded text-slate-400" title="Max round trips">Range</button>
+        <button type="button" data-pmode="eco" onclick="setPowerMode('eco')" class="pwr-mode-btn px-0.5 py-1 border border-emerald-700/60 rounded text-emerald-300 font-bold" title="Default logistics">Eco</button>
+        <button type="button" data-pmode="balance" onclick="setPowerMode('balance')" class="pwr-mode-btn px-0.5 py-1 border border-slate-700 rounded text-slate-400" title="Faster transits">Bal</button>
+        <button type="button" data-pmode="boost" onclick="setPowerMode('boost')" class="pwr-mode-btn px-0.5 py-1 border border-slate-700 rounded text-slate-400" title="Full performance">Boost</button>
+      </div>
+      <div id="power-mode-hint" class="text-[8px] text-slate-500 leading-tight mt-0.5">Balanced savings for cargo runs.</div>
+    </div>
+    <div id="thermal-alert-banner" class="hidden text-[8px] font-bold text-rose-300 bg-rose-950/90 border border-rose-500 p-1.5 rounded animate-pulse text-center">
+      🔥 THERMAL THROTTLE: POWER DERATED! CRANK FANS!
+    </div>
+    <div class="space-y-1 pt-1 border-t border-slate-800/60 text-[9px]">
+      <div>
+        <div class="flex justify-between"><span class="text-slate-400">Pi 4 4GB SoC</span><span id="temp-pi" class="text-emerald-300 font-bold">52.5 °C</span></div>
+        <div class="progress-bar-bg h-1"><div id="bar-temp-pi" class="progress-fill bg-emerald-500" style="width:24%"></div></div>
+      </div>
+      <div>
+        <div class="flex justify-between"><span class="text-slate-400">Hottest Motor</span><span id="temp-motor" class="text-emerald-300 font-bold">24.0 °C (FL)</span></div>
+        <div class="progress-bar-bg h-1"><div id="bar-temp-motor" class="progress-fill bg-emerald-500" style="width:8%"></div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 pt-0.5 text-[8.5px]">
+        <div class="flex justify-between"><span class="text-slate-500">Chamber</span><span id="temp-chamber" class="text-emerald-300 font-bold">24.5 °C</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">MDD10A</span><span id="temp-driver" class="text-slate-300">28.0 °C</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">Airflow</span><span id="cool-flow" class="text-cyan-300">2.1 L/s</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">Exhaust</span><span id="cool-exhaust" class="text-slate-400">25.8 °C</span></div>
+      </div>
+    </div>
+    <div id="thermal-note" class="text-[8px] text-slate-500 leading-tight">Authentic silicon junction thermal physics · Pi idle ~50-53°C · Derates at 80°C</div>
   </div>
   <div class="border-t border-slate-800 pt-2 space-y-1 text-[10px] font-mono">
     <div class="flex justify-between"><span class="text-slate-400">Mission 6</span><span id="log-phase" class="text-amber-200">IDLE</span></div>
@@ -229,7 +271,7 @@
   </div>
 </div>
 <div id="picam-frame" class="pointer-events-none">
-  <div class="absolute top-2 left-3 text-[9px] font-bold text-white bg-cyan-500/80 px-2 py-0.5 rounded shadow z-30">MASTCAM CV PIP</div>
+  <div id="pip-cam-badge" class="absolute top-2 left-3 text-[9px] font-bold text-white bg-cyan-500/80 px-2 py-0.5 rounded shadow z-30">MASTCAM CV PIP</div>
   <canvas id="cv-canvas" width="320" height="240" class="absolute inset-0 z-10"></canvas>
   <div id="cv-text" class="absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[9px] font-black text-cyan-300 bg-black/70 px-2.5 py-0.5 rounded z-20 border border-cyan-500/30">CV: SCANNING STEREO PAIR</div>
 </div>
@@ -785,10 +827,11 @@ earthGroup.add(earthClouds);
 // =========================================================================
 var dirtTex = createLunarTex(1024, 1024); dirtTex.repeat.set(32, 32);
 var dirtBump = createNoiseTex(1024, 1024, 128, 100); dirtBump.repeat.set(32, 32);
+// Relocated craters & mounds away from Hangar (-15, -15) and Lunar Drop Off (-24, -22)
 var craters = [
-  {x:12, z:18, r:8, d:3.5}, {x:-18, z:12, r:7, d:3}, {x:8, z:-22, r:5, d:2},
-  {x:28, z:8, r:10, d:-3.5}, {x:-28, z:-18, r:9, d:4}, {x:-8, z:32, r:6, d:2.5},
-  {x:20, z:-10, r:4, d:1.5}, {x:-12, z:-28, r:7, d:-2.5}
+  {x:12, z:18, r:8, d:3.5}, {x:-18, z:16, r:6.5, d:2.8}, {x:8, z:-22, r:5, d:2},
+  {x:28, z:8, r:10, d:-3.5}, {x:-48, z:32, r:8, d:3.5}, {x:-8, z:36, r:6, d:2.5},
+  {x:20, z:-10, r:4, d:1.5}, {x:-52, z:-45, r:8, d:-3.0}
 ];
 var smallCraters = [];
 (function() {
@@ -796,7 +839,11 @@ var smallCraters = [];
   function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
   for (var n = 0; n < 36; n++) {
     var x = (rnd() - 0.5) * 140, z = (rnd() - 0.5) * 140;
-    if (Math.sqrt(x * x + (z - 5) * (z - 5)) < 16) continue;
+    // Exclude craters near spawn, hangar, drop off base, and lander staging pad
+    if (Math.hypot(x, z - 5) < 16) continue;
+    if (Math.hypot(x - (-15), z - (-15)) < 20) continue; // Hangar clearance
+    if (Math.hypot(x - (-24.5), z - (-22)) < 22) continue; // Lunar Drop Off / Base clearance
+    if (Math.hypot(x - 45, z - (-38)) < 18) continue; // Lander pad clearance
     smallCraters.push({x: x, z: z, r: 1.2 + rnd() * 2.6, d: 0.22 + rnd() * 0.65});
   }
 })();
@@ -810,11 +857,32 @@ function getH(x, z) {
           Math.sin(x * 0.47 + 0.4) * Math.cos(z * 0.41) * 0.09 +
           Math.sin(x * 1.15 + z * 0.7) * 0.025;
 
-  // Smooth blending around starting/spawn pad (x=0, z=5) so the rover spawns on flat ground
-  var ds = Math.sqrt(x * x + (z - 5) * (z - 5));
+  // 1. Smooth flat blending around starting/spawn pad (x=0, z=5)
+  var ds = Math.hypot(x, z - 5);
   if (ds < 12.0) {
     var t = Math.max(0, Math.min(1, (ds - 5.0) / 7.0));
-    y *= t * t * (3.0 - 2.0 * t); // Flat disk out to 5 m, then blend
+    y *= t * t * (3.0 - 2.0 * t);
+  }
+
+  // 2. Smooth flat terrain for Industrial Hangar Bay & Solar Charging Dock (x=-15, z=-15)
+  var dh = Math.hypot(x - (-15.0), z - (-15.0));
+  if (dh < 16.0) {
+    var th = Math.max(0, Math.min(1, (dh - 8.0) / 8.0));
+    y *= th * th * (3.0 - 2.0 * th); // Perfectly flat out to 8m, smooth blend to 16m
+  }
+
+  // 3. Smooth flat terrain for Artemis Base & Cargo Drop Off Intake Table (x=-24.5, z=-22.0)
+  var db = Math.hypot(x - (-24.5), z - (-22.0));
+  if (db < 18.0) {
+    var tb = Math.max(0, Math.min(1, (db - 10.0) / 8.0));
+    y *= tb * tb * (3.0 - 2.0 * tb); // Perfectly flat out to 10m, smooth blend to 18m
+  }
+
+  // 4. Smooth flat terrain for Commercial Cargo Lander Staging Pad (x=45, z=-38)
+  var dp = Math.hypot(x - 45.0, z - (-38.0));
+  if (dp < 16.0) {
+    var tp = Math.max(0, Math.min(1, (dp - 9.0) / 7.0));
+    y *= tp * tp * (3.0 - 2.0 * tp);
   }
 
   // Craters and Mounds with C1-continuous ejecta blankets
@@ -885,7 +953,7 @@ scene.add(terrain);
 // Shared with js/lunar_logistics.js. Pads and the haul road stay clear of boulders.
 var LOGISTICS_BASE = { x: -28, z: -22 };
 var LOGISTICS_PAD = { x: 45, z: -40 };
-var LOGISTICS_INTAKE = { x: -20.6, z: -23.2 };
+var LOGISTICS_INTAKE = { x: -21.2, z: -22.0 };
 var LOGISTICS_RACK = { x: 45, z: -35.6 };
 
 // =========================================================================
@@ -900,9 +968,10 @@ var rockBump = createNoiseTex(256, 256, 128, 90);
 
 function logisticsGroundClear(x, z) {
   if (Math.hypot(x, z - 5) < 10) return false;
-  if (Math.hypot(x + 15, z + 15) < 9) return false;
-  if (Math.hypot(x - LOGISTICS_BASE.x, z - LOGISTICS_BASE.z) < 8) return false;
-  if (Math.hypot(x - LOGISTICS_PAD.x, z - LOGISTICS_PAD.z) < 12) return false;
+  if (Math.hypot(x + 15, z + 15) < 14) return false; // Hangar apron clear of boulders
+  if (Math.hypot(x - LOGISTICS_BASE.x, z - LOGISTICS_BASE.z) < 14) return false; // Drop off base clear
+  if (Math.hypot(x - LOGISTICS_INTAKE.x, z - LOGISTICS_INTAKE.z) < 12) return false; // Intake table clear
+  if (Math.hypot(x - LOGISTICS_PAD.x, z - LOGISTICS_PAD.z) < 14) return false;
   var ax = LOGISTICS_BASE.x, az = LOGISTICS_BASE.z, bx = LOGISTICS_PAD.x, bz = LOGISTICS_PAD.z;
   var dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
   var t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
@@ -3907,6 +3976,10 @@ function computeAutopilot(dt) {
   if (Math.abs(steer) < 0.015) steer = 0;
   var spdRate = speed > window_lastTargetSpeed ? 8.0 : 1.6;
   window_lastTargetSpeed += (speed - window_lastTargetSpeed) * Math.min(1.0, spdRate * dt);
+  if (powerModeId !== 'boost' && window.NASA_Logistics && NASA_Logistics.ownsGoal && NASA_Logistics.ownsGoal()) {
+    var ecoCap = (NASA_RoverBOM && NASA_RoverBOM.getPowerMode) ? NASA_RoverBOM.getPowerMode().transitSpeedCap : 0.62;
+    window_lastTargetSpeed = Math.min(window_lastTargetSpeed, ecoCap);
+  }
   return {steer: steer, speed: Math.max(0, Math.min(1.0, window_lastTargetSpeed))};
 }
 
@@ -4119,7 +4192,9 @@ function updateCameraSnap() {
     renderer.setRenderTarget(aiRenderTarget);
     renderer.setViewport(0, 0, 320, 240);
     renderer.setScissorTest(false);
-    renderer.render(scene, piCamera);
+    var isGrabberActive = ((window.NASA_Logistics && (NASA_Logistics.phase() === 'arm_pick' || NASA_Logistics.phase() === 'arm_place' || NASA_Logistics.phase() === 'align_pick')) || camMode === 'grabber') && window.grabberCamera;
+    var activeAiCam = isGrabberActive ? window.grabberCamera : piCamera;
+    renderer.render(scene, activeAiCam);
     renderer.readRenderTargetPixels(aiRenderTarget, 0, 0, 320, 240, aiPixelBuf);
 
     var imgData = aiSnapCtx.createImageData(320, 240);
@@ -4998,6 +5073,19 @@ var camMode = (function() {
     return p.get('cam') || 'chase';
   } catch (e) { return 'chase'; }
 })();
+function setFanRPM(rpm) {
+  rpm = Number(rpm) || 0;
+  _ecoFanManual = true;
+  if (window.NASA_RoverBOM && NASA_RoverBOM.setFanRPM) {
+    NASA_RoverBOM.setFanRPM(rpm);
+  }
+  var slider = document.getElementById('fan-rpm-slider');
+  var label = document.getElementById('fan-rpm-label');
+  if (slider && Number(slider.value) !== rpm) slider.value = rpm;
+  if (label) label.textContent = rpm + ' RPM';
+}
+window.setFanRPM = setFanRPM;
+
 function setCamMode(mode) {
   camMode = mode;
   ['chase', 'mast', 'top', 'orbit', 'dock', 'arm', 'side', 'front', 'base', 'lander'].forEach(function(m) {
@@ -5009,6 +5097,11 @@ function setCamMode(mode) {
   var camSelect = document.getElementById('cam-select');
   if (camSelect && camSelect.value !== mode) camSelect.value = mode;
   controls.enabled = (mode === 'orbit' || mode === 'dock' || mode === 'side' || mode === 'front' || mode === 'base' || mode === 'lander');
+  if (mode === 'grabber' && window.roverArm) {
+    var tipW = new THREE.Vector3();
+    (window.roverArm.tip || window.roverArm.wrist).getWorldPosition(tipW);
+    controls.target.copy(tipW);
+  }
   if (mode === 'orbit') {
     var rp = roverGroup.position;
     controls.target.set(rp.x, rp.y + 0.22, rp.z);
@@ -5109,7 +5202,79 @@ function updateCargoSink(dt, dig) {
 var lunarSink = 0.0125;
 var isCrashed = false, isStuck = false, timeStuck = 0;
 var smoothPitch = 0, smoothRoll = 0, smoothY = 0, firstFrame = true;
-var MAXWH = 128, roverWh = 128; // GOLDENMATE 12.8V * 10Ah = 128Wh LiFePO4 capacity
+var MAXWH = (window.NASA_RoverBOM && NASA_RoverBOM.battery) ? NASA_RoverBOM.battery.wh : 128;
+var roverWh = MAXWH;
+var BATTERY_AH = (window.NASA_RoverBOM && NASA_RoverBOM.battery) ? NASA_RoverBOM.battery.ah : 10;
+var BATTERY_V = (window.NASA_RoverBOM && NASA_RoverBOM.battery) ? NASA_RoverBOM.battery.vNom : 12.8;
+// Lander ↔ habitat (~135 m drive) + arm ops @ ~42 W cruise / ~16 W idle (BOM model)
+var WH_PER_ROUND_TRIP = 9.2;
+var _batLogT = 0;
+var powerModeId = 'eco';
+var powerEcoMode = true;
+var _ecoFanT = 0;
+var _ecoFanManual = false;
+var _lidarSpun = false;
+
+function syncPowerModeUi() {
+  var bar = document.getElementById('power-mode-bar');
+  if (bar) {
+    var btns = bar.querySelectorAll('.pwr-mode-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var on = b.getAttribute('data-pmode') === powerModeId;
+      b.className = 'pwr-mode-btn px-0.5 py-1 border rounded ' + (on
+        ? 'border-emerald-600/80 bg-emerald-950/40 text-emerald-300 font-bold'
+        : 'border-slate-700 text-slate-400');
+    }
+  }
+  var hint = document.getElementById('power-mode-hint');
+  if (hint && window.NASA_RoverBOM && NASA_RoverBOM.getPowerMode) {
+    hint.textContent = NASA_RoverBOM.getPowerMode().hint || '';
+  }
+}
+
+function setPowerMode(id) {
+  if (!window.NASA_RoverBOM || !NASA_RoverBOM.setPowerMode) return;
+  var m = NASA_RoverBOM.setPowerMode(id);
+  powerModeId = m.id;
+  powerEcoMode = powerModeId !== 'boost';
+  _ecoFanManual = false;
+  setRoverRPM(m.cruiseRpmCap);
+  if (window.NASA_RoverBOM && NASA_RoverBOM.getPowerMode) {
+    WH_PER_ROUND_TRIP = NASA_RoverBOM.getPowerMode().whPerRoundTrip || WH_PER_ROUND_TRIP;
+  }
+  syncPowerModeUi();
+  llog('<span class="text-cyan-300">[POWER] ' + m.label + ' — ' + m.hint + ' (~' + m.whPerRoundTrip + ' Wh/RT).</span>');
+}
+window.setPowerMode = setPowerMode;
+
+function togglePowerEco() {
+  setPowerMode(powerModeId === 'boost' ? 'eco' : 'boost');
+}
+window.togglePowerEco = togglePowerEco;
+
+function applyEcoPowerPolicy(dt, vehicleThermState, thermalNow) {
+  if (!thermalNow || !window.NASA_RoverBOM) return;
+  var m = NASA_RoverBOM.getPowerMode ? NASA_RoverBOM.getPowerMode() : null;
+  if (!m) return;
+  var transit = window.NASA_Logistics && NASA_Logistics.ownsGoal && NASA_Logistics.ownsGoal();
+  vehicleThermState.logisticsTransit = transit;
+  vehicleThermState.navActive = !!(autoOn || transit);
+  vehicleThermState.ecoMode = powerModeId !== 'boost';
+  vehicleThermState.powerModeId = powerModeId;
+  _ecoFanT += dt;
+  if (!_ecoFanManual && _ecoFanT > 0.4 && NASA_RoverBOM.ecoFanTargetRpm) {
+    _ecoFanT = 0;
+    var tgt = NASA_RoverBOM.ecoFanTargetRpm(thermalNow);
+    if (Math.abs(tgt - thermalNow.fanRpm) > 120) setFanRPM(tgt);
+  }
+  if (typeof lidarHead !== 'undefined' && lidarHead) {
+    var moving = Math.abs(vel) > 0.04 || transit;
+    var lidarRate = moving ? m.lidarSpinMoving : m.lidarSpinIdle;
+    lidarHead.rotation.y += lidarRate * dt;
+    _lidarSpun = true;
+  }
+}
 
 var motors = { m100: { torque: 12.0, maxSpeed: 0.94, drawW: 35 } };
 var activeMotor = motors.m100;
@@ -5176,9 +5341,22 @@ function updatePhysics(dt) {
   activeMotor.maxSpeed = (rpmInput * 2 * Math.PI * 0.09) / 60;
 
   // Earth-air cooling. Two 1 CFM intakes set the flow. Lunar vacuum would not convect.
-  var airNow = (window.NASA_RoverBOM && NASA_RoverBOM.stepAir) ? NASA_RoverBOM.stepAir() : null;
-  var fanSpin = airNow ? airNow.spinRad : 18;
-  lidarHead.rotation.y += 12 * dt;
+  var dpSim = window._drivePhysics || {};
+  var vehicleThermState = {
+    throttle: (typeof continuousThrottle !== 'undefined' && continuousThrottle) ? continuousThrottle : ((typeof wF !== 'undefined' && wF) ? 1 : ((typeof wB !== 'undefined' && wB) ? -1 : 0)),
+    vel: typeof vel !== 'undefined' ? vel : 0,
+    steer: typeof autoTurnTarget !== 'undefined' ? autoTurnTarget : 0,
+    slip: !!dpSim.slip,
+    neuralOn: !!(typeof neuralPilotOn !== 'undefined' && neuralPilotOn),
+    visionActive: !!(camMode === 'grabber' || (window.NASA_Logistics && NASA_Logistics.phase && (NASA_Logistics.phase() === 'arm_pick' || NASA_Logistics.phase() === 'arm_place'))),
+    armMoving: !!(window.NASA_Logistics && NASA_Logistics.holdsDrive && NASA_Logistics.holdsDrive())
+  };
+  var thermalNow = (window.NASA_RoverBOM && NASA_RoverBOM.stepThermal) ? NASA_RoverBOM.stepThermal(dt, vehicleThermState) : null;
+  applyEcoPowerPolicy(dt, vehicleThermState, thermalNow);
+  var airNow = thermalNow || ((window.NASA_RoverBOM && NASA_RoverBOM.stepAir) ? NASA_RoverBOM.stepAir() : null);
+  var fanSpin = thermalNow ? thermalNow.fanSpinRad : (airNow ? airNow.spinRad : 18);
+  if (!_lidarSpun && typeof lidarHead !== 'undefined' && lidarHead) lidarHead.rotation.y += 12 * dt;
+  _lidarSpun = false;
   for (var fi2 = 0; fi2 < fanRotors.length; fi2++) {
     var rotor = fanRotors[fi2];
     if (!rotor) continue;
@@ -5407,8 +5585,9 @@ function updatePhysics(dt) {
   // Compaction resistance grows once the wheels cut a deeper rut.
   var rut = loaded ? 0.09 * G * (sinkRatio - 1) : 0;
   var rollResist = (0.05 * G + rut) * cosSlope;
-  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale();
-  var af = loaded ? (MOTOR_STALL_N / roverTotalKg()) : (activeMotor.torque * 2);
+  var thermThrottle = (typeof thermalNow !== 'undefined' && thermalNow && thermalNow.throttleFactor != null) ? thermalNow.throttleFactor : 1.0;
+  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale() * thermThrottle;
+  var af = (loaded ? (MOTOR_STALL_N / roverTotalKg()) : (activeMotor.torque * 2)) * thermThrottle;
   var ta = 0;
 
   if (wF) {
@@ -5727,18 +5906,75 @@ function updatePhysics(dt) {
   }
 
   var massRatio = (ROVER_MASS_KG + roverPayloadKg()) / ROVER_MASS_KG;
-  var slopeDraw = Math.abs(Math.sin(smoothPitch)) * 18 * massRatio;
-  var drawW = ((Math.abs(vel) > 0.05 ? 42 : 14) * massRatio) + slopeDraw;
-  roverWh = Math.max(0, Math.min(MAXWH, roverWh + (isDocked ? 100 : -drawW) * (dt / 3600)));
+  var fanRpmFrac = thermalNow ? (thermalNow.fanRpm / (thermalNow.fanNominalRpm || 4500)) : 1;
+  var pwr = (window.NASA_RoverBOM && NASA_RoverBOM.computePowerDraw)
+    ? NASA_RoverBOM.computePowerDraw({
+        throttle: vehicleThermState.throttle,
+        vel: vel,
+        massRatio: massRatio,
+        slopeSin: Math.sin(smoothPitch),
+        slip: vehicleThermState.slip,
+        neuralOn: vehicleThermState.neuralOn,
+        visionActive: vehicleThermState.visionActive,
+        armMoving: vehicleThermState.armMoving,
+        fanRpmFrac: fanRpmFrac,
+        ecoMode: powerEcoMode,
+        powerModeId: powerModeId,
+        logisticsTransit: vehicleThermState.logisticsTransit,
+        navActive: vehicleThermState.navActive
+      })
+    : { totalW: ((Math.abs(vel) > 0.05 ? 42 : 14) * massRatio) + Math.abs(Math.sin(smoothPitch)) * 18 * massRatio, breakdown: {} };
+  var drawW = pwr.totalW;
+  var chargeW = (window.NASA_RoverBOM && NASA_RoverBOM.solar) ? (NASA_RoverBOM.solar.powerW || 100) : 100;
+  roverWh = Math.max(0, Math.min(MAXWH, roverWh + (isDocked ? chargeW : -drawW) * (dt / 3600)));
   var bp = (roverWh / MAXWH) * 100;
+  var batLabel = document.getElementById('bat-cap-label');
+  if (batLabel) batLabel.textContent = BATTERY_AH + ' Ah · ' + MAXWH + ' Wh · ' + BATTERY_V + ' V';
   document.getElementById('txt-rover-bat').innerText = bp.toFixed(1) + '%';
   document.getElementById('bar-rover-bat').style.width = bp + '%';
+  var batBar = document.getElementById('bar-rover-bat');
+  if (batBar) {
+    batBar.className = 'progress-fill ' + (bp < 20 ? 'bg-rose-500' : bp < 40 ? 'bg-amber-500' : 'bg-emerald-500');
+  }
+  var amps = drawW / Math.max(10.5, BATTERY_V * (bp / 100) * 0.95 + 0.05);
+  var ampsEl = document.getElementById('txt-bat-amps');
+  if (ampsEl) ampsEl.textContent = drawW.toFixed(0) + ' W · ' + amps.toFixed(2) + ' A';
+  var tripsEl = document.getElementById('txt-bat-trips');
+  if (window.__measuredWhPerTrip && window.__measuredWhPerTrip > 0) {
+    WH_PER_ROUND_TRIP = window.__measuredWhPerTrip;
+  } else if (window.NASA_RoverBOM && NASA_RoverBOM.getPowerMode) {
+    WH_PER_ROUND_TRIP = NASA_RoverBOM.getPowerMode().whPerRoundTrip || WH_PER_ROUND_TRIP;
+  }
+  if (tripsEl && window.NASA_RoverBOM && NASA_RoverBOM.estimateRoundTrips) {
+    var est = NASA_RoverBOM.estimateRoundTrips(90, WH_PER_ROUND_TRIP);
+    tripsEl.textContent = '~' + est.trips + ' RT @90%';
+  }
+  window.__batteryTelemetry = {
+    t: Date.now(),
+    soc: +bp.toFixed(2),
+    wh: +roverWh.toFixed(3),
+    drawW: +drawW.toFixed(2),
+    chargeW: isDocked ? chargeW : 0,
+    breakdown: pwr.breakdown || {},
+    massRatio: +massRatio.toFixed(3)
+  };
+  _batLogT += dt;
+  if (_batLogT >= 5 && typeof fetch === 'function') {
+    _batLogT = 0;
+    try {
+      fetch('/api/battery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(window.__batteryTelemetry)
+      }).catch(function () {});
+    } catch (eBat) {}
+  }
   var pwrSrcEl = document.getElementById('txt-pwr-source');
   var pwrDrawEl = document.getElementById('txt-draw');
   if (pwrSrcEl && pwrDrawEl) {
     if (isDocked) {
-      pwrSrcEl.innerHTML = '<span class="text-emerald-400 font-bold">HQST 100W DOCK ARRAY</span>';
-      pwrDrawEl.innerText = 'CHARGING (DOCK)';
+      pwrSrcEl.innerHTML = '<span class="text-emerald-400 font-bold">HQST ' + chargeW + 'W DOCK ARRAY</span>';
+      pwrDrawEl.innerText = 'NET +' + (chargeW - drawW).toFixed(0) + 'W';
       pwrDrawEl.className = 'text-emerald-300 font-bold';
     } else {
       pwrSrcEl.innerHTML = '<span class="text-slate-400">POWER: BATTERY ONLY</span>';
@@ -5746,7 +5982,7 @@ function updatePhysics(dt) {
       pwrDrawEl.className = 'text-amber-400 font-bold';
     }
   } else if (pwrDrawEl) {
-    pwrDrawEl.innerText = isDocked ? 'HQST SOLAR +100W' : ('DRAW: ' + drawW.toFixed(0) + 'W');
+    pwrDrawEl.innerText = isDocked ? ('HQST +' + chargeW + 'W') : ('DRAW: ' + drawW.toFixed(0) + 'W');
   }
 
   if (window.NASA_RoverBOM) {
@@ -5762,13 +5998,81 @@ function updatePhysics(dt) {
     if (massEl) massEl.textContent = (curbKg + payKg).toFixed(2) + ' kg';
     if (comEl) comEl.textContent = (com.x * 1000).toFixed(0) + ', ' + (com.y * 1000).toFixed(0) + ', ' + (com.z * 1000).toFixed(0) + ' mm';
   }
-  if (airNow) {
+  if (thermalNow || airNow) {
+    var th = thermalNow || airNow;
+    var piEl = document.getElementById('temp-pi');
+    var chamEl = document.getElementById('temp-chamber');
+    var motEl = document.getElementById('temp-motor');
+    var drivEl = document.getElementById('temp-driver');
     var inEl = document.getElementById('cool-intake');
     var outEl = document.getElementById('cool-exhaust');
     var flowEl = document.getElementById('cool-flow');
-    if (inEl) inEl.textContent = airNow.intakeC.toFixed(1) + ' °C';
-    if (outEl) outEl.textContent = airNow.exhaustC.toFixed(1) + ' °C';
-    if (flowEl) flowEl.textContent = airNow.flowLs.toFixed(2) + ' L/s · ' + airNow.heatW.toFixed(1) + ' W';
+    var tagEl = document.getElementById('thermal-status-tag');
+    
+    function tempColorClass(t, warmThresh, hotThresh) {
+      if (t >= hotThresh) return 'text-rose-400 font-bold';
+      if (t >= warmThresh) return 'text-amber-300 font-bold';
+      return 'text-emerald-300 font-bold';
+    }
+    
+    var barPi = document.getElementById('bar-temp-pi');
+    var barMot = document.getElementById('bar-temp-motor');
+    var alertBanner = document.getElementById('thermal-alert-banner');
+
+    function tempBarColor(t, warmThresh, hotThresh) {
+      if (t >= hotThresh) return 'progress-fill bg-rose-500';
+      if (t >= warmThresh) return 'progress-fill bg-amber-500';
+      return 'progress-fill bg-emerald-500';
+    }
+
+    if (piEl && th.piChipC != null) {
+      var isPiHot = th.piChipC >= 75;
+      piEl.textContent = (isPiHot ? '🔥 ' : '') + th.piChipC.toFixed(1) + ' °C';
+      piEl.className = tempColorClass(th.piChipC, 64, 78);
+      if (barPi) {
+        var piPct = Math.min(100, Math.max(5, ((th.piChipC - 42) / 46) * 100));
+        barPi.style.width = piPct + '%';
+        barPi.className = tempBarColor(th.piChipC, 64, 78);
+      }
+    }
+    if (chamEl && th.chamberC != null) {
+      chamEl.textContent = th.chamberC.toFixed(1) + ' °C';
+      chamEl.className = tempColorClass(th.chamberC, 40, 52);
+    }
+    if (motEl && th.hottestMotor) {
+      var hm = th.hottestMotor;
+      var isMotHot = hm.tempC >= 70;
+      motEl.textContent = (isMotHot ? '🔥 ' : '') + hm.tempC.toFixed(1) + ' °C (' + hm.name + ')';
+      motEl.className = tempColorClass(hm.tempC, 52, 72);
+      if (barMot) {
+        var motPct = Math.min(100, Math.max(5, ((hm.tempC - 20) / 60) * 100));
+        barMot.style.width = motPct + '%';
+        barMot.className = tempBarColor(hm.tempC, 52, 72);
+      }
+    }
+    if (drivEl && th.driverC != null) {
+      drivEl.textContent = th.driverC.toFixed(1) + ' °C';
+      drivEl.className = tempColorClass(th.driverC, 50, 68);
+    }
+    if (inEl && th.intakeC != null) inEl.textContent = th.intakeC.toFixed(1) + ' °C';
+    if (outEl && th.exhaustC != null) outEl.textContent = th.exhaustC.toFixed(1) + ' °C';
+    if (flowEl && th.flowLs != null) flowEl.textContent = th.flowLs.toFixed(2) + ' L/s · ' + (th.heatW ? th.heatW.toFixed(1) : '12') + ' W';
+    if (tagEl && th.status) {
+      tagEl.textContent = th.status;
+      if (th.status === 'THROTTLING') tagEl.className = 'px-1.5 py-0.5 rounded text-[8px] bg-rose-500/20 text-rose-400 font-bold animate-pulse';
+      else if (th.status === 'HOT') tagEl.className = 'px-1.5 py-0.5 rounded text-[8px] bg-rose-500/20 text-rose-300 font-bold';
+      else if (th.status === 'WARM') tagEl.className = 'px-1.5 py-0.5 rounded text-[8px] bg-amber-500/20 text-amber-300 font-bold';
+      else tagEl.className = 'px-1.5 py-0.5 rounded text-[8px] bg-emerald-500/20 text-emerald-400 font-bold';
+    }
+    if (alertBanner) {
+      if (th.throttling) {
+        alertBanner.classList.remove('hidden');
+        var pwrLeft = Math.round((th.throttleFactor || 0.4) * 100);
+        alertBanner.textContent = '🔥 THERMAL THROTTLE: POWER CAPPED AT ' + pwrLeft + '%! CRANK FANS!';
+      } else {
+        alertBanner.classList.add('hidden');
+      }
+    }
   }
 
   roverGroup.updateMatrixWorld(true);
@@ -5818,27 +6122,68 @@ function renderCV() {
   if (!cvC) return;
   var cvCtx = cvC.getContext('2d');
   cvCtx.clearRect(0, 0, 320, 240);
+  var isGrabberView = ((window.NASA_Logistics && (NASA_Logistics.phase() === 'arm_pick' || NASA_Logistics.phase() === 'arm_place' || NASA_Logistics.phase() === 'align_pick')) || camMode === 'grabber') && window.grabberCamera;
+  var badge = document.getElementById('pip-cam-badge');
+  if (badge) {
+    badge.textContent = isGrabberView ? 'GRABBER CAM CV' : 'MASTCAM CV PIP';
+    badge.className = isGrabberView
+      ? 'absolute top-2 left-3 text-[9px] font-bold text-white bg-emerald-500/80 px-2 py-0.5 rounded shadow z-30'
+      : 'absolute top-2 left-3 text-[9px] font-bold text-white bg-cyan-500/80 px-2 py-0.5 rounded shadow z-30';
+  }
   if (aiSnapCanvas.width > 0) {
     cvCtx.drawImage(aiSnapCanvas, 0, 0, 320, 240);
-    cvCtx.fillStyle = 'rgba(0,0,0,0.35)';
-    cvCtx.fillRect(0, 0, 320, 28);
-    cvCtx.fillStyle = '#67e8f9';
+    cvCtx.fillStyle = 'rgba(0,0,0,0.45)';
+    cvCtx.fillRect(0, 0, 320, 26);
+    cvCtx.fillStyle = isGrabberView ? '#34d399' : '#67e8f9';
     cvCtx.font = '10px monospace';
-    cvCtx.fillText('MASTCAM (pre-LiDAR)  ' + (visionNavContext.summary || '').slice(0, 42), 6, 16);
+    var title = isGrabberView ? 'GRABBER CAM (Eye-in-Hand Vision)' : ('MASTCAM (pre-LiDAR)  ' + (visionNavContext.summary || '').slice(0, 36));
+    cvCtx.fillText(title, 6, 16);
   }
-  cvCtx.strokeStyle = '#38bdf8';
-  cvCtx.lineWidth = 1;
-  for (var i = 33; i <= 39; i++) {
-    var bin = i % 36;
-    var d = lidarData[bin];
-    var x = 20 + ((i - 33) / 6) * 280;
-    var h = Math.max(4, (1 - Math.min(d, 12) / 12) * 200);
-    cvCtx.strokeRect(x, 220 - h, 28, h);
-  }
-  var cvTextEl = document.getElementById('cv-text');
-  if (cvTextEl) {
-    cvTextEl.innerText = 'MASTCAM → LIDAR FUSION';
-    cvTextEl.className = 'absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[9px] font-black text-cyan-300 bg-black/70 px-2.5 py-0.5 rounded z-20 border border-cyan-500/30';
+  if (isGrabberView) {
+    // Render Grabber Cam Reticle & Visual Servoing targeting HUD
+    cvCtx.strokeStyle = '#34d399';
+    cvCtx.lineWidth = 1.5;
+    var cx = 160, cy = 120;
+    cvCtx.beginPath();
+    cvCtx.moveTo(cx - 22, cy); cvCtx.lineTo(cx + 22, cy);
+    cvCtx.moveTo(cx, cy - 22); cvCtx.lineTo(cx, cy + 22);
+    cvCtx.stroke();
+    cvCtx.beginPath();
+    cvCtx.arc(cx, cy, 15, 0, Math.PI * 2);
+    cvCtx.stroke();
+    var vs = window.__grabberVs;
+    if (vs) {
+      var offX = Math.max(-50, Math.min(50, (vs.dx || 0) * 350));
+      var offY = Math.max(-50, Math.min(50, -(vs.dy || 0) * 350));
+      var tx = cx + offX, ty = cy + offY;
+      cvCtx.strokeStyle = vs.locked ? '#10b981' : '#f59e0b';
+      cvCtx.lineWidth = 2;
+      cvCtx.strokeRect(tx - 16, ty - 12, 32, 24);
+      cvCtx.fillStyle = vs.locked ? '#10b981' : '#f59e0b';
+      cvCtx.font = '9px monospace';
+      var distStr = vs.dist ? (vs.dist * 100).toFixed(1) + ' cm' : 'ACQUIRED';
+      cvCtx.fillText(distStr, tx - 16, ty - 16);
+    }
+    var cvTextEl = document.getElementById('cv-text');
+    if (cvTextEl) {
+      cvTextEl.innerText = (vs && vs.locked) ? 'AI GRIP: TARGET LOCKED' : 'AI GRIP: VISUAL SERVOING';
+      cvTextEl.className = 'absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[9px] font-black text-emerald-300 bg-black/80 px-2.5 py-0.5 rounded z-20 border border-emerald-500/40';
+    }
+  } else {
+    cvCtx.strokeStyle = '#38bdf8';
+    cvCtx.lineWidth = 1;
+    for (var i = 33; i <= 39; i++) {
+      var bin = i % 36;
+      var d = lidarData[bin];
+      var x = 20 + ((i - 33) / 6) * 280;
+      var h = Math.max(4, (1 - Math.min(d, 12) / 12) * 200);
+      cvCtx.strokeRect(x, 220 - h, 28, h);
+    }
+    var cvTextEl2 = document.getElementById('cv-text');
+    if (cvTextEl2) {
+      cvTextEl2.innerText = 'MASTCAM → LIDAR FUSION';
+      cvTextEl2.className = 'absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[9px] font-black text-cyan-300 bg-black/70 px-2.5 py-0.5 rounded z-20 border border-cyan-500/30';
+    }
   }
 }
 
@@ -5886,10 +6231,28 @@ function animate() {
     var topPos = roverGroup.position.clone().add(new THREE.Vector3(0, 18, 0.01));
     camera.position.lerp(topPos, 4 * dt);
     camera.lookAt(roverGroup.position);
+  } else if (camMode === 'grabber') {
+    if (window.roverArm && (window.roverArm.tip || window.roverArm.wrist)) {
+      var targetObj = window.roverArm.tip || window.roverArm.wrist;
+      var tipW = new THREE.Vector3();
+      targetObj.getWorldPosition(tipW);
+      var grabCamPos = new THREE.Vector3(0.38, 0.32, 0.36).applyQuaternion(roverGroup.quaternion).add(tipW);
+      camera.position.lerp(grabCamPos, Math.min(1.0, 8.0 * dt));
+      camera.lookAt(tipW.clone().add(new THREE.Vector3(0, -0.02, 0)));
+    } else {
+      var gCam = new THREE.Vector3(0.55, 0.45, 0.25).applyMatrix4(roverGroup.matrixWorld);
+      camera.position.lerp(gCam, Math.min(1, 8 * dt));
+      camera.lookAt(roverGroup.position);
+    }
   } else if (camMode === 'arm') {
-    var armCam = new THREE.Vector3(0.85, 0.85, 0.95).applyMatrix4(roverGroup.matrixWorld);
-    var armLook = new THREE.Vector3(0.15, 0.38, -0.05).applyMatrix4(roverGroup.matrixWorld);
-    camera.position.lerp(armCam, Math.min(1, 6 * dt));
+    var armCam = new THREE.Vector3(0.48, 0.52, 0.38).applyMatrix4(roverGroup.matrixWorld);
+    var armLook = new THREE.Vector3(0.28, 0.30, 0.10).applyMatrix4(roverGroup.matrixWorld);
+    if (window.roverArm && window.roverArm.tip) {
+      var tipW2 = new THREE.Vector3();
+      window.roverArm.tip.getWorldPosition(tipW2);
+      armLook.lerp(tipW2, 0.7);
+    }
+    camera.position.lerp(armCam, Math.min(1, 8 * dt));
     camera.lookAt(armLook);
   } else if (camMode === 'side') {
     var sCam = new THREE.Vector3(0, 0.30, 1.45).applyMatrix4(roverGroup.matrixWorld);
@@ -5915,6 +6278,11 @@ function animate() {
   renderCV();
 }
 animate();
+(function initPowerEcoDefault() {
+  if (window.NASA_RoverBOM && NASA_RoverBOM.setPowerMode) {
+    setPowerMode('eco');
+  }
+})();
 
 var enduranceRunning = false;
 var enduranceTarget = 0;
