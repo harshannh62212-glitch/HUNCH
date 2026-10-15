@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NASA HUNCH AEGIS-V1 Rover — Dedicated 3D Model Inspector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/RoundedBoxGeometry.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="js/rover_bom.js"></script>
+  <script src="js/fusion_rover.js"></script>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #07090e; }
+    body { color: #f3f4f6; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    #canvas-container { position: absolute; inset: 0; z-index: 0; }
+    .glass { background: rgba(13, 19, 33, 0.82); backdrop-filter: blur(12px); border: 1px solid rgba(56, 189, 248, 0.25); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    .btn-action { transition: all 0.2s ease; border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(15, 23, 42, 0.8); }
+    .btn-action:hover { border-color: #38bdf8; background: rgba(56, 189, 248, 0.2); }
+    .btn-active { background: rgba(56, 189, 248, 0.35) !important; border-color: #38bdf8 !important; color: #fff !important; }
+  </style>
+</head>
+<body class="relative w-full h-full select-none">
+  <div id="canvas-container"></div>
+
+  <!-- Top Floating Bar -->
+  <div class="absolute top-4 left-4 right-4 z-10 flex flex-wrap items-center justify-between gap-3 p-3.5 glass rounded-xl pointer-events-auto">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-lg bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 font-bold text-xl">
+        🤖
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="text-sm font-bold text-white tracking-wider">AEGIS-V1 LUNAR AMR ROVER</span>
+          <span class="px-2 py-0.5 text-[10px] bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded font-bold">DIGITAL TWIN CAD</span>
+        </div>
+        <div class="text-[11px] text-slate-400">NASA HUNCH LLASO External Autonomous Cargo Transport Robot</div>
+      </div>
+    </div>
+
+    <!-- View & Display Controls -->
+    <div class="flex items-center gap-2">
+      <button id="toggle-turntable" class="px-3 py-1.5 text-xs rounded-lg btn-action btn-active">⟳ Auto-Rotate</button>
+      <button id="toggle-shell" class="px-3 py-1.5 text-xs rounded-lg btn-action">👁 Hide Shell (X-Ray)</button>
+      <button id="reset-cam" class="px-3 py-1.5 text-xs rounded-lg btn-action">⌖ Reset View</button>
+    </div>
+  </div>
+
+  <!-- Bottom Details & Navigation Overlay -->
+  <div class="absolute bottom-4 left-4 z-10 glass rounded-xl p-3.5 max-w-sm pointer-events-auto text-xs space-y-1.5">
+    <div class="font-bold text-sky-300 flex items-center justify-between">
+      <span>SPACE-HARDENED SPECIFICATIONS</span>
+      <span class="text-[10px] text-emerald-400 font-mono">SEALED / SPACE-READY</span>
+    </div>
+    <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300 text-[11px]">
+      <div>• Viton Gasket Flanges</div>
+      <div>• Active CoG Trim Slide (±20cm)</div>
+      <div>• Whipple Micrometeorite Pan</div>
+      <div>• Powered Bi-Directional Rollers</div>
+      <div>• Superelastic SMA Mesh Tires</div>
+      <div>• 4x ISO Twist-Locks</div>
+      <div>• Loop Heat-Pipe Radiators</div>
+      <div>• Docking Dust Collar Guide</div>
+      <div>• Bellows Damper Seals</div>
+      <div>• UWB/RFID Interrogator Gate</div>
+    </div>
+    <div class="text-[10px] text-slate-400 pt-1.5 border-t border-slate-700/60">
+      Left Drag: Orbit • Right Drag: Pan • Scroll: Zoom
+    </div>
+  </div>
+
+  <div id="loading" class="absolute inset-0 flex items-center justify-center z-50 bg-[#07090e]/90 text-sky-400 text-lg font-bold tracking-widest">
+    LOADING 3D ROVER ASSEMBLY...
+  </div>
+
+  <script>
+    const container = document.getElementById('canvas-container');
+    const loading = document.getElementById('loading');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x07090e);
+
+    // Subtle star field
+    const starGeo = new THREE.BufferGeometry();
+    const starVerts = [];
+    for (let i = 0; i < 2000; i++) {
+      starVerts.push((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80);
+    }
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0x94a3b8, size: 0.35, transparent: true, opacity: 0.7 });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    // Studio lighting rig
+    const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x0f172a, 1.2);
+    scene.add(hemiLight);
+
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 2.0);
+    dirLight1.position.set(4, 7, 5);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 1.0);
+    dirLight2.position.set(-5, 2, -4);
+    scene.add(dirLight2);
+
+    const fillLight = new THREE.DirectionalLight(0xfff7ed, 0.6);
+    fillLight.position.set(0, -3, 3);
+    scene.add(fillLight);
+
+    // Grid Floor
+    const grid = new THREE.GridHelper(10, 40, 0x38bdf8, 0x1e293b);
+    grid.position.y = -0.15;
+    scene.add(grid);
+
+    // Shadow plane
+    const shadowGeo = new THREE.PlaneGeometry(3, 3);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false
+    });
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = -0.149;
+    scene.add(shadowMesh);
+
+    // Camera & Controls
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 100);
+    camera.position.set(1.4, 0.85, 1.4);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 0.22, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.4;
+    controls.minDistance = 0.4;
+    controls.maxDistance = 5.0;
+
+    let roverModel = null;
+    let shellVisible = true;
+
+    // Load Rover
+    const roverGroup = new THREE.Group();
+    scene.add(roverGroup);
+
+    window.NASA_FusionRover.init({ roverGroup: roverGroup }).then((model) => {
+      roverModel = model;
+      loading.style.display = 'none';
+    }).catch(err => {
+      console.error(err);
+      loading.textContent = 'Error loading model: ' + err.message;
+    });
+
+    // UI Buttons
+    const btnTurntable = document.getElementById('toggle-turntable');
+    btnTurntable.addEventListener('click', () => {
+      controls.autoRotate = !controls.autoRotate;
+      btnTurntable.classList.toggle('btn-active', controls.autoRotate);
+    });
+
+    const btnShell = document.getElementById('toggle-shell');
+    btnShell.addEventListener('click', () => {
+      if (!window.upperShellGroup) return;
+      shellVisible = !shellVisible;
+      window.upperShellGroup.visible = shellVisible;
+      btnShell.textContent = shellVisible ? '👁 Hide Shell (X-Ray)' : '👁 Show Shell';
+      btnShell.classList.toggle('btn-active', !shellVisible);
+    });
+
+    const btnResetCam = document.getElementById('reset-cam');
+    btnResetCam.addEventListener('click', () => {
+      camera.position.set(1.4, 0.85, 1.4);
+      controls.target.set(0, 0.22, 0);
+      controls.update();
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      controls.update();
+
+      // Spin lidar & cooling fans in view
+      if (window.lidarHead) {
+        window.lidarHead.rotation.y += delta * 12.0;
+      }
+      if (window.fanRotors && window.fanRotors.length) {
+        window.fanRotors.forEach(f => f.rotation.z += delta * 25.0);
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
