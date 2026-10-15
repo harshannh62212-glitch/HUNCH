@@ -19,8 +19,14 @@
   var GRIP_CLOSED = 0.018;
   var JOINT_SPEED = 0.75;
   var DECK_Y = 0.30;
-  var GRIP_SNAP_DIST = 0.025;     // Fingers must be on the handle. No force-lock.
-  var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
+  var GRIP_SNAP_DIST = 0.025;
+  var GRIP_FORCE_DIST = 0.08;     // Snap clasp when tip is within 8 cm of handle
+  var GRIP_RETRY_MAX = 1;         // One IK correction, then firm clasp at grasp pose
+  var bayLidGoal = 0;
+  var bayLidRate = 2.2;
+  var awaitBayLidOpen = false;
+  var awaitBayLidClose = false;
+  var stowAfterLidClose = null;
 
   var manifest = null;
   var queue = [];
@@ -66,9 +72,9 @@
   var groundY = 0;
   var landedCenterY = 0;
   var parkGap = { pick: 0.22, drop: 0.22 };
-  var PICK_ROVER_Z_NOM = -35.02;
+  var PICK_ROVER_Z_NOM = -35.18;
   var PICK_GAP_NOM = 0.22;
-  var DROP_ROVER_X_NOM = -19.68;
+  var DROP_ROVER_X_NOM = -20.55;
   var DROP_GAP_NOM = 0.22;
   var reachWarned = false;
   var traj = null;
@@ -79,6 +85,12 @@
   var _grasp = new THREE.Vector3();
   var _tipArm = new THREE.Vector3();
   var _tipErr = new THREE.Vector3();
+  var alignSteerSmooth = 0;
+  var cargoLevel = null;
+  var _levelQ0 = new THREE.Quaternion();
+  var _levelQ1 = new THREE.Quaternion();
+  var _levelMix = new THREE.Quaternion();
+  var _levelMat = new THREE.Matrix4();
 
   function log(html) {
     if (typeof llog === 'function') llog(html);
@@ -93,6 +105,62 @@
   function quintic(t) {
     var u = Math.max(0, Math.min(1, t));
     return u * u * u * (10 + u * (-15 + 6 * u));
+  }
+
+  function bayLid01() {
+    return (typeof window.cargoBayHatchOpen === 'number') ? window.cargoBayHatchOpen : 1;
+  }
+
+  function bayLidIsOpen() {
+    return bayLid01() >= 0.9;
+  }
+
+  function bayLidIsClosed() {
+    return bayLid01() <= 0.06;
+  }
+
+  function tickBayLid(dt) {
+    if (typeof window.setCargoBayHatch !== 'function') return;
+    var cur = bayLid01();
+    var goal = bayLidGoal;
+    if (Math.abs(cur - goal) < 0.003) {
+      window.setCargoBayHatch(goal);
+      return;
+    }
+    var step = (goal - cur) * Math.min(1, bayLidRate * dt);
+    window.setCargoBayHatch(cur + step);
+  }
+
+  function prepBayLidOpen() {
+    bayLidGoal = 1;
+    awaitBayLidOpen = true;
+    awaitBayLidClose = false;
+    stowAfterLidClose = null;
+  }
+
+  function prepBayLidClose(afterStow) {
+    bayLidGoal = 0;
+    awaitBayLidClose = true;
+    awaitBayLidOpen = false;
+    stowAfterLidClose = afterStow || null;
+  }
+
+  function enterArmPhase(next) {
+    traj = null;
+    armMode = null;
+    gripRetry = 0;
+    phase = next;
+  }
+
+  function ensureBayLidOpenForArm() {
+    if (bayLidIsOpen()) return true;
+    if (bayLidGoal < 1) {
+      prepBayLidOpen();
+      if (typeof window.setCargoBayHatch === 'function') {
+        log('<span class="text-cyan-300">[BAY] Opening cargo bay hatch for arm cycle.</span>');
+      }
+    }
+    return bayLidIsOpen();
   }
 
   function mat(color, rough, metal, emissive) {
@@ -458,7 +526,7 @@
     var dist = Math.hypot(pose.x - p.x, pose.z - p.z);
     var stopErr = Math.abs(wrap(pose.targetYaw - roverYaw));
     var v = (typeof vel !== 'undefined') ? Math.abs(vel) : 0;
-    return dist < 0.12 && stopErr < 0.12 && v < 0.08;
+    return dist < 0.06 && stopErr < 0.08 && v < 0.08;
   }
 
   function parkPose() {
@@ -476,7 +544,7 @@
     var r = Math.hypot(planar, y);
     var maxR = L1 + L2 - 0.02;
     var minR = Math.abs(L1 - L2) + 0.04;
-    var reachable = r <= maxR + 0.015 && r >= minR * 0.4;
+    var reachable = r <= maxR + 0.03 && r >= minR * 0.35;
     if (r > maxR) {
       var s = maxR / (r || 1);
       planar *= s;
@@ -581,6 +649,32 @@
     if (arm.fingerR) arm.fingerR.position.z = grip;
   }
 
+  function setWorldQuaternionOnParent(mesh, worldQ) {
+    if (!mesh || !mesh.parent) return;
+    mesh.parent.updateWorldMatrix(true, true);
+    var parentQ = new THREE.Quaternion();
+    mesh.parent.getWorldQuaternion(parentQ);
+    mesh.quaternion.copy(parentQ.invert().multiply(worldQ));
+  }
+
+  function beginCargoLevel(orientParent) {
+    if (!held || !orientParent) return;
+    held.getWorldQuaternion(_levelQ0);
+    orientParent.updateWorldMatrix(true, true);
+    orientParent.getWorldQuaternion(_levelQ1);
+    cargoLevel = { parent: orientParent, t: 0, dur: 0.45 };
+  }
+
+  function tickCargoLevel(dt) {
+    if (!cargoLevel || !held) return true;
+    cargoLevel.t += dt;
+    var u = quintic(Math.min(1, cargoLevel.t / cargoLevel.dur));
+    cargoLevel.parent.getWorldQuaternion(_levelQ1);
+    _levelMix.slerpQuaternions(_levelQ0, _levelQ1, u);
+    setWorldQuaternionOnParent(held, _levelMix);
+    return cargoLevel.t >= cargoLevel.dur;
+  }
+
   function buildTraj(waypoints) {
     var arm = window.roverArm;
     if (!arm) return;
@@ -600,6 +694,20 @@
       var nextSh = sh;
       var nextEl = el;
       var nextGrip = w.grip != null ? w.grip : grip;
+      if (w.hold) {
+        var holdDur = w.dur || 0.45;
+        segs.push({
+          hold: true,
+          yaw0: yaw, yaw1: yaw,
+          sh0: sh, sh1: sh,
+          el0: el, el1: el,
+          g0: grip, g1: grip,
+          dur: holdDur,
+          tag: w.tag || '',
+          levelParent: w.levelParent || null,
+        });
+        continue;
+      }
       if (w.stow) {
         nextYaw = 0.0;
         nextSh = 1.15;
@@ -666,15 +774,26 @@
       seg.sh1 = endSh;
       seg.el1 = endEl;
     }
-    traj.t += dt;
-    var u = quintic(Math.min(1, traj.t / seg.dur));
-    setJoints(
-      seg.yaw0 + (endYaw - seg.yaw0) * u,
-      seg.sh0 + (endSh - seg.sh0) * u,
-      seg.el0 + (endEl - seg.el0) * u,
-      seg.g0 + (seg.g1 - seg.g0) * u
-    );
-    if (traj.t < seg.dur) return false;
+    if (seg.hold) {
+      if (!seg.levelBegun && seg.levelParent && held) {
+        beginCargoLevel(seg.levelParent);
+        seg.levelBegun = true;
+      }
+      if (seg.levelParent && held) tickCargoLevel(dt);
+      traj.t += dt;
+      if (traj.t < seg.dur) return false;
+    } else {
+      traj.t += dt;
+      var u = quintic(Math.min(1, traj.t / seg.dur));
+      setJoints(
+        seg.yaw0 + (endYaw - seg.yaw0) * u,
+        seg.sh0 + (endSh - seg.sh0) * u,
+        seg.el0 + (endEl - seg.el0) * u,
+        seg.g0 + (seg.g1 - seg.g0) * u
+      );
+      if (traj.t < seg.dur) return false;
+    }
+    cargoLevel = null;
     var nextSeg = traj.segs[traj.i + 1];
     if (nextSeg && nextSeg.tag === 'close' && picking) {
       var preDist = gripDist(picking);
@@ -821,8 +940,10 @@
       if (parkGap.pick > 0.16) parkGap.pick -= 0.05;
       phase = 'align_pick';
     } else {
-      if (parkGap.drop > 0.16) parkGap.drop -= 0.05;
+      if (parkGap.drop > 0.04) parkGap.drop -= 0.08;
       phase = 'align_drop';
+      bayLidGoal = 0;
+      awaitBayLidOpen = false;
     }
     traj = null;
     armMode = null;
@@ -834,6 +955,7 @@
 
   function startPickSequence() {
     if (!beltReady()) return;
+    if (!ensureBayLidOpenForArm()) return;
     ensureTip();
     var mesh = belt[0];
     var graspTip = worldTarget(mesh.userData.grasp);
@@ -848,6 +970,8 @@
     var slot = slots[bay.length] || slots[0];
     var seat = worldTarget(slot);
     seat.y += mesh.userData.h + 0.01;
+    var seatDown = seat.clone();
+    seatDown.y -= 0.04;
     var raised = seat.clone();
     raised.y += 0.14;
     // Arc mid-point: smooth parabolic transit avoids clipping rover shell
@@ -862,10 +986,10 @@
       { local: lift, grip: GRIP_CLOSED, dur: 0.5 },
       { local: mid, grip: GRIP_CLOSED },
       { local: raised, grip: GRIP_CLOSED },
-      { local: seat, grip: GRIP_CLOSED, dur: 0.5, tag: 'seat' },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.5 },
+      { hold: true, dur: 0.45, tag: 'levelBay', levelParent: slot },
+      { local: seatDown, grip: GRIP_CLOSED, dur: 0.38 },
       { grip: GRIP_OPEN, dur: 0.4, tag: 'openBay' },
-      { local: raised, grip: GRIP_OPEN, dur: 0.35 },
-      { stow: true, grip: GRIP_OPEN, tag: 'stowedPick' },
     ]);
     log('<span class="text-cyan-300 font-bold">[ARM] Reaching for ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + '.</span>');
   }
@@ -886,19 +1010,27 @@
     var tableWp = new THREE.Vector3();
     tableAnchor.getWorldPosition(tableWp);
     tableWp.y += mesh.userData.h + 0.04;
+    if (roverGroup) {
+      var rv = roverGroup.position;
+      tableWp.x += (rv.x - tableWp.x) * 0.42;
+      tableWp.z += (rv.z - tableWp.z) * 0.15;
+    }
     var place = armFrameLocal(tableWp);
     var placeUp = place.clone();
     placeUp.y += 0.14;
+    var placeDown = place.clone();
+    placeDown.y -= 0.03;
     window.__armWhy = {
       g: solveArm(grasp).reachable,
       p: solveArm(place).reachable,
       gr: +Math.hypot(grasp.x, grasp.y, grasp.z).toFixed(3),
       pr: +Math.hypot(place.x, place.y, place.z).toFixed(3),
     };
-    if (!solveArm(place).reachable) {
+    if (!solveArm(grasp).reachable || !solveArm(place).reachable) {
       nudgeCloser();
       return;
     }
+    if (!ensureBayLidOpenForArm()) return;
     var pre = grasp.clone();
     pre.y += 0.12;
     if (!solveArm(pre).reachable) pre.y = grasp.y + 0.06;
@@ -915,10 +1047,10 @@
       { local: pre, grip: GRIP_CLOSED, dur: 0.4 },
       { local: mid, grip: GRIP_CLOSED },
       { local: placeUp, grip: GRIP_CLOSED },
-      { local: place, grip: GRIP_CLOSED, dur: 0.6, tag: 'seat' },
+      { local: place, grip: GRIP_CLOSED, dur: 0.55 },
+      { hold: true, dur: 0.45, tag: 'levelTable', levelParent: tableAnchor },
+      { local: placeDown, grip: GRIP_CLOSED, dur: 0.35 },
       { grip: GRIP_OPEN, dur: 0.4, tag: 'openTable' },
-      { local: placeUp, grip: GRIP_OPEN, dur: 0.35 },
-      { stow: true, grip: GRIP_OPEN, tag: 'stowedPlace' },
     ]);
     log('<span class="text-cyan-300">[ARM] Offloading ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + ' to intake table.</span>');
   }
@@ -957,10 +1089,11 @@
   function seatFlat(parent, mesh, y) {
     if (!parent || !mesh) return;
     hideTies(mesh);
+    var wq = new THREE.Quaternion();
+    mesh.getWorldQuaternion(wq);
     parent.attach(mesh);
     mesh.position.set(0, y || 0, 0);
-    mesh.rotation.set(0, 0, 0);
-    mesh.quaternion.identity();
+    setWorldQuaternionOnParent(mesh, wq);
     if (parent.userData && parent.userData.ties) {
       parent.userData.ties.forEach(function (t) { t.visible = true; });
     }
@@ -972,18 +1105,8 @@
       var mesh = picking;
       var dist = mesh ? gripDist(mesh) : 99;
       window.__lastGripDist = dist;
-      if (mesh && dist <= GRIP_SNAP_DIST) {
-        holdAtTip(mesh);
-        held = mesh;
-        if (tag === 'close') dropFromQueue(mesh);
-        else {
-          var bi = bay.indexOf(mesh);
-          if (bi >= 0) bay.splice(bi, 1);
-        }
-        if (dist > 0.04) {
-          log('<span class="text-emerald-300">[ARM] Gripper engaged at ' + (dist * 100).toFixed(1) + ' cm — within snap tolerance.</span>');
-        }
-      } else if (mesh && gripRetry < GRIP_RETRY_MAX) {
+      var claspOk = mesh && dist <= GRIP_FORCE_DIST;
+      if (mesh && !claspOk && gripRetry < GRIP_RETRY_MAX) {
         gripRetry += 1;
         var fixIk = ikAtTipTarget(worldTarget(mesh.userData.grasp), arm.base.rotation.y);
         var fix = {
@@ -1017,11 +1140,18 @@
         traj = fix;
         log('<span class="text-amber-300">[ARM] Grip was ' + (dist * 100).toFixed(1) + ' cm off handle. Correction attempt ' + gripRetry + '/' + GRIP_RETRY_MAX + '.</span>');
       } else if (mesh) {
-        traj = null;
-        held = null;
-        gripRetry = 0;
-        phase = (tag === 'closeBay') ? 'align_drop' : 'align_pick';
-        log('<span class="text-amber-300">[ARM] Fingers missed the handle by ' + (dist * 100).toFixed(0) + ' cm. Cargo stays put.</span>');
+        holdAtTip(mesh);
+        held = mesh;
+        if (tag === 'close') dropFromQueue(mesh);
+        else {
+          var bi = bay.indexOf(mesh);
+          if (bi >= 0) bay.splice(bi, 1);
+        }
+        if (dist > GRIP_SNAP_DIST) {
+          log('<span class="text-emerald-300">[ARM] Firm clasp at ' + (dist * 100).toFixed(1) + ' cm — cargo locked to gripper.</span>');
+        } else if (dist > 0.04) {
+          log('<span class="text-emerald-300">[ARM] Gripper engaged at ' + (dist * 100).toFixed(1) + ' cm.</span>');
+        }
       }
     } else if (tag === 'openBay' && held) {
       var slots = window.cargoBaySlots || [];
@@ -1032,6 +1162,8 @@
       log('<span class="text-emerald-300 font-bold">[ARM] Stowed ' + held.userData.rec.id + ' (' + held.userData.rec.mass_kg.toFixed(1) + ' kg, ' + (held.userData.rec.mass_kg * G_MOON).toFixed(1) + ' N lunar).</span>');
       held = null;
       picking = null;
+      log('<span class="text-cyan-300">[BAY] Sealing cargo bay hatch.</span>');
+      prepBayLidClose('pick');
     } else if (tag === 'openTable' && held) {
       if (tableAnchor) {
         var target = new THREE.Vector3();
@@ -1048,6 +1180,8 @@
       log('<span class="text-cyan-300">[ARM] Set ' + held.userData.rec.id + ' on the intake table. (' + missionStats.parcelsDelivered + ' delivered, ' + missionStats.totalMassKg.toFixed(1) + ' kg total)</span>');
       held = null;
       picking = null;
+      log('<span class="text-cyan-300">[BAY] Sealing cargo bay hatch.</span>');
+      prepBayLidClose('place');
     } else if (tag === 'stowedPick') {
       armMode = null;
       afterPick();
@@ -1083,29 +1217,44 @@
     craneWaitT += dt;
     if (!tableParcel && !(crane && crane.job)) {
       // Table is clear — resume arm placement
-      phase = 'arm_place';
+      enterArmPhase('arm_place');
       craneWaitT = 0;
       log('<span class="text-emerald-300">[ARM] Table clear. Resuming offload.</span>');
     } else if (craneWaitT > 30) {
       // Safety timeout — skip this parcel to avoid infinite wait
       log('<span class="text-rose-400">[ARM] Crane timeout (30s). Proceeding.</span>');
-      phase = 'arm_place';
+      enterArmPhase('arm_place');
       craneWaitT = 0;
       tableParcel = null;
     }
   }
 
+  function beginStowAfterHatch(tag) {
+    buildTraj([
+      { grip: GRIP_OPEN, dur: 0.25 },
+      { stow: true, grip: GRIP_OPEN, tag: tag },
+    ]);
+  }
+
   function tickArm(dt) {
     ensureTip();
-    if (!traj) {
+    tickBayLid(dt);
+    if (awaitBayLidOpen && !bayLidIsOpen()) return;
+    if (awaitBayLidOpen && bayLidIsOpen()) awaitBayLidOpen = false;
+    if (awaitBayLidClose && !traj) {
+      if (!bayLidIsClosed()) return;
+      awaitBayLidClose = false;
+      var which = stowAfterLidClose;
+      stowAfterLidClose = null;
+      if (which === 'pick') beginStowAfterHatch('stowedPick');
+      else if (which === 'place') beginStowAfterHatch('stowedPlace');
+      return;
+    }
+    if (!traj && !awaitBayLidOpen && !awaitBayLidClose) {
       if (phase === 'arm_pick') startPickSequence();
       else if (phase === 'arm_place') startPlaceSequence();
     }
-    if (traj) {
-      var done = playTraj(dt);
-      if (done && armMode === 'pick' && phase === 'arm_pick') afterPick();
-      if (done && armMode === 'place' && phase === 'arm_place') afterPlace();
-    }
+    if (traj) playTraj(dt);
     applyCompliance(dt);
     if (held) watchJump(held, dt);
     for (var i = 0; i < bay.length; i++) watchJump(bay[i], dt);
@@ -1210,7 +1359,7 @@
     traj = null;
     armMode = null;
     if (queue.length && bayHasRoom(nextParcelMass()) && depot.length + (crane ? crane.queue.length : 0) < DEPOT_SLOTS && !socLow()) {
-      phase = 'arm_pick';
+      enterArmPhase('arm_pick');
       return;
     }
     trips += 1;
@@ -1232,7 +1381,7 @@
         craneWaitT = 0;
         log('<span class="text-amber-300">[ARM] Waiting for crane to shelf before next drop.</span>');
       } else {
-        phase = 'arm_place';
+        enterArmPhase('arm_place');
       }
       return;
     }
@@ -1402,22 +1551,23 @@
       var dist = Math.hypot(dx, dz);
       var driveYaw = Math.atan2(-dz, dx);
       var stopYaw = (pose.targetYaw !== undefined) ? pose.targetYaw : Math.atan2(-(pose.faceZ - p.z), pose.faceX - p.x);
-      var useStop = dist < 0.28;
-      var yawErr = wrap((useStop ? stopYaw : driveYaw) - roverYaw);
+      var blend = Math.max(0, Math.min(1, 1 - dist / 0.6));
+      var aimYaw = driveYaw + wrap(stopYaw - driveYaw) * blend;
+      var yawErr = wrap(aimYaw - roverYaw);
       var stopErr = wrap(stopYaw - roverYaw);
+      if (Math.abs(yawErr) < 0.04) yawErr = 0;
+      if (Math.abs(stopErr) < 0.04) stopErr = 0;
       var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
       var pickAlign = phase === 'align_pick';
-      var distGate = pickAlign ? 0.14 : 0.22;
-      var yawGate = pickAlign ? 0.18 : 0.28;
-      var fineDist = pickAlign ? 0.08 : 0.14;
-      var fineYaw = pickAlign ? 0.10 : 0.18;
+      var distGate = pickAlign ? 0.06 : 0.22;
+      var yawGate = pickAlign ? 0.08 : 0.28;
+      var fineDist = pickAlign ? 0.04 : 0.14;
+      var fineYaw = pickAlign ? 0.05 : 0.18;
       var velGate = pickAlign ? 0.05 : 0.06;
       if (dist < distGate && Math.abs(stopErr) < yawGate) {
         if (Math.abs(vel) < velGate || (dist < fineDist && Math.abs(stopErr) < fineYaw)) {
-          phase = phase === 'align_pick' ? 'arm_pick' : 'arm_place';
-          traj = null;
-          armMode = null;
-          gripRetry = 0;
+          alignSteerSmooth = 0;
+          enterArmPhase(phase === 'align_pick' ? 'arm_pick' : 'arm_place');
           log(phase === 'arm_pick'
             ? '<span class="text-cyan-300 font-bold">[ARM] At the lander belt. Waiting on the handle.</span>'
             : '<span class="text-cyan-300 font-bold">[ARM] Bumper is ' +
@@ -1425,17 +1575,30 @@
               ' cm from the airlock face. Setting the pod in the receiving zone.</span>');
           return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
         }
-        var doBrake = dist < 0.15 || Math.abs(vel) > 0.10;
-        return { steer: Math.max(-0.8, Math.min(0.8, stopErr * 1.5)), throttle: 0, forward: false, reverse: false, brake: doBrake };
+        var fineSteer = Math.max(-0.35, Math.min(0.35, stopErr * 0.85));
+        var dtA = (typeof window !== 'undefined' && window.__lastPhysicsDt) ? window.__lastPhysicsDt : 0.016;
+        alignSteerSmooth += (fineSteer - alignSteerSmooth) * Math.min(1, 4.0 * dtA);
+        var doBrake = dist < 0.12 || Math.abs(vel) > 0.08;
+        return { steer: alignSteerSmooth, throttle: 0, forward: false, reverse: false, brake: doBrake };
       }
       var v = 0;
-      if (Math.abs(yawErr) < 0.45) {
-        v = Math.min(0.38, Math.sqrt(Math.max(0, 2 * 0.35 * dist)));
-        if (dist < 0.50) v = Math.min(v, 0.14);
+      if (Math.abs(yawErr) < 0.55) {
+        v = Math.min(0.22, 0.05 + dist * 0.35);
+        if (dist < 0.45) v = Math.min(v, 0.05 + dist * 0.38);
       }
-      var tvDamp = (typeof turnVel !== 'undefined') ? turnVel * 0.20 : 0;
-      var steer = Math.max(-0.95, Math.min(0.95, yawErr * 1.35 - tvDamp));
-      return { steer: steer, throttle: v > 0.02 ? Math.min(1, v / ms) : 0, forward: v > 0.02, reverse: false, brake: false };
+      // Keep creeping until the tight pick gate so a heading error does not freeze short of the belt.
+      if (pickAlign && dist >= distGate && Math.abs(yawErr) < 1.2 && v < 0.06) v = 0.06;
+      var tvDamp = (typeof turnVel !== 'undefined') ? turnVel * 0.12 : 0;
+      var rawSteer = Math.max(-0.45, Math.min(0.45, yawErr * 0.72 - tvDamp));
+      var dtAlign = (typeof window !== 'undefined' && window.__lastPhysicsDt) ? window.__lastPhysicsDt : 0.016;
+      alignSteerSmooth += (rawSteer - alignSteerSmooth) * Math.min(1, 4.0 * dtAlign);
+      return {
+        steer: alignSteerSmooth,
+        throttle: v > 0.02 ? Math.min(1, v / ms) : 0,
+        forward: v > 0.02,
+        reverse: false,
+        brake: false,
+      };
     },
     obstacles: function () {
       var list = [{ x: BASE.x, z: BASE.z, r: 3.1 }];
@@ -1546,8 +1709,7 @@
         log('<span class="text-cyan-300">[ARM] Aligning to lander belt before pickup.</span>');
         return;
       }
-      phase = 'arm_pick';
-      startPickSequence();
+      enterArmPhase('arm_pick');
       log('<span class="text-emerald-400 font-bold">[ARM] Executing robotic arm pickup sequence.</span>');
     },
     dropCargo: function () {
@@ -1562,11 +1724,7 @@
         api.goToBase();
         return;
       }
-      phase = 'arm_place';
-      traj = null;
-      armMode = null;
-      gripRetry = 0;
-      startPlaceSequence();
+      enterArmPhase('arm_place');
       log('<span class="text-teal-400 font-bold">[ARM] Executing robotic arm drop sequence.</span>');
     },
     abort: function () {

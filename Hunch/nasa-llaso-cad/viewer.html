@@ -5169,6 +5169,7 @@ addEventListener('keyup', function(e) {
 function kd(k) { return keys[k] === true; }
 
 function updatePhysics(dt) {
+  window.__lastPhysicsDt = dt;
   if (window.NASA_Logistics && NASA_Logistics.tick) NASA_Logistics.tick(dt);
   if (isCrashed) return;
 
@@ -5687,7 +5688,10 @@ function updatePhysics(dt) {
 
   // Wheel rotation
   var rads = (vel / 0.09) * dt;
-  wheels.forEach(function(w) { w.rotation.y -= rads; });
+  wheels.forEach(function (w) {
+    var roll = (w.userData && w.userData.roll) ? w.userData.roll : w;
+    roll.rotation.y -= rads;
+  });
 
   // Battery simulation & Hangar Bay LED Chevron Animation
   var dockDistNow = roverGroup.position.distanceTo(dockGroup.position);

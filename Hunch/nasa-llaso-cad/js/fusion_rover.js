@@ -36,24 +36,50 @@
     return tex;
   }
 
-  function createWheelTreadTexture() {
+  function createNitinolMeshTexture() {
     var cv = document.createElement('canvas'); cv.width = 512; cv.height = 512;
     var c = cv.getContext('2d');
-    c.fillStyle = '#262a34'; c.fillRect(0, 0, 512, 512);
-    c.strokeStyle = '#3d4452'; c.lineWidth = 14;
-    for (var y = -64; y < 576; y += 48) {
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(256, y + 36);
-      c.lineTo(512, y);
-      c.stroke();
+    
+    // Background - dark translucent void behind wire weave
+    c.fillStyle = '#231e18'; c.fillRect(0, 0, 512, 512);
+
+    // NASA Glenn Superelastic Nitinol / Coiled Spring Chainmail Interlocking Links
+    // Woven coiled spring wire grid (gold-bronze titanium sheen)
+    c.lineWidth = 2.2;
+    for (var y = 0; y < 512; y += 8) {
+      for (var x = 0; x < 512; x += 8) {
+        var offset = (Math.floor(y / 8) % 2 === 0) ? 4 : 0;
+        var cx = (x + offset) % 512;
+        
+        // Coiled wire loop ring highlight
+        c.strokeStyle = '#c29b68';
+        c.beginPath();
+        c.arc(cx, y, 4.5, 0, Math.PI * 2);
+        c.stroke();
+
+        // Shaded wire loop underside (depth & specular contrast)
+        c.strokeStyle = '#61482b';
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(cx + 1, y + 1, 3.2, 0, Math.PI);
+        c.stroke();
+        c.lineWidth = 2.2;
+      }
     }
-    c.fillStyle = 'rgba(203,213,225,0.18)';
-    for (var i = 0; i < 400; i++) {
-      c.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+
+    // Diagonal interlocking coil spring strands (giving distinct 3D woven spring mesh look)
+    c.strokeStyle = 'rgba(235, 195, 138, 0.45)';
+    c.lineWidth = 1.5;
+    for (var d = -512; d < 1024; d += 16) {
+      c.beginPath(); c.moveTo(d, 0); c.lineTo(d + 512, 512); c.stroke();
     }
+    for (var d2 = -512; d2 < 1024; d2 += 16) {
+      c.beginPath(); c.moveTo(d2, 512); c.lineTo(d2 + 512, 0); c.stroke();
+    }
+
     var tex = new THREE.CanvasTexture(cv);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, 4);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(6, 6);
     return tex;
   }
 
@@ -158,26 +184,28 @@
 
     var root = new THREE.Group();
     root.name = 'aegisRoverAssembly';
-    roverGroup.add(root);
+    if (roverGroup) {
+      roverGroup.add(root);
+    }
 
     // Textures & Materials
     var petgTex = (typeof global.createPetgTex === 'function') ? global.createPetgTex(true) : createPetgTexture();
-    var wheelTex = (typeof global.createWheelTreadTex === 'function') ? global.createWheelTreadTex() : createWheelTreadTexture();
+    var wheelTex = createNitinolMeshTexture();
     var batTex = (typeof global.createGoldenmateBatTex === 'function') ? global.createGoldenmateBatTex() : createGoldenmateTexture();
     var unoTex = (typeof global.createArduinoUnoTex === 'function') ? global.createArduinoUnoTex() : createArduinoTexture();
     var piTex = (typeof global.createPi5BoardTex === 'function') ? global.createPi5BoardTex() : createPi5Texture();
     var buckTex = (typeof global.createBuckConverterTex === 'function') ? global.createBuckConverterTex() : createBuckTexture();
 
     var matChassis = new THREE.MeshStandardMaterial({
-      color: 0x181c26,
+      color: 0x222630,
       map: petgTex,
-      roughness: 0.50,
-      metalness: 0.35
+      roughness: 0.35,
+      metalness: 0.65 // Anodized Aerospace Al-Li 2195 / Carbon-PEEK
     });
     var matChassisTrim = new THREE.MeshStandardMaterial({
-      color: 0x242a38,
-      roughness: 0.42,
-      metalness: 0.48
+      color: 0x1e2430,
+      roughness: 0.30,
+      metalness: 0.70
     });
     var matAlloy = new THREE.MeshStandardMaterial({
       color: 0xe2e8f0,
@@ -201,14 +229,44 @@
     });
     var matGoldFoil = new THREE.MeshStandardMaterial({
       color: 0xd97706,
-      roughness: 0.32,
+      roughness: 0.25,
+      metalness: 0.92
+    });
+    // Authentic NASA Glenn Superelastic Nitinol Shape Memory Alloy (SMA) Coiled Spring-Mesh Tire
+    var matTire = new THREE.MeshStandardMaterial({
+      color: 0xd4a373, // Warm metallic bronze/titanium Nitinol sheen exactly matching NASA reference
+      map: wheelTex,
+      roughness: 0.38,
+      metalness: 0.82
+    });
+    // Precision CNC Anodized Red Beadlock Clamp Ring (Matching NASA Glenn tire test rig reference)
+    var matBeadlock = new THREE.MeshStandardMaterial({
+      color: 0xdc2626, // Crimson Anodized CNC Aerospace 7075-T6 Beadlock Ring
+      roughness: 0.22,
+      metalness: 0.90
+    });
+    // 5-Spoke CNC Billet Aluminum Hub Carrier Standoffs (Matching NASA Glenn reference)
+    var matWheelCenter = new THREE.MeshStandardMaterial({
+      color: 0xdc2626, // Matching Crimson Red Spoke Center
+      roughness: 0.25,
       metalness: 0.88
     });
-    var matTire = new THREE.MeshStandardMaterial({
-      color: 0x242832,
-      map: wheelTex,
-      roughness: 0.80,
-      metalness: 0.30
+    var matTitaniumMesh = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      roughness: 0.30,
+      metalness: 0.85
+    });
+    // Viton Hermetic Dust Gasket Seal Material (Aerospace Grade High-Fluorine Fluorocarbon Elastomer)
+    var matDustSeal = new THREE.MeshStandardMaterial({
+      color: 0x1f232b, // Dark charcoal / vulcanized black aerospace seal
+      roughness: 0.85,
+      metalness: 0.10
+    });
+    // Thermal Radiator Ceramic Optical Solar Reflector (OSR) coating
+    var matRadiator = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      roughness: 0.12,
+      metalness: 0.95
     });
     var matLens = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -238,6 +296,7 @@
     // =========================================================================
     // 1. LOWER MONOCOQUE CHASSIS TUB & UNDERBODY SKID (Template Images 1, 2, 3, 5)
     // =========================================================================
+    // Space-Hardened Lower Monocoque Tub (Hermetically Sealed Monocoque)
     var lowerTub = new THREE.Mesh(
       new THREE.BoxGeometry(0.86, 0.14, 0.52),
       matChassis
@@ -246,7 +305,24 @@
     lowerTub.castShadow = true; lowerTub.receiveShadow = true;
     root.add(lowerTub);
 
-    // Front & Rear Underbody Approach Skid Plates
+    // Continuous Hermetic Perimeter Seal Flange (Viton O-Ring Interface between Lower Tub & Upper Deck)
+    var hermeticSealFlange = new THREE.Mesh(
+      new THREE.BoxGeometry(0.866, 0.012, 0.526),
+      matDustSeal
+    );
+    hermeticSealFlange.position.set(0, 0.198, 0);
+    root.add(hermeticSealFlange);
+
+    // Continuous Underbody Micrometeorite & Regolith Whipple Shield (Titanium-Kevlar Underbelly Pan)
+    var bellyWhippleShield = new THREE.Mesh(
+      new THREE.BoxGeometry(0.84, 0.008, 0.50),
+      matAlloy
+    );
+    bellyWhippleShield.position.set(0, 0.054, 0);
+    bellyWhippleShield.castShadow = true;
+    root.add(bellyWhippleShield);
+
+    // Front & Rear Underbody Approach Skid Plates (Seamless Angled Deflector Skids)
     var frontSkid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, 0.48), matAlloy);
     frontSkid.position.set(0.42, 0.065, 0); frontSkid.rotation.z = 0.36;
     root.add(frontSkid);
@@ -254,14 +330,18 @@
     rearSkid.position.set(-0.42, 0.065, 0); rearSkid.rotation.z = -0.36;
     root.add(rearSkid);
 
-    // Perimeter M3/M4 Brass Heat-Set Threaded Inserts
+    // Perimeter Captive Aerospace Titanium Fasteners with O-Ring Washers (Replacing open brass inserts)
     for (var bx = -0.36; bx <= 0.37; bx += 0.145) {
       [-0.245, 0.245].forEach(function (bz) {
         var boss = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.012, 0.02, 10), matChassisTrim);
         boss.position.set(bx, 0.20, bz);
-        var insert = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.022, 10), matBrass);
-        insert.position.set(bx, 0.202, bz);
-        root.add(boss, insert);
+        // Hermetic Viton Sealing Washer
+        var sealWasher = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.004, 10), matDustSeal);
+        sealWasher.position.set(bx, 0.208, bz);
+        // NAS-spec High-Strength Titanium Socket Head Bolt
+        var insert = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.022, 10), matAlloy);
+        insert.position.set(bx, 0.211, bz);
+        root.add(boss, sealWasher, insert);
       });
     }
 
@@ -411,23 +491,23 @@
       verticalStrut.castShadow = true;
       yoke.add(verticalStrut);
 
-      // Greartisan 37 mm motor clamp. Body diameter is 37 mm.
+      // Greartisan 37 mm motor clamp with Hermetic Environmental Canister
       var motorClamp = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.022, 0.022, 0.028, 18),
+        new THREE.CylinderGeometry(0.023, 0.023, 0.030, 18),
         matDarkAlloy
       );
       motorClamp.rotation.x = Math.PI / 2;
       motorClamp.position.set(0, 0, -sideSign * 0.054);
       yoke.add(motorClamp);
 
-      // Brass M4 clamp bolt
-      var clampBolt = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.044, 8), matBrass);
+      // High-Strength Titanium Fastener
+      var clampBolt = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.044, 8), matAlloy);
       clampBolt.position.set(0.020, 0.020, -sideSign * 0.054);
       yoke.add(clampBolt);
 
-      // Greartisan DC 12V 100 RPM gearbox, 37 mm diameter, part of the 78 mm stack
+      // Hermetically Sealed Planetary Gearbox Canister (IP68 / Vacuum Rated with Dry Lubricant)
       var gearbox = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.0185, 0.0185, 0.032, 20),
+        new THREE.CylinderGeometry(0.019, 0.019, 0.034, 20),
         matAlloy
       );
       gearbox.rotation.x = Math.PI / 2;
@@ -435,9 +515,9 @@
       gearbox.castShadow = true;
       yoke.add(gearbox);
 
-      // Greartisan black motor can. Gearbox plus can is about 78 mm.
+      // Fully Sealed Brushless DC Motor Body (Vacuum Enclosure with Gold MLI Trim)
       var motorCan = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.0185, 0.0185, 0.046, 20),
+        new THREE.CylinderGeometry(0.019, 0.019, 0.048, 20),
         matDarkAlloy
       );
       motorCan.rotation.x = Math.PI / 2;
@@ -445,15 +525,28 @@
       motorCan.castShadow = true;
       yoke.add(motorCan);
 
-      // Red & Black Silicone Power Leads
-      var redLead = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.090, 6), matWireRed);
-      redLead.position.set(0.010, 0.046, -sideSign * 0.096);
-      var blkLead = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.090, 6), matWireBlk);
-      blkLead.position.set(-0.010, 0.046, -sideSign * 0.096);
-      yoke.add(redLead, blkLead);
+      // Motor Thermal MLI Boot Wrap (Prevents extreme cryogenic freezing at South Pole)
+      var motorMliWrap = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.0195, 0.0195, 0.040, 16),
+        matGoldFoil
+      );
+      motorMliWrap.rotation.x = Math.PI / 2;
+      motorMliWrap.position.set(0, 0, -sideSign * 0.092);
+      yoke.add(motorMliWrap);
 
-      // Brass 6mm D-Shaft Hex Coupler
-      var hexCoupler = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.022, 6), matBrass);
+      // Sealed Braided Stainless-Steel Harness Conduits (Potted Regolith-Proof Feedthrough)
+      var wireConduit = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.095, 8), matAlloy);
+      wireConduit.position.set(0, 0.046, -sideSign * 0.096);
+      yoke.add(wireConduit);
+
+      // Ferrofluidic Magnetic Regolith Rotary Exclusion Seal Ring
+      var ferrofluidSeal = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.008, 16), matDustSeal);
+      ferrofluidSeal.rotation.x = Math.PI / 2;
+      ferrofluidSeal.position.set(0, 0, -sideSign * 0.030);
+      yoke.add(ferrofluidSeal);
+
+      // Titanium D-Shaft Hex Drive Coupler with Labyrinth Deflector Shield
+      var hexCoupler = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.022, 6), matAlloy);
       hexCoupler.rotation.x = Math.PI / 2;
       hexCoupler.position.set(0, 0, -sideSign * 0.022);
       yoke.add(hexCoupler);
@@ -466,51 +559,217 @@
       lowerEye.position.set(0, 0, -sideSign * 0.02);
       wg.add(lowerEye);
 
-      // 6-Wheel Directional Chevron Grouser Tires & Rim Hubs
+      // =========================================================================
+      // NASA GLENN RESEARCH CENTER SUPERELASTIC NITINOL SPRING-MESH TIRE
+      // Modeled directly after NASA's Shape Memory Alloy (SMA) Tire Reference:
+      // 1. Bulging toroidal Nitinol coiled wire mesh carcass (elastic compliance)
+      // 2. Anodized crimson-red outer beadlock clamp ring with perimeter hardware
+      // 3. Anodized red 5-spoke star center hub with 5 horizontal standoff studs
+      // 4. Low-profile titanium chevron sand-paddles riveted onto the crown
+      // 5. Sealed inner motor-drive planetary hub interface
+      // =========================================================================
       var spinAxle = new THREE.Group();
-      spinAxle.rotation.x = Math.PI / 2;
+      spinAxle.rotation.x = Math.PI / 2; // rotates Y-axis tire to roll along Z
+      var roller = new THREE.Group();
+      spinAxle.add(roller);
 
+      // -----------------------------------------------------------------------
+      // NASA GLENN SMA SPRING-MESH TIRE — corrected orientation
+      // CylinderGeometry stands along Y by default.
+      // spinAxle.rotation.x = PI/2 → tire rolls with axle along world-Z ✓
+      // -----------------------------------------------------------------------
+
+      // 1. Primary Nitinol Spring-Mesh Tire Carcass (cylinder stands upright in Y then rotated)
       var tire = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.10, 0.10, 0.078, 32),
+        new THREE.CylinderGeometry(0.108, 0.108, 0.090, 36),
         matTire
       );
       tire.castShadow = true; tire.receiveShadow = true;
-      spinAxle.add(tire);
+      roller.add(tire);
+      tire.userData.roll = roller;
 
-      // 16 Chevron Grouser Paddles
-      for (var gi = 0; gi < 16; gi++) {
-        var chevron = new THREE.Mesh(
-          new THREE.BoxGeometry(0.014, 0.016, 0.070),
-          matChassisTrim
+      // 2. Three Toroidal Nitinol Coil Ring Accents (evenly spaced across the tread face)
+      [-0.028, 0, 0.028].forEach(function(ry) {
+        var ringAccent = new THREE.Mesh(
+          new THREE.TorusGeometry(0.108, 0.007, 12, 40),
+          matTire
         );
-        var ang = (gi / 16) * Math.PI * 2;
-        chevron.position.set(Math.cos(ang) * 0.099, Math.sin(ang) * 0.099, 0);
-        chevron.rotation.z = ang;
-        chevron.rotation.y = (gi % 2 === 0) ? 0.18 : -0.18;
-        tire.add(chevron);
+        ringAccent.rotation.x = Math.PI / 2; // torus in XZ plane → ring around cylinder axis
+        ringAccent.position.y = ry;
+        roller.add(ringAccent);
+      });
+
+      // 3. Outer beadlock face offset — in spinAxle local space, Y is the axle direction
+      //    outer face toward world = sideSign > 0 → positive Y in spinAxle after rotation
+      var faceY = sideSign > 0 ? 0.048 : -0.048;
+
+      // NASA Glenn Crimson Anodized Outer Beadlock Ring
+      var redBeadlockRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.088, 0.007, 12, 36),
+        matBeadlock
+      );
+      redBeadlockRing.rotation.x = Math.PI / 2;
+      redBeadlockRing.position.y = faceY;
+      roller.add(redBeadlockRing);
+
+      // 16 Miniature Perimeter Fasteners on Beadlock Ring
+      for (var pfi = 0; pfi < 16; pfi++) {
+        var pfAng = (pfi / 16) * Math.PI * 2;
+        var boltHead = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0022, 0.0022, 0.005, 6),
+          matAlloy
+        );
+        // bolts face axially — along Y in spinAxle space
+        boltHead.position.set(
+          Math.cos(pfAng) * 0.088,
+          faceY + (sideSign > 0 ? 0.006 : -0.006),
+          Math.sin(pfAng) * 0.088
+        );
+        roller.add(boltHead);
       }
 
-      // Brushed Aluminum Deep-Dish Rim & Hub Cap
-      var rim = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.068, 0.068, 0.080, 24),
-        matAlloy
+      // 4. Anodized Red 5-Spoke Star Hub
+      var hubY = sideSign > 0 ? 0.018 : -0.018;
+      var starHub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.026, 0.026, 0.014, 16),
+        matWheelCenter
       );
-      tire.add(rim);
-      var hubCap = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.026, 0.030, 0.084, 16),
-        matArtemisBlue
-      );
-      tire.add(hubCap);
+      starHub.position.y = hubY;
+      roller.add(starHub);
 
-      // 6 Brass M3 Lug Nuts
-      for (var li = 0; li < 6; li++) {
-        var lAng = (li / 6) * Math.PI * 2;
-        var lug = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.083, 6), matBrass);
-        lug.position.set(Math.cos(lAng) * 0.046, Math.sin(lAng) * 0.046, 0);
-        tire.add(lug);
+      for (var si = 0; si < 5; si++) {
+        var sAng = (si / 5) * Math.PI * 2;
+        // Star spoke — lies in XZ plane of spinAxle (=wheel face plane after rotation)
+        var spoke = new THREE.Mesh(
+          new THREE.BoxGeometry(0.010, 0.042, 0.010),
+          matWheelCenter
+        );
+        spoke.position.set(Math.cos(sAng) * 0.032, hubY, Math.sin(sAng) * 0.032);
+        spoke.rotation.y = sAng;
+        roller.add(spoke);
+
+        // Silver standoff stud from spoke tip to beadlock ring
+        var standoffStud = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0035, 0.0035, 0.028, 10),
+          matAlloy
+        );
+        standoffStud.position.set(
+          Math.cos(sAng) * 0.058,
+          (faceY + hubY) * 0.5,
+          Math.sin(sAng) * 0.058
+        );
+        roller.add(standoffStud);
+
+        // Acorn hex nut on outer beadlock face
+        var studNut = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.005, 0.005, 0.008, 6),
+          matAlloy
+        );
+        studNut.position.set(
+          Math.cos(sAng) * 0.058,
+          faceY + (sideSign > 0 ? 0.007 : -0.007),
+          Math.sin(sAng) * 0.058
+        );
+        roller.add(studNut);
+      }
+
+      // 5. Central Hub Drive Nut with 5 Wheel Lugs
+      for (var wli = 0; wli < 5; wli++) {
+        var wlAng = (wli / 5) * Math.PI * 2;
+        var centerLug = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.003, 0.003, 0.016, 6),
+          matAlloy
+        );
+        centerLug.position.set(
+          Math.cos(wlAng) * 0.015,
+          hubY + (sideSign > 0 ? 0.006 : -0.006),
+          Math.sin(wlAng) * 0.015
+        );
+        roller.add(centerLug);
+      }
+
+      var centerDriveNut = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.009, 0.009, 0.016, 6),
+        matDarkAlloy
+      );
+      centerDriveNut.position.y = hubY + (sideSign > 0 ? 0.007 : -0.007);
+      roller.add(centerDriveNut);
+
+      // Inner Drive Mount Coupling (inner wheel face side)
+      var innerDriveMount = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.048, 0.054, 0.020, 24),
+        matDarkAlloy
+      );
+      innerDriveMount.position.y = -faceY * 0.85;
+      roller.add(innerDriveMount);
+
+      // 6. 16 Chevron Regolith Cleats on tread — in spinAxle space, X is radial
+      var numCleats = 16;
+      for (var ci = 0; ci < numCleats; ci++) {
+        var cAng = (ci / numCleats) * Math.PI * 2;
+        var cleatGroup = new THREE.Group();
+        cleatGroup.rotation.y = cAng;
+
+        var cleatL = new THREE.Mesh(
+          new THREE.BoxGeometry(0.010, 0.012, 0.034),
+          matAlloy
+        );
+        cleatL.position.set(0.108, 0, 0.016);
+        cleatL.rotation.y = 0.26;
+
+        var cleatR = new THREE.Mesh(
+          new THREE.BoxGeometry(0.010, 0.012, 0.034),
+          matAlloy
+        );
+        cleatR.position.set(0.108, 0, -0.016);
+        cleatR.rotation.y = -0.26;
+
+        cleatGroup.add(cleatL, cleatR);
+        roller.add(cleatGroup);
       }
 
       wg.add(spinAxle);
+
+      // -----------------------------------------------------------------------
+      // SEALED BRUSHLESS MOTOR CANISTER — mounted inboard under each wheel hub
+      // Positioned on the inner face of the wheel, between hub and chassis
+      // -----------------------------------------------------------------------
+      var motorBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.024, 0.024, 0.065, 20),
+        matDarkAlloy
+      );
+      motorBody.rotation.x = Math.PI / 2;
+      motorBody.position.set(0, 0.006, -sideSign * 0.068); // inner face, below hub center
+      motorBody.castShadow = true;
+      wg.add(motorBody);
+
+      // Gold MLI thermal boot wrap around motor can
+      var motorMliWrap2 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.0245, 0.0245, 0.046, 16),
+        matGoldFoil
+      );
+      motorMliWrap2.rotation.x = Math.PI / 2;
+      motorMliWrap2.position.set(0, 0.006, -sideSign * 0.068);
+      wg.add(motorMliWrap2);
+
+      // Hermetic planetary gearbox snout (between motor and drive mount)
+      var gearSnout = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.020, 0.020, 0.028, 18),
+        matAlloy
+      );
+      gearSnout.rotation.x = Math.PI / 2;
+      gearSnout.position.set(0, 0.006, -sideSign * 0.033);
+      wg.add(gearSnout);
+
+      // Ferrofluidic Regolith Exclusion Seal Ring at axle exit
+      var ferroSeal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.017, 0.017, 0.008, 16),
+        matDustSeal
+      );
+      ferroSeal.rotation.x = Math.PI / 2;
+      ferroSeal.position.set(0, 0.006, -sideSign * 0.017);
+      wg.add(ferroSeal);
+
       root.add(wg);
 
       wheels.push(tire);
@@ -538,14 +797,17 @@
       var eyeTop = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0022, 6, 12), matAlloy);
       eyeTop.position.y = 0.045;
       var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0032, 0.0032, 0.09, 8), matAlloy);
-      var damper = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.05, 14), matWireRed);
+      var damper = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.05, 14), matDarkAlloy);
       damper.position.y = -0.01;
+      // Hermetic Dust-Exclusion Flexible Accordion Bellows Boot (Abrasive Regolith Barrier)
+      var dustBoot = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.038, 12), matDustSeal);
+      dustBoot.position.y = 0.022;
       var eyeBot = new THREE.Mesh(new THREE.TorusGeometry(0.007, 0.002, 6, 12), matDarkAlloy);
       eyeBot.position.y = -0.045;
-      shock.add(eyeTop, shaft, damper, eyeBot);
+      shock.add(eyeTop, shaft, dustBoot, damper, eyeBot);
       var coils = [];
       for (var sc = 0; sc < 6; sc++) {
-        var coil = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.0018, 5, 12), matDarkAlloy);
+        var coil = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.0018, 5, 12), matAlloy);
         coil.rotation.x = Math.PI / 2;
         coil.position.y = -0.028 + sc * 0.008;
         shock.add(coil);
@@ -566,7 +828,7 @@
     // 5. INTERNAL AVIONICS BAY (VISIBLE IN EXPLODED VIEW)
     // =========================================================================
     var internalsGroup = new THREE.Group();
-    internalsGroup.position.set(0, 0.17, 0);
+    internalsGroup.position.set(0, 0.14, 0); // Lowered for CoG: electronics inside lower chassis tub
     root.add(internalsGroup);
 
     // Gold Kapton Thermal MLI Deck Tray
@@ -674,39 +936,60 @@
     cytronSink.position.y = 0.010;
     cytronGroup.add(cytronPcb, cytronSink);
 
-    // 4× 30 mm fans on the avionics chamber only.
-    // Intakes on the front face. Exhausts on the side walls at the bulkhead, so the cargo bay is not the duct.
-    var fanFace = fanSpec ? fanSpec.size[0] : 0.030;
-    var fanThick = fanSpec ? fanSpec.size[2] : 0.007;
-    [
-      { role: 'intake', x: 0.43, y: 0.145, z: 0.06, rotY: -Math.PI / 2 },
-      { role: 'intake', x: 0.43, y: 0.145, z: -0.06, rotY: -Math.PI / 2 },
-      { role: 'exhaust', x: 0.08, y: 0.145, z: 0.26, rotY: 0 },
-      { role: 'exhaust', x: 0.08, y: 0.145, z: -0.26, rotY: Math.PI }
-    ].forEach(function (spot) {
-      var fanGroup = new THREE.Group();
-      fanGroup.position.set(spot.x, spot.y, spot.z);
-      fanGroup.rotation.y = spot.rotY;
-      var fFrame = new THREE.Mesh(new THREE.BoxGeometry(fanFace, fanFace, fanThick), matDarkAlloy);
-      fanGroup.add(fFrame);
-      var fRotor = new THREE.Group();
-      fRotor.userData.spin = 'z';
-      fRotor.userData.role = spot.role;
-      var fHub = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, fanThick + 0.002, 10), matDarkAlloy);
-      fHub.rotation.x = Math.PI / 2;
-      fRotor.add(fHub);
-      for (var fb = 0; fb < 7; fb++) {
-        var blade = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.003, 0.0015), matAlloy);
-        var bAng = (fb / 7) * Math.PI * 2;
-        blade.position.set(Math.cos(bAng) * 0.007, Math.sin(bAng) * 0.007, 0);
-        blade.rotation.z = bAng + 0.4;
-        fRotor.add(blade);
-      }
-      fanGroup.add(fRotor);
-      fanRotors.push(fRotor);
-      root.add(fanGroup);
+    // =========================================================================
+    // SPACE-GRADE THERMAL CONTROL SYSTEM (TCS) — VACUUM HEAT-PIPE RADIATORS
+    // Replaces terrestrial open-air vents with hermetic loop heat pipes (LHP)
+    // and side-mounted deployable/bimetallic thermal louvers & cold plates.
+    // =========================================================================
+    // Solid Aluminum-Silicon Cold-Plate Deck Heat Bus
+    var coldPlateBus = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.008, 0.40), matAlloy);
+    coldPlateBus.position.set(0.12, 0.006, 0);
+    internalsGroup.add(coldPlateBus);
+
+    // Loop Heat Pipe (LHP) Ammonia/Methanol Transfer Lines to Side Radiators
+    [-0.18, 0.18].forEach(function (pipeZ) {
+      var lhpLine = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.36, 12), matBrass);
+      lhpLine.rotation.z = Math.PI / 2;
+      lhpLine.position.set(0.12, 0.016, pipeZ);
+      internalsGroup.add(lhpLine);
     });
 
+    // Dual External Surface Thermal Radiators (Optical Solar Reflector OSR Quartz Panels)
+    [-1, 1].forEach(function (sideSign) {
+      var radGroup = new THREE.Group();
+      radGroup.position.set(0.12, 0.170, sideSign * 0.264);
+
+      // Radiator Baseplate (High-Emissivity Ceramic Coating)
+      var radPanel = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.082, 0.008), matRadiator);
+      radGroup.add(radPanel);
+
+      // Passive Bimetallic Thermal Louver Slats (Modulate heat radiation to deep space)
+      for (var lvi = 0; lvi < 8; lvi++) {
+        var louverBlade = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.070, 0.002), matAlloy);
+        louverBlade.position.set(-0.12 + lvi * 0.034, 0, 0.006);
+        louverBlade.rotation.y = 0.25; // angled open towards deep space
+        radGroup.add(louverBlade);
+      }
+
+      // Hermetic Flange Seal around Radiator Housing
+      var radGasket = new THREE.Mesh(new THREE.BoxGeometry(0.328, 0.090, 0.004), matDustSeal);
+      radGasket.position.set(0, 0, -0.004);
+      radGroup.add(radGasket);
+
+      root.add(radGroup);
+    });
+
+    // Internal Closed-Loop Avionics Circulation Impeller (Hermetic Gas Heat Exchanger)
+    var fRotor = new THREE.Group();
+    fRotor.userData.spin = 'y';
+    for (var fb = 0; fb < 6; fb++) {
+      var blade = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.003, 0.002), matAlloy);
+      var bAng = (fb / 6) * Math.PI * 2;
+      blade.position.set(Math.cos(bAng) * 0.008, 0.002, Math.sin(bAng) * 0.008);
+      blade.rotation.y = bAng;
+      fRotor.add(blade);
+    }
+    fanRotors.push(fRotor);
     fanRotors.push(piRotor);
 
     // =========================================================================
@@ -723,32 +1006,222 @@
     avionicsLid.position.set(0.20, 0.255, 0);
     avionicsLid.castShadow = true;
     upperShellGroup.add(avionicsLid);
-    var bulkhead = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.16, 0.50), matDarkAlloy);
+    // Continuous Hermetic Bulkhead Barrier & Compression Seal
+    var bulkhead = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.16, 0.50), matDarkAlloy);
     bulkhead.position.set(0.0, 0.20, 0);
-    root.add(bulkhead);
+    var bulkheadSeal = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.164, 0.504), matDustSeal);
+    bulkheadSeal.position.set(0.0, 0.20, 0);
+    root.add(bulkheadSeal, bulkhead);
 
-    // Aft cargo chamber. Internal clear of two 305 × 152 × 152 mm pods by >= 15 mm.
-    var podSpec = global.NASA_RoverBOM && NASA_RoverBOM.pod;
-    var podH = podSpec ? podSpec.heightM : 0.152;
+    // =========================================================================
+    // ACTIVE COG LINEAR TRIM SLIDE (±20cm Ball-Screw Travel Stage)
+    // Adjusts cargo mass over center axle to prevent 1/6g pitch-over and maintain
+    // equal traction across all 6 wheels.
+    // =========================================================================
+    var cogTrimStage = new THREE.Group();
+    cogTrimStage.position.set(0, 0.198, 0);
+    root.add(cogTrimStage);
+
+    // Dual Linear Hardened Steel Guide Rails & Central Ball-Screw
+    [-0.18, 0.18].forEach(function (rz) {
+      var guideRail = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.44, 16), matAlloy);
+      guideRail.rotation.z = Math.PI / 2;
+      guideRail.position.set(-0.20, 0, rz);
+      cogTrimStage.add(guideRail);
+    });
+    var ballScrew = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.42, 16), matBrass);
+    ballScrew.rotation.z = Math.PI / 2;
+    ballScrew.position.set(-0.20, 0, 0);
+    var cogTrimMotor = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.040, 16), matDarkAlloy);
+    cogTrimMotor.rotation.z = Math.PI / 2;
+    cogTrimMotor.position.set(0.02, 0, 0);
+    cogTrimStage.add(ballScrew, cogTrimMotor);
+
+    // Cargo Bed / Payload Pallet Carrier (Traverses along X-axis via CoG trim)
     var cargoBayGroup = new THREE.Group();
-    cargoBayGroup.position.set(-0.22, 0.20, 0);
+    cargoBayGroup.position.set(-0.22, 0.208, 0);
     root.add(cargoBayGroup);
+
+    // Hardened Titanium Floor with Integrated Thermal Blanket Base
     var bayFloor = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.012, 0.44), matDarkAlloy);
     bayFloor.receiveShadow = true;
     cargoBayGroup.add(bayFloor);
-    var wallL = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
-    wallL.position.set(0, 0.09, 0.212);
-    var wallR = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.18, 0.016), matChassis);
-    wallR.position.set(0, 0.09, -0.212);
-    var wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
-    wallBack.position.set(-0.192, 0.09, 0);
-    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.44), matChassis);
-    wallFront.position.set(0.192, 0.09, 0);
-    cargoBayGroup.add(wallL, wallR, wallBack, wallFront);
+
+    // POWERED BI-DIRECTIONAL ROLLER BED (Automated Handoff from Container Dust-Lock)
+    var rollerCount = 7;
+    for (var ri = 0; ri < rollerCount; ri++) {
+      var rollerX = -0.16 + (ri / (rollerCount - 1)) * 0.32;
+      var roller = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.41, 16), matAlloy);
+      roller.rotation.x = Math.PI / 2;
+      roller.position.set(rollerX, 0.010, 0);
+      cargoBayGroup.add(roller);
+      // Roller End Bearings
+      [-0.208, 0.208].forEach(function (bz) {
+        var bearing = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.006, 12), matArtemisBlue);
+        bearing.rotation.x = Math.PI / 2;
+        bearing.position.set(rollerX, 0.010, bz);
+        cargoBayGroup.add(bearing);
+      });
+    }
+
+    // 4 Corner Electromechanical ISO Twist-Locks (Clamp Lockers/Pallets in 1/6g)
+    [
+      { x: -0.17, z: -0.19 }, { x: 0.17, z: -0.19 },
+      { x: -0.17, z: 0.19 },  { x: 0.17, z: 0.19 }
+    ].forEach(function (lockPos) {
+      var lockBase = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.028, 0.024), matDarkAlloy);
+      lockBase.position.set(lockPos.x, 0.018, lockPos.z);
+      var twistLug = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.012, 0.016), matBrass);
+      twistLug.position.set(lockPos.x, 0.034, lockPos.z);
+      twistLug.rotation.y = 0.78; // engaged 45-deg locking position
+      cargoBayGroup.add(lockBase, twistLug);
+    });
+
+    // Aft Docking Alignment Collar & Dust Seal Latch (Mates to 3m Container Pass-Through Gate)
+    var dockCollar = new THREE.Group();
+    dockCollar.position.set(-0.205, 0.014, 0);
+    var dockFrame = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.034, 0.44), matArtemisBlue);
+    var dockMagneticGasket = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.030, 0.43), matDustSeal);
+    dockMagneticGasket.position.set(-0.011, 0, 0);
+    dockCollar.add(dockFrame, dockMagneticGasket);
+    // 2 Conical Docking Guide Pins
+    [-0.17, 0.17].forEach(function (pz) {
+      var guidePin = new THREE.Mesh(new THREE.ConeGeometry(0.010, 0.026, 16), matAlloy);
+      guidePin.rotation.z = Math.PI / 2;
+      guidePin.position.set(-0.022, 0, pz);
+      dockCollar.add(guidePin);
+    });
+    cargoBayGroup.add(dockCollar);
+
+    // Beveled Cargo Bay Flank Retaining Walls
+    var wallL = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.16, 0.016), matChassis);
+    wallL.position.set(0, 0.08, 0.212);
+    var wallR = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.16, 0.016), matChassis);
+    wallR.position.set(0, 0.08, -0.212);
+    var wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.16, 0.44), matChassis);
+    wallFront.position.set(0.192, 0.08, 0);
+
+    // AFT WALL — closes the open aft face of the cargo bay (docking port side)
+    // The docking collar mates here; this wall has a central rectangular cut-out
+    // sized to the docking collar opening. For the static model, represented as
+    // two side pillars flanking the collar opening.
+    var aftPillarL = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.16, 0.10), matChassis);
+    aftPillarL.position.set(-0.196, 0.08, 0.165);
+    var aftPillarR = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.16, 0.10), matChassis);
+    aftPillarR.position.set(-0.196, 0.08, -0.165);
+    var aftHeaderBeam = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.028, 0.44), matChassis);
+    aftHeaderBeam.position.set(-0.196, 0.148, 0); // top beam above collar opening
+    var aftSillBeam = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.020, 0.44), matChassis);
+    aftSillBeam.position.set(-0.196, -0.002, 0); // bottom sill
+    cargoBayGroup.add(wallL, wallR, wallFront, aftPillarL, aftPillarR, aftHeaderBeam, aftSillBeam);
+
+    // =========================================================================
+    // BI-FOLD TRAVEL HATCH — Regolith-Exclusion Cargo Bay Lid
+    // Two panel halves slide/fold outward in Z. When closed (travel mode) they
+    // cover the full top aperture and seal against a center Viton compression strip.
+    // Geometry shown in CLOSED (travel-ready) position.
+    // =========================================================================
+    var hatchPanelMat = new THREE.MeshStandardMaterial({
+      color: 0x1e2430,
+      roughness: 0.28,
+      metalness: 0.75
+    });
+
+    // Panel half +Z (left when looking aft)
+    var hatchPanelPos = new THREE.Mesh(
+      new THREE.BoxGeometry(0.385, 0.010, 0.205),
+      hatchPanelMat
+    );
+    hatchPanelPos.position.set(0, 0.165, 0.106); // sits on top of walls
+    hatchPanelPos.castShadow = true;
+    cargoBayGroup.add(hatchPanelPos);
+
+    // Panel half -Z (right when looking aft)
+    var hatchPanelNeg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.385, 0.010, 0.205),
+      hatchPanelMat
+    );
+    hatchPanelNeg.position.set(0, 0.165, -0.106);
+    hatchPanelNeg.castShadow = true;
+    cargoBayGroup.add(hatchPanelNeg);
+
+    // Center Viton Compression Seal Strip (between the two panels, dark charcoal)
+    var centerSealStrip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.385, 0.012, 0.008),
+      matDustSeal
+    );
+    centerSealStrip.position.set(0, 0.164, 0); // between panel edges
+    cargoBayGroup.add(centerSealStrip);
+
+    // Perimeter Viton Seal Gasket — inner lip of each panel edge against walls
+    // Port wall inner seal
+    var sealPort = new THREE.Mesh(new THREE.BoxGeometry(0.385, 0.006, 0.006), matDustSeal);
+    sealPort.position.set(0, 0.161, 0.203);
+    cargoBayGroup.add(sealPort);
+    // Starboard wall inner seal
+    var sealStbd = new THREE.Mesh(new THREE.BoxGeometry(0.385, 0.006, 0.006), matDustSeal);
+    sealStbd.position.set(0, 0.161, -0.203);
+    cargoBayGroup.add(sealStbd);
+
+    // Central Twist-Latch Bar (locks two panels closed during transit)
+    var latchBar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.060, 0.010, 0.018),
+      matAlloy
+    );
+    latchBar.position.set(0, 0.172, 0);
+    cargoBayGroup.add(latchBar);
+
+    // Actuator Handle Recesses (4 positions — 2 per panel, for gloved EVA hand actuation)
+    var hatchLatchHandles = [];
+    [-0.14, 0.14].forEach(function(hx) {
+      [0.095, -0.095].forEach(function(hz) {
+        var latchHandle = new THREE.Mesh(
+          new THREE.BoxGeometry(0.040, 0.014, 0.014),
+          matBrass
+        );
+        latchHandle.position.set(hx, 0.168, hz);
+        cargoBayGroup.add(latchHandle);
+        hatchLatchHandles.push(latchHandle);
+      });
+    });
+
+    var hatchClosedZ = { pos: 0.106, neg: -0.106 };
+    var hatchOpenZ = { pos: 0.26, neg: -0.26 };
+    window.cargoBayHatch = {
+      panelPos: hatchPanelPos,
+      panelNeg: hatchPanelNeg,
+      seal: centerSealStrip,
+      latchBar: latchBar,
+      sealPort: sealPort,
+      sealStbd: sealStbd,
+      handles: hatchLatchHandles,
+      closedZ: hatchClosedZ,
+      openZ: hatchOpenZ
+    };
+    window.cargoBayHatchOpen = 0;
+    window.setCargoBayHatch = function (open01) {
+      var o = Math.max(0, Math.min(1, open01));
+      window.cargoBayHatchOpen = o;
+      var h = window.cargoBayHatch;
+      if (!h || !h.panelPos) return;
+      h.panelPos.position.z = hatchClosedZ.pos + (hatchOpenZ.pos - hatchClosedZ.pos) * o;
+      h.panelNeg.position.z = hatchClosedZ.neg + (hatchOpenZ.neg - hatchClosedZ.neg) * o;
+      var sealed = o < 0.04;
+      if (h.seal) h.seal.visible = sealed;
+      if (h.latchBar) h.latchBar.visible = sealed;
+      if (h.sealPort) h.sealPort.visible = o < 0.35;
+      if (h.sealStbd) h.sealStbd.visible = o < 0.35;
+      if (h.handles) {
+        for (var hi = 0; hi < h.handles.length; hi++) h.handles[hi].visible = sealed;
+      }
+    };
+    window.setCargoBayHatch(0);
 
     window.roverHopperContainer = null;
     window.cargoBaySlots = [];
-    var floorTop = 0.006;
+    var podSpec = (global.NASA_RoverBOM && global.NASA_RoverBOM.pod) || null;
+    var podH = podSpec ? podSpec.heightM : 0.152;
+    var floorTop = 0.020;
     [-0.088, 0.088].forEach(function (zSlot) {
       var slot = new THREE.Object3D();
       slot.position.set(0, floorTop + podH * 0.5, zSlot);
@@ -838,12 +1311,14 @@
     mastRing.position.set(0, 0.21, 0);
     mastGroup.add(mastRing);
 
-    // Mast Top Sensor Platform
+    // Mast Top Sensor Platform with Gold MLI Trim
     var mastHead = new THREE.Mesh(new THREE.CylinderGeometry(0.050, 0.054, 0.018, 24), matDarkAlloy);
     mastHead.position.set(0, 0.255, 0);
-    mastGroup.add(mastHead);
+    var mastMli = new THREE.Mesh(new THREE.CylinderGeometry(0.051, 0.051, 0.008, 24), matGoldFoil);
+    mastMli.position.set(0, 0.250, 0);
+    mastGroup.add(mastHead, mastMli);
 
-    // Spinning YDLIDAR X2L 360° Laser Range Scanner Head
+    // Hermetically Enclosed YDLIDAR 360° Laser Range Scanner with Sealed Protective Dome
     var lidarHead = new THREE.Group();
     lidarHead.position.set(0, 0.285, 0);
     mastGroup.add(lidarHead);
@@ -852,7 +1327,13 @@
     lidarPuck.castShadow = true;
     lidarHead.add(lidarPuck);
 
-    // Dual Laser Emitter & Receiver Lenses inside YDLIDAR Window
+    // Rotary Dust-Wiper Lip Seal Ring at Base of Scanner
+    var wiperRing = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.003, 8, 24), matDustSeal);
+    wiperRing.rotation.x = Math.PI / 2;
+    wiperRing.position.set(0, -0.018, 0);
+    lidarHead.add(wiperRing);
+
+    // Dual Laser Emitter & Receiver Lenses inside Hermetic Optical Window
     [-0.014, 0.014].forEach(function (lz) {
       var lOptic = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.014, 16), matLens);
       lOptic.rotation.z = Math.PI / 2;
@@ -860,15 +1341,21 @@
       lidarHead.add(lOptic);
     });
 
-    // Stereo pair: two Arducam OV5647 boards, 25 × 24 mm
-    [-0.016, 0.016].forEach(function (cz, ci) {
+    // Space-Hardened Long-Wave Infrared (LWIR) Stereo Thermal + Optical Navigation Enclosure
+    // Enables autonomous obstacle mapping inside Permanently Shadowed Regions (PSRs)
+    [-0.018, 0.018].forEach(function (cz, ci) {
       var navCam = new THREE.Group();
       navCam.position.set(0.046, 0.23, cz);
-      var camBoard = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.024, 0.004), matChassisTrim);
-      var camLens = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.007, 0.012, 14), matLens);
-      camLens.rotation.z = Math.PI / 2;
-      camLens.position.x = 0.008;
-      navCam.add(camBoard, camLens);
+      var camHousing = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.028, 0.016), matDarkAlloy);
+      var thermalGermaniumLens = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.009, 0.014, 14), matAmber);
+      thermalGermaniumLens.rotation.z = Math.PI / 2;
+      thermalGermaniumLens.position.x = 0.012;
+      var opticalSapphireLens = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.016, 12), matLens);
+      opticalSapphireLens.rotation.z = Math.PI / 2;
+      opticalSapphireLens.position.set(0.012, 0.007, 0);
+      var camSealGasket = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.030, 0.003), matDustSeal);
+      camSealGasket.position.x = -0.007;
+      navCam.add(camHousing, thermalGermaniumLens, opticalSapphireLens, camSealGasket);
       mastGroup.add(navCam);
       if (ci === 0 && global.piCamera) {
         navCam.add(global.piCamera);
@@ -877,23 +1364,35 @@
       }
     });
 
+    // RFID & Ultra-Wideband (UWB) Cargo Tracking Interrogator Gate Antenna (Mission 6, 8, 18)
+    var rfidInterrogator = new THREE.Group();
+    rfidInterrogator.position.set(-0.02, 0.25, 0.05);
+    var rfidDome = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.028, 16), matArtemisBlue);
+    var rfidBase = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.006, 0.036), matDarkAlloy);
+    rfidInterrogator.add(rfidDome, rfidBase);
+    mastGroup.add(rfidInterrogator);
+
     // =========================================================================
-    // 9. FRONT FACE PERCEPTION APERTURES & HEADLIGHTS (Matching Template Image 2)
+    // 9. FRONT FACE PERCEPTION APERTURES & HEADLIGHTS (Hermetically Sealed Optics)
     // =========================================================================
     var rectAperture = new THREE.Group();
     rectAperture.position.set(0.432, 0.138, 0.10);
     var rectFrame = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.045, 0.095), matDarkAlloy);
-    var rectGlass = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.035, 0.082), matLens);
-    rectAperture.add(rectFrame, rectGlass);
+    var rectSeal = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.047, 0.097), matDustSeal);
+    var rectGlass = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.035, 0.082), matLens);
+    rectAperture.add(rectSeal, rectFrame, rectGlass);
     root.add(rectAperture);
 
     var circAperture = new THREE.Group();
     circAperture.position.set(0.432, 0.138, -0.10);
     var circFrame = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.014, 16), matDarkAlloy);
     circFrame.rotation.z = Math.PI / 2;
+    var circSeal = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.006, 16), matDustSeal);
+    circSeal.rotation.z = Math.PI / 2;
+    circSeal.position.x = -0.004;
     var circMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.016, 16), matAlloy);
     circMesh.rotation.z = Math.PI / 2;
-    circAperture.add(circFrame, circMesh);
+    circAperture.add(circSeal, circFrame, circMesh);
     root.add(circAperture);
 
     // Front Push Bumper & Dual Recovery Tow Shackles
@@ -932,15 +1431,21 @@
       headlights.push(spot);
     });
 
-    // Rear 5-Segment BMS State-of-Charge LED Bar & E-Stop Button
+    // Rear 5-Segment BMS State-of-Charge LED Bar & Sealed EVA E-Stop Button
     for (var lb = 0; lb < 5; lb++) {
       var ledSeg = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.008, 0.026), matGreenLed);
       ledSeg.position.set(-0.38, 0.28, -0.08 + lb * 0.04);
       upperShellGroup.add(ledSeg);
     }
-    var eStopBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.016, 0.022, 16), matWireRed);
-    eStopBtn.position.set(-0.36, 0.29, 0.16);
-    upperShellGroup.add(eStopBtn);
+    // Hermetic Flexible Silicone Bellows Boot over E-Stop with Titanium Retaining Ring
+    var eStopBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.008, 16), matDarkAlloy);
+    eStopBezel.position.set(-0.36, 0.278, 0.16);
+    var eStopSeal = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.003, 8, 16), matDustSeal);
+    eStopSeal.rotation.x = Math.PI / 2;
+    eStopSeal.position.set(-0.36, 0.282, 0.16);
+    var eStopBtn = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.016, 0.020, 16), matWireRed);
+    eStopBtn.position.set(-0.36, 0.292, 0.16);
+    upperShellGroup.add(eStopBezel, eStopSeal, eStopBtn);
 
     // =========================================================================
     // EXPOSE HANDLES TO SIMULATOR RUNTIME & PHYSICS
