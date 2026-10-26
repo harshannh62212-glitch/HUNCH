@@ -27,8 +27,10 @@
     PARK_ALONG: -1.18,      // rover centre when parked (coupler sits over the top-deck pad)
     PAD_OFFSET: 0.22,       // pad is 0.22 m behind rover centre (rover local x = -0.22)
     PRECAP_ALONG: -0.78,    // pre-capture check plane
-    PRECAP_LAT: 0.030,      // m   — must be inside before the clamp arms may close
-    PRECAP_PSI: 0.052,      // rad (3 deg)
+    PRECAP_LAT: 0.012,      // m   — must be inside before the clamp arms may close (wheel-to-jaw slop is ~27 mm per side)
+    PRECAP_PSI: 0.0175,     // rad (1 deg; at 3 deg the corner wheel swings out 24 mm)
+    STATE_TIMEOUT_S: 20,    // watchdog: any docking sub-state stuck this long retries
+    STALE_S: 0.5,           // sensor estimate older than this is not trusted
     ARM_OPEN_GAP: 0.30,     // m of clearance each side with arms open
     FLOAT_LAT: 0.008,       // m   — coupler float envelope
     FLOAT_PSI: 0.05,        // rad
@@ -72,7 +74,9 @@
     if (along > 14) return { name: 'UWB + IR BEACON', sl: 0.10, sp: 0.05, Z: Z };
     if (along > 3.6) return { name: 'MASTCAM 300mm TAG', sl: 0.0012 * Z, sp: (0.2 + 0.06 * Z) * Math.PI / 180, Z: Z };
     if (along > C.PARK_ALONG + 0.6) return { name: 'BAY CAM 100mm IR TAG', sl: 0.0006 * Z + 0.0005, sp: (0.1 + 0.04 * Z) * Math.PI / 180, Z: Z };
-    return { name: 'HALL ARRAY + BAY CAM', sl: 0.0005, sp: 0.05 * Math.PI / 180, Z: Z };
+    // The hall array sits in the coupler head; it only sees the pad once the coupler has come down.
+    if (S && S.coupler > 0.9) return { name: 'HALL ARRAY + BAY CAM', sl: 0.0005, sp: 0.05 * Math.PI / 180, Z: Z };
+    return { name: 'BAY CAM 100mm IR TAG', sl: 0.0006 * Z + 0.0005, sp: (0.1 + 0.04 * Z) * Math.PI / 180, Z: Z };
   }
   function sense(truth, dt) {
     S.sampT += dt;
@@ -81,10 +85,12 @@
       S.sampT = 0;
       var s = sensorFor(truth.along);
       S.sensor = s.name; S.sigma = s.sl;
-      var drop = Math.random() < 0.01;               // 1 % frame drops (glare / dust)
+      var drop = Math.random() < 0.01 || (S.inject && S.t >= S.inject.from && S.t < S.inject.to);   // 1 % frame drops (glare / dust) plus injected blackout bursts
       if (!drop) {
         var m = { lat: truth.lat + rnd() * s.sl, psi: truth.psi + rnd() * s.sp, along: truth.along + rnd() * Math.max(0.004, s.sl * 1.5) };
-        var a = 1 - Math.exp(-period / 0.18);
+        S.lastGood = S.t;
+        var tau = truth.along < 3.6 ? 0.06 : 0.18;     // short filter near the bay so the estimate does not lag the creep
+        var a = 1 - Math.exp(-period / tau);
         if (!S.est.ready) { S.est.lat = m.lat; S.est.psi = m.psi; S.est.along = m.along; S.est.ready = true; }
         else { S.est.lat += (m.lat - S.est.lat) * a; S.est.psi += (m.psi - S.est.psi) * a; S.est.along += (m.along - S.est.along) * a; }
       }
@@ -111,7 +117,7 @@
   }
 
   /* ---------------- the docking state machine ---------------- */
-  function beginApproach() { S.phase = 'IDLE'; S.atGate = false; S.settle = 0; S.retries = 0; S.fault = ''; S.est.ready = false; S.t = 0; S.result = null; S.latched = false; S.contactsLive = false; S.armTarget = 1; S.couplerTarget = 0; }
+  function beginApproach() { S.lastGood = 0; S.stT = 0; S.lastSt = ''; S.phase = 'IDLE'; S.atGate = false; S.settle = 0; S.retries = 0; S.fault = ''; S.est.ready = false; S.t = 0; S.result = null; S.latched = false; S.contactsLive = false; S.armTarget = 1; S.couplerTarget = 0; }
 
   function startRetry(why, e) {
     S.retries++; S.fault = why; S.atGate = false; S.settle = 0;
@@ -130,7 +136,33 @@
     var st = ctx.state;
     var out;
 
-    if (st === 'FAULT') { return cmd(0, 0, 'FAULT'); }
+    // watchdog: time spent in the current docking state
+    if (st !== S.lastSt) { S.lastSt = st; S.stT = 0; }
+    S.stT = (S.stT || 0) + dt;
+
+    if (st === 'FAULT') {
+      // limp-out: after 30 s the rover opens the clamps, stows the coupler and tries again from the gate
+      if (S.stT > 30) {
+        S.retries = 0; S.fault = ''; S.armTarget = 1; S.couplerTarget = 0; S.latched = false; S.contactsLive = false;
+        log('FAULT recovery: backing out to retry');
+        return cmd(0, 0, 'RETRY', 'RETRY');
+      }
+      return cmd(0, 0, 'FAULT');
+    }
+    if (st !== 'IDLE' && st !== 'DOCKED' && st !== 'NONE' && st !== 'DEPARTED') {
+      if (S.stT > C.STATE_TIMEOUT_S * (st === 'ALIGN' || st === 'ENTER' ? 4 : 1) && st !== 'RETRY') {
+        var nt = startRetry(st + ' timed out', e);
+        return cmd(0, 0, 'RETRY', nt);
+      }
+      if (st === 'RETRY' && S.stT > C.STATE_TIMEOUT_S * 2) {
+        S.fault = 'retry timed out'; log('FAULT: ' + S.fault);
+        return cmd(0, 0, 'FAULT', 'FAULT');
+      }
+      if (e.ready && (S.t - (S.lastGood || 0)) > C.STALE_S && st !== 'RETRY') {
+        if ((S.t - (S.lastGood || 0)) > 3) { var ns = startRetry('sensor lost', e); return cmd(0, 0, 'RETRY', ns); }
+        return cmd(0, 0, 'SENSOR STALE: HOLD');
+      }
+    }
 
     /* ---- ALIGN: far/mid-field Stanley path to the stand-off gate, then square up ---- */
     if (st === 'ALIGN') {
@@ -164,6 +196,7 @@
 
     /* ---- ENTER: slow visual-servo insertion on the bay centreline ---- */
     if (st === 'ENTER') {
+      if (ctx.doorOpen !== undefined && ctx.doorOpen < 0.5) return cmd(0, 0, 'ENTER: DOOR NOT OPEN, HOLD');   // door closed or closing mid-entry
       if (Math.abs(e.lat) > 0.25 || Math.abs(e.psi) > 0.45) {
         var n2 = startRetry('left insertion corridor', e);
         return cmd(0, 0, 'RETRY', n2);
@@ -171,12 +204,12 @@
       var vE = e.along > C.PARK_ALONG + 1.4 ? 0.30 : 0.18;
       var sE = stanley(e, vE, 2.2, 1.8, 0.25);
       if (e.along <= C.PRECAP_ALONG) {
-        if (Math.abs(ctx.lat) < C.PRECAP_LAT && Math.abs(ctx.psi) < C.PRECAP_PSI) {
+        if (Math.abs(e.lat) < C.PRECAP_LAT && Math.abs(e.psi) < C.PRECAP_PSI) {
           S.lastCapture = { lat: ctx.lat, psi: ctx.psi };
           S.armTarget = 0; S.phase = 'CAPTURE'; log('pre-capture OK  lat=' + (ctx.lat * 1000).toFixed(1) + ' mm psi=' + (ctx.psi * 57.3).toFixed(2) + ' deg → CLAMP');
           return cmd(sE.steer, 0.10, 'CAPTURE', 'CAPTURE');
         }
-        var n3 = startRetry('pre-capture envelope missed (' + (ctx.lat * 1000).toFixed(0) + ' mm, ' + (ctx.psi * 57.3).toFixed(1) + ' deg)', e);
+        var n3 = startRetry('pre-capture envelope missed (' + (e.lat * 1000).toFixed(0) + ' mm, ' + (e.psi * 57.3).toFixed(1) + ' deg)', e);
         return cmd(0, 0, 'RETRY', n3);
       }
       return cmd(sE.steer, vE, 'ENTER ' + e.along.toFixed(2) + 'm');
@@ -185,7 +218,12 @@
     /* ---- CAPTURE: clamp arms close, rover creeps to the hard-stop bumper ---- */
     if (st === 'CAPTURE') {
       var armsClosed = S.arm < 0.02;
-      var atStop = ctx.along <= C.PARK_ALONG + 0.004;
+      var atStop = e.along <= C.PARK_ALONG + 0.004;
+      // jaw-load abort: jaws almost shut and the rover is still off-centre means a wheel is in the way
+      if (S.arm < 0.1 && Math.abs(e.lat) > 0.02) {
+        var nj = startRetry('jaw load abort (lat ' + (e.lat * 1000).toFixed(0) + ' mm)', e);
+        return cmd(0, 0, 'RETRY', nj);
+      }
       if (atStop && armsClosed) {
         S.couplerTarget = 1; log('captured → coupler descending');
         return cmd(0, 0, 'LATCH', 'LATCH');
@@ -198,7 +236,7 @@
     if (st === 'LATCH') {
       if (S.coupler > 0.985) {
         S.couplerT += dt;
-        var ok = Math.abs(ctx.lat) < C.FLOAT_LAT && Math.abs(ctx.psi) < C.FLOAT_PSI && Math.abs(ctx.along - C.PARK_ALONG) < 0.015;
+        var ok = Math.abs(e.lat) < C.FLOAT_LAT && Math.abs(e.psi) < C.FLOAT_PSI && Math.abs(e.along - C.PARK_ALONG) < 0.015;
         if (!ok) {
           var n4 = startRetry('contact check failed', e);
           return cmd(0, 0, 'RETRY', n4);
@@ -241,6 +279,7 @@
     var taper = 1 - clamp((soc - 0.9) / 0.1, 0, 1) * 0.88;
     var p = C.CHARGE_W_CC * taper * S.chargeRamp;
     if (S.env === 'night') p = Math.min(p, 0);                // never charge from the buffer at night
+    if (S.th && S.th.box < 0) p = 0;                          // LiFePO4 must not charge below 0 C
     return p;
   }
   function stationLoadW(dockingState) {
@@ -280,13 +319,13 @@
   /* ---------------- pack hot-swap + sortie accounting ---------------- */
   function packFloorWh() { return C.PACK_WH * C.PACK_FLOOR; }
   /* Call every frame while DOCKED. Returns the rover pack energy (changes only when a swap completes). */
-  function swapStep(dt, dockingState, roverWh) {
-    var ok = dockingState === 'DOCKED' && S.latched && S.env !== 'night';
+  function swapStep(dt, dockingState, roverWh, doorClosed) {
+    var ok = dockingState === 'DOCKED' && S.latched && S.env !== 'night' && doorClosed !== false;
     var want = ok && (S.spareWh - roverWh) >= C.SWAP_MIN_DELTA * C.PACK_WH;
     if (!want) { S.swapT = 0; return roverWh; }
     S.swapT += dt;
     if (S.swapT < C.SWAP_S) return roverWh;
-    S.swapT = 0; S.swaps++;
+    S.swapT = 0; S.swaps++; S.chargeRamp = 0;
     var bi = S.spares[0] >= S.spares[1] ? 0 : 1;      // trade for the fullest spare
     var nw = S.spares[bi]; S.spares[bi] = roverWh; S.spareWh = Math.max(S.spares[0], S.spares[1]);
     if (S.onLog) S.onLog('[PACK SWAP #' + S.swaps + '] rover ' + (roverWh / C.PACK_WH * 100).toFixed(0) + '% <-> spare ' + (nw / C.PACK_WH * 100).toFixed(0) + '% · ready to depart at ' + (nw / C.PACK_WH * 100).toFixed(0) + '%');

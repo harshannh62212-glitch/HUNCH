@@ -1,10 +1,15 @@
+// Seeded RNG so every run is reproducible: SEED=7 node tools/dock_controller_test.js
+let _seed=(+process.env.SEED||1)>>>0; Math.random=function(){_seed=(_seed+0x6D2B79F5)>>>0; let t=_seed; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296;};
+// Wide starts (3-12 m out, +-2.8 m lateral) are the default; EASY=1 gives the old narrow starts.
+// BLACKOUT=from,duration injects a sensor dropout burst (seconds of approach time).
+const ADV=!process.env.EASY;
 const D=require('../js/dock_station.js'); const C=D.C;
 const Y=-Math.PI/4, a={x:Math.cos(Y),z:-Math.sin(Y)}, u={x:a.z,z:-a.x};
 const wrap=D._wrapPi;
 function frame(p){return {along:p.x*a.x+p.z*a.z, lat:p.x*u.x+p.z*u.z};}
 function run(seed, verbose){
-  D.reset(); D.beginApproach();
-  const along0=process.env.ADV?3.2+Math.random()*8.8:6+Math.random()*6, lat0=(Math.random()*2-1)*(process.env.ADV?2.8:1.5), yaw0=(Math.random()*2-1)*Math.PI;
+  D.reset(); D.beginApproach(); if(process.env.BLACKOUT){const b=process.env.BLACKOUT.split(',').map(Number); D.state().inject={from:b[0],to:b[0]+b[1]};}
+  const along0=ADV?3.2+Math.random()*8.8:6+Math.random()*6, lat0=(Math.random()*2-1)*(ADV?2.8:1.5), yaw0=(Math.random()*2-1)*Math.PI;
   let p={x:a.x*along0+u.x*lat0, z:a.z*along0+u.z*lat0}; let yaw=Y+Math.PI-yaw0; // psi=yaw0
   let vel=0,turn=0,state='ALIGN',t=0,dt=1/60,maxLat=0,ev=[];
   D.setLogger(m=>ev.push(t.toFixed(1)+' '+m));

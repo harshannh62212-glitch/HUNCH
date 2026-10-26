@@ -73,9 +73,9 @@ NASA_FusionRover.init({ roverGroup: root, wheelGroups, wheels }).then(() => {
   const C = D.C, park = C.PARK_ALONG;
   const docked = tris.map(t => ({ ...t, v: t.v.map(v => [park - v[0], v[1] + 0.09, -v[2]]) }));
   const dbb = bbox(docked);
-  const bumperFace = -1.92 + 0.07;   // viewer.html rearBumperBeam / dock-station-cad.html hard stop at x = -1.92 (0.14 thick)
+  const bumperFace = -1.903 + 0.07;  // dock-station-cad.html hard stop at x = -1.903 (0.14 thick), about 5 mm nose gap
   check('nose clears the hard-stop bumper face', dbb.x0 > bumperFace, 'gap=' + ((dbb.x0 - bumperFace) * 1000).toFixed(0) + ' mm');
-  const clampInner = 0.425 - 0.0175 - 0.006;   // closed bar centre minus half bar minus rubber pad
+  const clampInner = 0.425 - 0.009 - 0.0036;   // closed jaw inner face 0.425, rubber pad face 9 mm in (dock_station.js), minus ~3.6 mm PETG thermal growth per side (60e-6/K x 0.78 m x 150 K / 2 / 2)
   const span = bbox(docked, t => { const b = bbox([t]); return b.y1 > 0.135 && b.y0 < 0.265 && b.x1 > park - 0.75 && b.x0 < park + 0.75; });
   check('wheels/fenders clear the closed clamp bars (bar band y 0.135–0.265)', Math.max(span.z1, -span.z0) < clampInner, 'half-width=' + Math.max(span.z1, -span.z0).toFixed(3) + ' vs ' + clampInner.toFixed(3));
   const padTop = 0.09 + copper.y1, pogoBottom = (0.09 + 0.338) + 0.062 - 0.04 - 0.015;

@@ -3,9 +3,10 @@
  *   node tools/energy_runtime_sim.js            -> table on stdout
  *   node tools/energy_runtime_sim.js --md       -> markdown report
  * Uses js/rover_bom.js computePowerDraw() (the same model the simulator uses) and js/dock_station.js charge law.
- * Assumptions (change in A below):  5 Ah x 12.8 V LiFePO4 = 64 Wh packs; 18 % SoC floor; 80 % start;
- * dock beside the habitat; charger 41 W CC (3.2 A) with taper above 90 % SoC; 94 % charge efficiency;
- * dock bus 66.5 W PV minus 5 W standby; swap takes 25 s; terrain factor on drive power. */
+ * Assumptions (change in A below):  5 Ah x 12.8 V LiFePO4 = 64 Wh nameplate, derated 20 % for ageing and cold;
+ * 25 % SoC floor (reserve for retries); 80 % start; dock beside the habitat; charger 64 W CC (5 A) with taper above
+ * 90 % SoC; 94 % charge efficiency; dock bus 266 W PV minus 5 W standby; swap takes 25 s; a 3 min dock cycle
+ * (approach, door, latch, depart) is added to every sortie; terrain factor on drive power. */
 'use strict';
 var path = require('path');
 global.window = global;
@@ -15,12 +16,12 @@ var Dock = require(path.join(__dirname, '..', 'js', 'dock_station.js'));
 var Cd = Dock.C;
 
 var A = {
-  PACK_AH: 5, PACK_V: 12.8, FLOOR: 0.18, START_SOC: 0.80, RESUME_SOC: 0.80,
+  PACK_AH: 5, PACK_V: 12.8, FLOOR: 0.25, DERATE: 0.80, DOCK_CYCLE_S: 180, START_SOC: 0.80, RESUME_SOC: 0.80,
   CHG_W: Cd.CHARGE_W_CC, CHG_EFF: 0.94, TAPER_FROM: 0.90,
   PV_W: Cd.PV_BUS_W, STANDBY_W: Cd.STANDBY_W, DOCK_LEG_M: 20, PICK_S: 45, PLACE_S: 45, SWAP_S: 25,
   PAYLOAD_MASS_RATIO: 1.25, TERRAIN: 1.15, SWAP_MIN_DELTA: 0.15
 };
-A.CAP = A.PACK_AH * A.PACK_V;                         // 64 Wh
+A.CAP = A.PACK_AH * A.PACK_V * A.DERATE;              // 51.2 Wh usable
 
 function profile(modeId) {
   B.setPowerMode(modeId);
@@ -57,6 +58,7 @@ function sortieCost(p, L, n) {
     if (i < n - 1) add(seg(p, 'empty', L));             // back to the lander for the next pod
   }
   add(seg(p, 'empty', A.DOCK_LEG_M));                   // habitat -> dock
+  t += A.DOCK_CYCLE_S; wh += p.idle * A.DOCK_CYCLE_S / 3600;   // dock approach, door, latch, depart
   return { wh: wh, t: t };
 }
 
@@ -132,8 +134,8 @@ function print(r, md) {
   L.push('Assumptions: ' + A.PACK_AH + ' Ah x ' + A.PACK_V + ' V = ' + fmt(A.CAP, 0) + ' Wh pack, floor ' + A.FLOOR * 100 + ' % (' + fmt(A.CAP * A.FLOOR, 1) + ' Wh), start ' + A.START_SOC * 100 + ' %, charger ' + A.CHG_W + ' W CC (' + fmt(c.cc_phase_w_at_pack, 1) + ' W into pack), PV bus ' + A.PV_W + ' W.');
   L.push('');
   L.push('CHARGE TIMES (in dock, daylight)');
-  L.push('  rover or spare pack  18% -> 80% : ' + fmt(c.rover_18_to_80_min, 0) + ' min');
-  L.push('  rover or spare pack  18% -> 100%: ' + fmt(c.rover_18_to_100_min, 0) + ' min');
+  L.push('  rover or spare pack  ' + Math.round(A.FLOOR*100) + '% -> 80% : ' + fmt(c.rover_18_to_80_min, 0) + ' min');
+  L.push('  rover or spare pack  ' + Math.round(A.FLOOR*100) + '% -> 100%: ' + fmt(c.rover_18_to_100_min, 0) + ' min');
   L.push('  empty 0% -> 80% / 100%          : ' + fmt(c.pack_0_to_80_min, 0) + ' / ' + fmt(c.pack_0_to_100_min, 0) + ' min');
   L.push('');
   L.push('CARGO RUNS PER CHARGE (one run = pick up, carry, place; dock beside habitat)');

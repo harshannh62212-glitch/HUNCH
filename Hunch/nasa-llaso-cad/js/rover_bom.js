@@ -192,7 +192,7 @@
       armW: 8.0,
       slopeScale: 11,
       slipDriverAdd: 2.0,
-      whPerRoundTrip: 5.8
+      whPerRoundTrip: 7.55  // from tools/energy_runtime_sim.js (135 m route); faster modes spend less time per delivery
     },
     eco: {
       id: 'eco',
@@ -217,7 +217,7 @@
       armW: 8.5,
       slopeScale: 13,
       slipDriverAdd: 2.5,
-      whPerRoundTrip: 6.9
+      whPerRoundTrip: 6.85  // from tools/energy_runtime_sim.js (135 m route); faster modes spend less time per delivery
     },
     balance: {
       id: 'balance',
@@ -242,7 +242,7 @@
       armW: 9.5,
       slopeScale: 14.5,
       slipDriverAdd: 3.2,
-      whPerRoundTrip: 7.8
+      whPerRoundTrip: 6.01  // from tools/energy_runtime_sim.js (135 m route); faster modes spend less time per delivery
     },
     boost: {
       id: 'boost',
@@ -267,7 +267,7 @@
       armW: 11.0,
       slopeScale: 16,
       slipDriverAdd: 4.0,
-      whPerRoundTrip: 8.5
+      whPerRoundTrip: 5.21  // from tools/energy_runtime_sim.js (135 m route); faster modes spend less time per delivery
     }
   };
 
