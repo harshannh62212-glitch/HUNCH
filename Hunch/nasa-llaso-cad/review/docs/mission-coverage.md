@@ -17,9 +17,9 @@ Status of each HUNCH mission against the simulator. "Partial" means the code exi
 | 5 | Deliver and place | Met in sim: placement error scored against 10 cm; dust collar must seal before the hatch opens | `dropCargo`, `buildReceivingDoor` |
 | 6 | Full logistics cycle | Met in sim: report with sim time, distance, Wh, placement, seal, stability; included in the metrics JSON export | `emitReport` |
 | 7 | 2 km route | Gap | field is about 160 m across |
-| 8 | Three cargo systems | Gap | only the 4x2 ft pod exists |
+| 8 | Three cargo systems | Met in sim: pod, cylinder and 20 ft container (scaled) share one grapple bail; the cradle adapts clamp span and saddle; `cargo <type>` command | `js/cargo_types.js` |
 | 9 | Two robots | Gap | one rover only |
-| 10 | Something goes wrong | Gap | only a dock sensor-blackout test hook |
+| 10 | Something goes wrong | Met in sim: 7 injectable faults (FAULTS panel or `fault <name>`) with logged diagnostics, automatic responses and an operator RETRY/RETURN decision. Faults are injected; the responses change real sim behavior | `js/faults.js`, `js/faults_ui.js` |
 | 11 | AI logistics manager | Gap | queue is first-in-first-out |
 | 12 | Unrequested capability | Met | solar garage dock, rocket resupply fleet, start-up landing |
 

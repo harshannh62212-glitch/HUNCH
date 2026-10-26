@@ -5636,7 +5636,7 @@ function updatePhysics(dt) {
   var rut = loaded ? 0.09 * G * (sinkRatio - 1) : 0;
   var rollResist = (0.05 * G * _soilSink * NASA_SoilTracks.dragFactor() + rut) * cosSlope;
   var thermThrottle = (typeof thermalNow !== 'undefined' && thermalNow && thermalNow.throttleFactor != null) ? thermalNow.throttleFactor : 1.0;
-  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale() * (window.NASA_Scoring ? NASA_Scoring.speedScale() : 1) * thermThrottle;
+  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale() * (window.NASA_Scoring ? NASA_Scoring.speedScale() : 1) * (window.NASA_Faults ? NASA_Faults.speedScale() : 1) * thermThrottle;
   var af = (loaded ? (MOTOR_STALL_N / roverTotalKg()) : (activeMotor.torque * 2)) * thermThrottle;
   var ta = 0, _hold = false, _v0 = vel;
 
@@ -6595,6 +6595,15 @@ function applyRoverCommand(cmd) {
     llog('<span class="text-rose-400 font-bold">[ERR] NASA Logistics subsystem initializing...</span>');
     return false;
   }
+  if (window.NASA_Faults && !NASA_Faults.commsUp()) {
+    llog('<span class="text-rose-400 font-bold">[LINK DOWN] Command not delivered. The rover is continuing its cached plan.</span>');
+    return false;
+  }
+  var cargoCmd = cmd.match(/^cargo\s+(pod|cylinder|container|mixed)\b/);
+  if (cargoCmd) return window.NASA_Logistics.setCargoType(cargoCmd[1]);
+  var faultCmd = cmd.match(/^(?:fault|inject)\s+(.+)$/);
+  if (faultCmd && window.NASA_Faults) return NASA_Faults.injectByName(faultCmd[1]);
+  if (/^clear faults?$/.test(cmd) && window.NASA_Faults) { NASA_Faults.clearAll(); return true; }
   if (cmd.includes('fleet') || cmd.includes('rocket') || cmd.includes('resupply')) {
     window.NASA_Logistics.startFleet();
   } else if (cmd.includes('cargo run') || cmd === 'run' || cmd === 'start' || cmd === 'mission' || cmd.includes('start cargo') || cmd.includes('cycle') || cmd.includes('mission 6')) {
@@ -6971,6 +6980,9 @@ function runDockSelfTest(n) {
 window.runDockSelfTest = runDockSelfTest;
 </script>
 <script src="js/mission_scoring.js"></script>
+<script src="js/cargo_types.js"></script>
+<script src="js/faults.js"></script>
+<script src="js/faults_ui.js"></script>
 <script src="js/lunar_logistics.js"></script>
 <script src="js/intro_landing.js"></script>
 </body>

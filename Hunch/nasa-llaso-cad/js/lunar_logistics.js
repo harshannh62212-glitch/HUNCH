@@ -458,7 +458,7 @@
     var pickWanted = phase === 'align_pick' || phase === 'arm_pick' || armMode === 'pick' || trayP > 0.001;
     var dropWanted = phase === 'align_drop' || phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place';
     if (pickupDoor) pickupDoor.target = pickWanted ? 1 : 0;
-    var sealWanted = phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place';
+    var sealWanted = (phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place') && !(window.NASA_Faults && NASA_Faults.receivingBlocked());
     if (seal) {
       var tYaw = (typeof parkPose === 'function') ? parkPose().targetYaw : Math.PI;
       var yawErr = (typeof roverYaw === 'number' && tYaw !== undefined) ? SC.wrap(roverYaw - tYaw) : 0;
@@ -474,7 +474,7 @@
       lastSealFault = seal.fault;
       if (sealMesh) sealMesh.position.x = 0.04 + 0.05 * seal.extension();
     }
-    if (dropDoor) dropDoor.target = (dropWanted && (!seal || seal.ready)) ? 1 : 0;
+    if (dropDoor) dropDoor.target = (dropWanted && (!seal || seal.ready) && !(window.NASA_Faults && NASA_Faults.receivingBlocked())) ? 1 : 0;
     stepDoor(pickupDoor, dt);
     stepDoor(dropDoor, dt);
   }
@@ -636,17 +636,44 @@
   function makeParcelMesh(rec) {
     var pod = window.NASA_RoverBOM && NASA_RoverBOM.pod;
     var d = pod ? [pod.lengthM, pod.widthM, pod.heightM] : (rec.dim_m || [0.43, 0.25, 0.25]);
+    var ctype = rec.cargo_type || 'pod';
+    var isPod = ctype === 'pod' || !window.NASA_Cargo;
+    if (!isPod) { var ct = NASA_Cargo.get(ctype); d = [ct.lengthM, ct.widthM, ct.heightM]; }
     var L = d[0], W = d[1], h = d[2];
     var root = new THREE.Group();
     root.userData.rec = rec;
     root.userData.h = h;
 
-    var shellGeo = THREE.RoundedBoxGeometry ? new THREE.RoundedBoxGeometry(L, h, W, 3, 0.012) : new THREE.BoxGeometry(L, h, W);
-    var shell = new THREE.Mesh(shellGeo, mat(0xe2e8f0, 0.5, 0.22));
+    var shellGeo;
+    if (!isPod && ctype === 'cylinder') {
+      shellGeo = new THREE.CylinderGeometry(h / 2, h / 2, L, 28);
+      shellGeo.rotateZ(Math.PI / 2);   // axis along the rover's length, lying in a vee saddle
+    } else {
+      shellGeo = THREE.RoundedBoxGeometry ? new THREE.RoundedBoxGeometry(L, h, W, 3, 0.012) : new THREE.BoxGeometry(L, h, W);
+    }
+    var shellCol = isPod ? 0xe2e8f0 : (ctype === 'cylinder' ? 0xd6d3d1 : 0xc2410c);
+    var shell = new THREE.Mesh(shellGeo, mat(shellCol, 0.5, isPod ? 0.22 : 0.45));
     shell.castShadow = true;
     shell.receiveShadow = true;
     root.add(shell);
+    if (!isPod && ctype === 'container') {
+      // Corrugation ribs and corner castings so it reads as an ISO container.
+      for (var ri = 0; ri < 9; ri++) {
+        var rib = new THREE.Mesh(new THREE.BoxGeometry(0.006, h * 0.86, W + 0.006), mat(0x9a3412, 0.7, 0.3));
+        rib.position.set(-L * 0.42 + ri * (L * 0.84 / 8), 0, 0);
+        root.add(rib);
+      }
+    }
+    if (!isPod && ctype === 'cylinder') {
+      [-1, 1].forEach(function (sx) {
+        var ring = new THREE.Mesh(new THREE.TorusGeometry(h / 2, 0.006, 8, 28), mat(0x44403c, 0.5, 0.6));
+        ring.rotation.y = Math.PI / 2;
+        ring.position.set(sx * L * 0.45, 0, 0);
+        root.add(ring);
+      });
+    }
 
+    if (isPod) {
     var mli = new THREE.Mesh(new THREE.BoxGeometry(L * 0.9, 0.004, W * 0.9), mat(0xc9a14a, 0.32, 0.85));
     mli.position.y = h * 0.5 + 0.002;
     root.add(mli);
@@ -679,6 +706,7 @@
       cap.position.set(sx * (L * 0.5 + 0.002), 0, 0);
       root.add(cap);
     });
+    }
     var led = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 10, 8), mat(0x22c55e, 0.3, 0.2, 0x16a34a));
     led.position.set(L * 0.5 + 0.006, h * 0.22, 0);
     root.add(led);
@@ -1479,6 +1507,10 @@
       var slot = slots[bay.length] || slots[0];
       releaseOn(slot, held, 0);
       bay.push(held);
+      if (window.NASA_Cargo && held.userData.rec.cargo_type) {
+        var cr = NASA_Cargo.cradleFor(held.userData.rec.cargo_type), ct0 = NASA_Cargo.get(held.userData.rec.cargo_type);
+        log('<span class="text-cyan-300">[CRADLE] ' + ct0.label + ': clamps set to ' + (cr.clampSpanM * 1000).toFixed(0) + ' mm, ' + cr.saddle + ' saddle, universal grapple bail engaged.</span>');
+      }
       if (typeof window.noteCargoSeat === 'function') window.noteCargoSeat(held.userData.rec.mass_kg);
       log('<span class="text-emerald-300 font-bold">[ARM] Stowed ' + held.userData.rec.id + ' (' + held.userData.rec.mass_kg.toFixed(1) + ' kg, ' + (held.userData.rec.mass_kg * G_MOON).toFixed(1) + ' N lunar).</span>');
       held = null;
@@ -1960,14 +1992,14 @@
   function addRocketCargo() {
     var k = fleet.arrived;
     for (var i = 0; i < fleet.per; i++) {
-      queue.push({
+      queue.push(applyCargoType({
         id: 'R' + k + String.fromCharCode(65 + i),
         source_item: 'Rocket ' + k + ' resupply pod ' + (i + 1),
         mass_kg: CARGO_KG,
         manifest_mass_kg: CARGO_KG,
         day_number: 100 * k + i,
         part: 1
-      });
+      }, k * 3 + i));
     }
     ensureBelt();
     log('<span class="text-emerald-300">[ROCKET ' + k + '/' + fleet.size + '] ' + fleet.per + ' pods set down on the pickup rack. ' + queue.length + ' waiting.</span>');
@@ -2201,6 +2233,7 @@
     },
     obstacles: function () {
       var list = [{ x: BASE.x, z: BASE.z, r: 3.1 }];
+      if (window.NASA_FaultsUI) list = list.concat(NASA_FaultsUI.obstacles());
       if (landerLanded) {
         for (var i = -2; i <= 2; i++) list.push({ x: PAD.x + i * 2.4, z: PAD.z, r: 2.35 });
       }
@@ -2227,6 +2260,19 @@
         }
       }
     },
+    setCargoType: function (mode) {
+      if (!window.NASA_Cargo) return false;
+      if (!(mode === 'mixed' || NASA_Cargo.TYPES[mode])) { log('<span class="text-amber-300">[CARGO] Unknown type. Use pod, cylinder, container or mixed.</span>'); return false; }
+      if (bay.length || held || picking || !(phase === 'idle' || phase === 'rth')) { log('<span class="text-amber-300">[CARGO] Change the cargo type while the rover is idle and empty.</span>'); return false; }
+      NASA_Cargo.mode = mode;
+      for (var bi = 0; bi < belt.length; bi++) { if (belt[bi].parent) belt[bi].parent.remove(belt[bi]); }
+      belt.length = 0;
+      queue.forEach(function (r, i) { applyCargoType(r, i); });
+      if (rackGroup) initConveyorParcels();
+      log('<span class="text-cyan-300 font-bold">[CARGO] Rack loaded with ' + mode + ' cargo. ' + (mode === 'mixed' ? 'Pod, cylinder and container in turn. ' : '') + 'Same grapple bail, cradle adapts.</span>');
+      return true;
+    },
+    cargoFits: function () { return window.NASA_Cargo ? NASA_Cargo.ids().map(function (i) { return { id: i, fit: NASA_Cargo.fits(i), cradle: NASA_Cargo.cradleFor(i) }; }) : []; },
     report: function () { return lastReport; },
     stability: function () { return stab ? stab.result() : null; },
     sealState: function () { return seal ? seal.state : null; },
@@ -2428,10 +2474,12 @@
         }
       }
       if (missionStats.tracking) missionStats.simT += dt;
+      if (window.NASA_Faults) NASA_Faults.step(dt);
       if (SC) {
         var dyn = window.NASA_Dynamics ? NASA_Dynamics.state() : null;
         var spd = (typeof vel === 'number') ? vel : 0, yr = (typeof turnVel === 'number') ? turnVel : 0;
-        var mr = dyn ? dyn.tipMarginRoll : 9, mp = dyn ? dyn.tipMarginPitch : 9;
+        var tp = window.NASA_Faults ? NASA_Faults.tipPenalty() : 0;
+        var mr = (dyn ? dyn.tipMarginRoll : 9) - tp, mp = (dyn ? dyn.tipMarginPitch : 9) - tp;
         var carrying = (typeof roverPayloadKg === 'function' ? roverPayloadKg() : 0) > 0.2;
         SC._scale = SC.tipSpeedScale(mr, mp, Math.abs(spd * yr));
         if (missionStats.tracking) stab.add({ carrying: carrying, lockHeld: (bay.length > 0 || !!held), speed: spd, yawRate: yr, marginRoll: mr, marginPitch: mp, tilt: (typeof smoothPitch === 'number' ? Math.max(Math.abs(smoothPitch), Math.abs(typeof smoothRoll === 'number' ? smoothRoll : 0)) : 0) });
@@ -2457,10 +2505,17 @@
     },
   };
 
+  function applyCargoType(rec, idx) {
+    rec.cargo_type = window.NASA_Cargo ? NASA_Cargo.pick(NASA_Cargo.mode, idx) : 'pod';
+    rec.mass_kg = window.NASA_Cargo ? NASA_Cargo.get(rec.cargo_type).massKg : CARGO_KG;
+    return rec;
+  }
+
   function onManifest(data) {
-    (data.parcels || []).forEach(function (r) {
+    (data.parcels || []).forEach(function (r, ri) {
       if (r.manifest_mass_kg == null) r.manifest_mass_kg = r.mass_kg;
       r.mass_kg = CARGO_KG;                       // prototype pods are 5 lb each
+      applyCargoType(r, ri);
     });
     data.rover_payload_kg = +(CARGO_KG * (data.parcels || []).length).toFixed(1);
     manifest = data;
