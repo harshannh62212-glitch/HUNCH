@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLASO Master Simulation — NASA HUNCH 2026-27</title>
+<style>
+  html,body{margin:0;height:100%;background:#070b12;color:#e2e8f0;font:12px/1.35 ui-sans-serif,system-ui,sans-serif}
+  #app{display:grid;grid-template-columns:220px minmax(280px,1fr) 240px;grid-template-rows:minmax(0,1fr) 200px;height:100vh}
+  #left,#right{overflow:auto;background:#0b1220;padding:10px 12px;border-color:#1e293b;border-style:solid}
+  #left{border-right-width:1px;grid-column:1;grid-row:1/3}
+  #right{border-left-width:1px;grid-column:3;grid-row:1/3}
+  #view{grid-column:2;grid-row:1;position:relative;min-width:0;min-height:0}
+  #table-wrap{grid-column:2;grid-row:2;overflow:auto;border-top:1px solid #1e293b;background:#0b1220}
+  body.split #app{grid-template-rows:38vh 1fr}
+  h1{font-size:14px;margin:0 0 4px;letter-spacing:.04em}
+  .sub{color:#94a3b8;margin:0 0 8px}
+  button,select{font:inherit;color:#e2e8f0;background:#111827;border:1px solid #334155;border-radius:6px;padding:4px 6px}
+  button{cursor:pointer;text-align:left}
+  button:hover{border-color:#38bdf8}
+  button.phase{width:100%;margin:8px 0 4px;background:transparent;border:0;color:#38bdf8;font-weight:700;cursor:default;padding:0}
+  button.mission{display:block;width:100%;margin:2px 0}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .row>*{flex:1}
+  label{color:#94a3b8;display:block;margin-top:6px}
+  #log,#custody,#exceptions{white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:10px;color:#cbd5e1}
+  #log div,#custody div{border-bottom:1px solid #1e293b;padding:2px 0}
+  table{border-collapse:collapse;width:100%;font-size:10px}
+  th,td{border-bottom:1px solid #1e293b;padding:3px 5px;text-align:left;white-space:nowrap}
+  th{position:sticky;top:0;background:#111827;z-index:1}
+  tr.fault td{background:#7f1d1d;color:#fee2e2}
+  #search{width:100%;box-sizing:border-box;margin:6px 0;background:#020617;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:4px 6px}
+  .hidden{display:none}
+  #modal{position:fixed;inset:6vh 8vw;background:#0f172a;border:1px solid #38bdf8;z-index:30;overflow:auto;padding:16px;border-radius:10px}
+  .bar{height:10px;background:#1e293b;border-radius:4px;margin:3px 0 8px}
+  .bar>span{display:block;height:100%;background:#38bdf8;border-radius:4px}
+  .kpi b{color:#7dd3fc}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="left">
+    <h1>LLASO MASTER SIM</h1>
+    <p class="sub">P1 logistics module · P2 surface rovers · P3 gantry · 18 missions</p>
+    <label>Simulation speed</label>
+    <select id="speed"><option value="1">1×</option><option value="5">5×</option><option value="20" selected>20×</option></select>
+    <label>Gravity</label>
+    <select id="gravity"><option value="earth">1.0 g Earth</option><option value="transit">0 g Transit</option><option value="moon" selected>1/6 g Moon</option></select>
+    <label>Color coding</label>
+    <select id="color-mode">
+      <option value="day">By day 1–14</option>
+      <option value="type">By cargo type</option>
+      <option value="priority">By priority</option>
+      <option value="actor">By assigned actor</option>
+      <option value="lifecycle">By lifecycle</option>
+    </select>
+    <label>Rover override</label>
+    <div class="row">
+      <select id="rover-pick"><option value="r1">External Robot 1</option><option value="r2">External Robot 2</option></select>
+      <label style="margin:0;align-self:center"><input id="manual" type="checkbox" /> WASD</label>
+    </div>
+    <div id="missions"></div>
+    <div class="row">
+      <button id="btn-inject" type="button">Inject Pre-Launch Errors</button>
+      <button id="btn-audit" type="button">Run Digital Verification Audit</button>
+    </div>
+    <p class="sub">WASD yaws and drives the selected rover when Manual is checked. A* missions queue their own motion.</p>
+  </aside>
+  <div id="view"></div>
+  <aside id="right">
+    <div id="status" class="kpi">Booting…</div>
+    <div id="cogline" class="kpi"></div>
+    <div id="socline" class="kpi"></div>
+    <div id="traceline" class="kpi"></div>
+    <div id="kpi" class="kpi"></div>
+    <h2 style="font-size:12px">Exceptions</h2>
+    <div id="exceptions"></div>
+    <h2 style="font-size:12px">Chain of custody</h2>
+    <div id="custody"></div>
+    <h2 style="font-size:12px">Mission log</h2>
+    <div id="log"></div>
+  </aside>
+  <div id="table-wrap">
+    <input id="search" placeholder="Search manifest (10 fields)" />
+    <table>
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+<div id="modal" class="hidden"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  var COLS = ['Item_ID','Day_Needed','Mission_Activity','Current_Location','Destination','Priority','Handling_Requirements','Assigned_Actor','Retrieval_Time_Sec','Lifecycle_Status'];
+  var ACTIVITIES = ['Meal','EVA','Science','Maintenance','Fabrication','Medical'];
+  var DEST = {Meal:'Galley', EVA:'EVA Airlock', Science:'Science Lab', Maintenance:'Maintenance Bay', Medical:'Medical Bay', Fabrication:'3D Fabrication Lab'};
+  var ACTORS = ['Astronaut','External Cargo Robot','Internal Cargo Robot','Mechanical/Automated Handling System','Fabrication System','Maintenance/Repair System','Mission Control'];
+  var CATS = ['Consumed','Installed','Stored','Fabricated','Recycled','Discarded','Return'];
+
+  var items = [];
+  var kits = [];
+  var queue = [];
+  var activeJob = null;
+  var keys = {};
+  var moduleGroup, habitat, gantryCar, habBot, cogMesh, pathLine, slideMesh;
+  var rover1, rover2, camera, controls, renderer, scene, sun;
+  var meshes = {};
+  var dummy = new THREE.Object3D();
+  var cA = new THREE.Color();
+  var cB = new THREE.Color();
+  var v1 = new THREE.Vector3();
+
+  var state = {
+    speed: 20, gravity: 'moon', g: 1.625, colorMode: 'day', cam: 'module',
+    roverId: 'r1', manual: false, time: 0, day: 1, seq: {},
+    exceptions: [], cog: {x:6.1,y:1,z:0,kg:0}, cogOk: true,
+    slots: [], cradles: [], cradleUsed: [false,false,false,false],
+    grid: {x0:-32, z0:-20, cell:2, nx:34, nz:22},
+    slide: false, block: null, faulted: false, faultSnap: null,
+    searchMin: null, effort: null, reclaimM3: 0, account: null,
+    mPerUnit: 4, startMass: 0, highlights: {},
+    soc1: 92, soc2: 97
+  };
+
+  var MISSIONS = [
+    ['I — Earth: plan, optimize, load', [
+      [1,'1 Build 14-day manifest'],
+      [2,'2 LIFO loading sequence'],
+      [3,'3 3D container optimization'],
+      [4,'4 Perishable, fragile, hazardous'],
+      [5,'5 Load by mission kits'],
+      [6,'6 Departure verification']
+    ]],
+    ['II — Moon: unload, retrieve, deliver', [
+      [7,'7 Day 1 open container'],
+      [8,'8 Robot-to-robot handoff'],
+      [9,'9 Retrieve today kits'],
+      [10,'10 Astronaut effort challenge'],
+      [11,'11 Consume, replace, remove'],
+      [12,'12 14-day accountability']
+    ]],
+    ['III — Innovation and autonomy', [
+      [13,'13 Zero-search pre-stage'],
+      [14,'14 Self-reorganizing container'],
+      [15,'15 Missing component Day 9'],
+      [16,'16 Garbage becomes resource'],
+      [17,'17 Lunar logistics emergency'],
+      [18,'18 Grand challenge report']
+    ]]
+  ];
+
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function nid(prefix){
+    state.seq[prefix] = (state.seq[prefix] || 0) + 1;
+    return prefix + '-' + ('000' + state.seq[prefix]).slice(-3);
+  }
+  function actorFor(handling){
+    var h = handling.toLowerCase();
+    if (h.indexOf('medical intervention') >= 0 || h.indexOf('safety authorization') >= 0 || h.indexOf('delicate') >= 0 || h.indexOf('hazardous') >= 0) return 'Astronaut';
+    if (h.indexOf('filament') >= 0 || h.indexOf('fabricated') >= 0) return 'Fabrication System';
+    if (h.indexOf('dust-seal') >= 0 || h.indexOf('latch retention') >= 0) return 'Mechanical/Automated Handling System';
+    if (h.indexOf('motor fault') >= 0 || h.indexOf('component swap') >= 0) return 'Maintenance/Repair System';
+    if (h.indexOf('manifest override') >= 0 || h.indexOf('departure verification') >= 0) return 'Mission Control';
+    if (h.indexOf('surface transport') >= 0) return 'External Cargo Robot';
+    return 'Internal Cargo Robot';
+  }
+  function log(msg){
+    var el = document.getElementById('log');
+    var d = document.createElement('div');
+    d.textContent = msg;
+    el.insertBefore(d, el.firstChild);
+    while (el.children.length > 60) el.removeChild(el.lastChild);
+  }
+  function custody(msg){
+    var el = document.getElementById('custody');
+    var d = document.createElement('div');
+    d.textContent = msg;
+    el.insertBefore(d, el.firstChild);
+  }
+  function rfid(id, step){
+    var s = id + '|' + step + '|LLASO-2026';
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+    return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+  }
+  function selectedRover(){ return state.roverId === 'r2' ? rover2 : rover1; }
+
+  function play(seconds, tick, done){
+    queue.push({dur: Math.max(0.05, seconds), t: 0, tick: tick || function(){}, done: done || null});
+  }
+  function pump(dt){
+    if (!activeJob) activeJob = queue.shift() || null;
+    if (!activeJob) return;
+    activeJob.t += dt * state.speed;
+    var u = Math.min(1, activeJob.t / activeJob.dur);
+    activeJob.tick(u);
+    if (u >= 1) {
+      var fin = activeJob.done;
+      activeJob = null;
+      if (fin) fin();
+      renderTable();
+      renderKpi();
+    }
+  }
+  function clearQueue(){ queue.length = 0; activeJob = null; }
+
+  function getH(x, z){
+    var h = 0;
+    function crater(cx, cz, r, d){
+      var dist = Math.hypot(x - cx, z - cz);
+      if (dist < r) h -= d * Math.cos((dist / r) * Math.PI * 0.5);
+    }
+    crater(2, 3, 8, 1.35);
+    crater(-12, -7, 5, 0.65);
+    crater(10, -9, 4.2, 0.45);
+    if (x < -14 && Math.abs(z) < 8) h *= 0.08;
+    if (x > 16 && Math.abs(z) < 8) h *= 0.08;
+    return h;
+  }
+
+  function makeRover(id, hex){
+    var g = new THREE.Group();
+    g.name = id;
+    var bodyMat = new THREE.MeshStandardMaterial({color: hex, metalness: 0.45, roughness: 0.42});
+    var dark = new THREE.MeshStandardMaterial({color: 0x1e293b, metalness: 0.3, roughness: 0.55});
+    var body = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.28, 0.78), bodyMat);
+    body.position.y = 0.38;
+    g.add(body);
+    var bed = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.62), dark);
+    bed.position.set(-0.05, 0.58, 0);
+    g.add(bed);
+    var collarMat = new THREE.MeshStandardMaterial({color: 0xf59e0b, emissive: 0x7c2d12, metalness: 0.6, roughness: 0.28});
+    var collar = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.045, 10, 28), collarMat);
+    collar.rotation.y = Math.PI / 2;
+    collar.position.set(0.95, 0.48, 0);
+    g.add(collar);
+    var wheels = [];
+    [[0.48, 0.32], [0.48, -0.32], [0.0, 0.36], [0.0, -0.36], [-0.5, 0.32], [-0.5, -0.32]].forEach(function (p) {
+      var arm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.04), dark);
+      arm.position.set(p[0], 0.22, p[1] * 0.7);
+      g.add(arm);
+      var w = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 12), new THREE.MeshStandardMaterial({color: 0x334155, roughness: 0.85}));
+      w.rotation.z = Math.PI / 2;
+      w.position.set(p[0], 0.16, p[1]);
+      g.add(w);
+      wheels.push(w);
+    });
+    g.userData.wheels = wheels;
+    g.userData.body = body;
+    g.userData.collar = collar;
+    g.userData.fault = false;
+    g.userData.id = id;
+    return g;
+  }
+
+  function initScene(){
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b12);
+    scene.fog = new THREE.Fog(0x070b12, 50, 140);
+    camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+    var view = document.getElementById('view');
+    renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    view.appendChild(renderer.domElement);
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.maxDistance = 140;
+    scene.add(new THREE.AmbientLight(0x8ea2c0, 0.55));
+    sun = new THREE.DirectionalLight(0xfff4e0, 1.35);
+    sun.position.set(40, 14, -18);
+    scene.add(sun);
+
+    var geo = new THREE.PlaneGeometry(78, 48, 90, 50);
+    geo.rotateX(-Math.PI / 2);
+    var pos = geo.attributes.position;
+    for (var i = 0; i < pos.count; i++) pos.setY(i, getH(pos.getX(i), pos.getZ(i)));
+    geo.computeVertexNormals();
+    var ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: 0x6b5a48, roughness: 0.95, metalness: 0.02}));
+    scene.add(ground);
+
+    moduleGroup = new THREE.Group();
+    moduleGroup.position.set(-18, 1.72, 0);
+    scene.add(moduleGroup);
+    var shell = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.5, 1.5, 12.192, 28, 1, true, Math.PI * 0.15, Math.PI * 1.35),
+      new THREE.MeshStandardMaterial({color: 0xb6c2d1, metalness: 0.55, roughness: 0.32, side: THREE.DoubleSide, transparent: true, opacity: 0.42})
+    );
+    shell.rotation.z = Math.PI / 2;
+    shell.position.x = 6.096;
+    moduleGroup.add(shell);
+    var floor = new THREE.Mesh(new THREE.BoxGeometry(12.0, 0.06, 2.3), new THREE.MeshStandardMaterial({color: 0x1e293b, roughness: 0.8}));
+    floor.position.set(6.096, 0.12, 0);
+    moduleGroup.add(floor);
+    var corridor = new THREE.Mesh(new THREE.BoxGeometry(12.0, 2.1, 1.2), new THREE.MeshBasicMaterial({color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.18}));
+    corridor.position.set(6.096, 1.15, 0);
+    moduleGroup.add(corridor);
+    var bulk = new THREE.Mesh(new THREE.CircleGeometry(1.48, 24), new THREE.MeshStandardMaterial({color: 0x475569, metalness: 0.4, roughness: 0.5, side: THREE.DoubleSide}));
+    bulk.rotation.y = Math.PI / 2;
+    bulk.position.x = 12.15;
+    moduleGroup.add(bulk);
+    var aftRing = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.04, 8, 24), new THREE.MeshStandardMaterial({color: 0x22d3ee, emissive: 0x155e75}));
+    aftRing.rotation.y = Math.PI / 2;
+    aftRing.position.set(0.05, 1.0, 0);
+    moduleGroup.add(aftRing);
+
+    state.slots = buildSlots();
+    state.slots.forEach(function (s) {
+      var shelf = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.035, 0.62), new THREE.MeshStandardMaterial({color: s.powered ? 0x0f766e : 0x334155, metalness: 0.4, roughness: 0.45}));
+      shelf.position.set(s.x, s.y - 0.16, s.z);
+      moduleGroup.add(shelf);
+    });
+    state.cradles = [
+      {x:1.15,y:0.55,z:-1.22,bay:2,side:'starboard',tier:'A',col:0},
+      {x:1.15,y:0.55,z:1.22,bay:1,side:'port',tier:'A',col:0},
+      {x:10.9,y:0.55,z:-1.22,bay:20,side:'starboard',tier:'A',col:9},
+      {x:10.9,y:0.55,z:1.22,bay:19,side:'port',tier:'A',col:9}
+    ];
+    state.cradles.forEach(function (c) {
+      var cradle = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.03, 6, 12), new THREE.MeshStandardMaterial({color: 0xd6d3d1, metalness: 0.7, roughness: 0.3}));
+      cradle.rotation.y = Math.PI / 2;
+      cradle.position.set(c.x, c.y, c.z);
+      moduleGroup.add(cradle);
+    });
+
+    var rail = new THREE.Mesh(new THREE.BoxGeometry(12.0, 0.06, 0.08), new THREE.MeshStandardMaterial({color: 0xe2e8f0, metalness: 0.8, roughness: 0.25}));
+    rail.position.set(6.096, 2.05, 0);
+    moduleGroup.add(rail);
+    gantryCar = new THREE.Group();
+    gantryCar.position.set(1, 1.7, 0);
+    var mast = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.7, 0.12), new THREE.MeshStandardMaterial({color: 0xfbbf24, metalness: 0.5, roughness: 0.35}));
+    var grip = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.2), new THREE.MeshStandardMaterial({color: 0xf59e0b}));
+    grip.position.y = -0.4;
+    gantryCar.add(mast, grip);
+    moduleGroup.add(gantryCar);
+
+    cogMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshStandardMaterial({color: 0xf472b6, emissive: 0xbe185d}));
+    moduleGroup.add(cogMesh);
+
+    habitat = new THREE.Group();
+    habitat.position.set(24, 0, 0);
+    scene.add(habitat);
+    var hab = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.6, 4.2), new THREE.MeshStandardMaterial({color: 0xe2e8f0, roughness: 0.55, metalness: 0.2}));
+    hab.position.y = 1.3;
+    habitat.add(hab);
+    var dock = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.05, 8, 20), new THREE.MeshStandardMaterial({color: 0x22d3ee, emissive: 0x155e75}));
+    dock.rotation.y = Math.PI / 2;
+    dock.position.set(-3.15, 1.15, 0);
+    habitat.add(dock);
+    Object.keys(DEST).forEach(function (act, idx) {
+      var p = stationPos(DEST[act]);
+      var m = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.08, 0.35), new THREE.MeshStandardMaterial({color: 0x38bdf8, emissive: 0x0c4a6e}));
+      m.position.set(p.x, 0.2, p.z);
+      habitat.add(m);
+    });
+    habBot = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.35), new THREE.MeshStandardMaterial({color: 0xfbbf24, metalness: 0.4}));
+    habBot.position.set(-2.2, 0.4, 0);
+    habitat.add(habBot);
+
+    rover1 = makeRover('r1', 0x0e7490);
+    rover2 = makeRover('r2', 0xb45309);
+    rover1.position.set(-21.2, 0.4, 2.2);
+    rover2.position.set(-21.2, 0.4, -2.4);
+    scene.add(rover1, rover2);
+    snapRover(rover1); snapRover(rover2);
+
+    var boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    var cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 16);
+    function inst(geo, mat){
+      var mesh = new THREE.InstancedMesh(geo, mat, 120);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+      return mesh;
+    }
+    var std = function (c) {
+      return new THREE.MeshStandardMaterial({color: c, roughness: 0.55, metalness: 0.2, vertexColors: true});
+    };
+    meshes.ctb = inst(boxGeo, std(0xffffff));
+    meshes.locker = inst(boxGeo, std(0xffffff));
+    meshes.pod = inst(cylGeo, std(0xffffff));
+    meshes.halo = inst(boxGeo, new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false, vertexColors: true}));
+
+    pathLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0x22d3ee}));
+    scene.add(pathLine);
+    slideMesh = new THREE.Mesh(new THREE.BoxGeometry(12, 0.35, 5), new THREE.MeshBasicMaterial({color: 0xef4444, transparent: true, opacity: 0.28}));
+    slideMesh.position.set(6, 0.2, 0);
+    slideMesh.visible = false;
+    scene.add(slideMesh);
+
+    var aft = new THREE.Vector3();
+    var habDock = new THREE.Vector3(-3.15, 1.15, 0);
+    moduleGroup.localToWorld(aft.set(0, 1, 0));
+    habitat.localToWorld(habDock);
+    state.mPerUnit = 150 / Math.max(1, aft.distanceTo(habDock));
+    state.aftWorld = aft.clone();
+    state.habDockWorld = habDock.clone();
+
+    window.addEventListener('resize', resize);
+    resize();
+    applyCam('module');
+  }
+
+  function stationPos(name){
+    var map = {
+      'Galley': {x:-1.4,y:0.9,z:1.2},
+      'EVA Airlock': {x:0.2,y:0.9,z:1.3},
+      'Science Lab': {x:1.6,y:0.9,z:0.8},
+      'Maintenance Bay': {x:1.5,y:0.9,z:-1.0},
+      'Medical Bay': {x:-0.2,y:0.9,z:-1.2},
+      '3D Fabrication Lab': {x:-1.6,y:0.9,z:-0.6},
+      'Dock': {x:-2.4,y:0.9,z:0}
+    };
+    return map[name] || map.Dock;
+  }
+  function buildSlots(){
+    var slots = [];
+    var pitch = (12.192 - 0.7) / 10;
+    for (var col = 0; col < 10; col++) {
+      var x = 0.35 + pitch * (col + 0.5);
+      for (var si = 0; si < 2; si++) {
+        for (var t = 0; t < 4; t++) {
+          slots.push({
+            col: col, side: si === 0 ? 'port' : 'starboard', bay: col * 2 + 1 + si,
+            tier: 'ABCD'[t], x: x, y: 0.36 + t * 0.46, z: si === 0 ? -0.95 : 0.95,
+            cap: 2, used: 0, mass: 0, powered: (col * 2 + 1 + si) <= 2, occ: []
+          });
+        }
+      }
+    }
+    return slots;
+  }
+  function slotAt(col, si, t){
+    if (col < 0 || col > 9 || si < 0 || si > 1 || t < 0 || t > 3) return null;
+    return state.slots[col * 8 + si * 4 + t];
+  }
+  function resetSlots(){
+    state.slots.forEach(function (s) { s.used = 0; s.mass = 0; s.occ.length = 0; });
+    state.cradleUsed = [false, false, false, false];
+  }
+  function resize(){
+    var view = document.getElementById('view');
+    var w = view.clientWidth || 800, h = view.clientHeight || 600;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+  function applyCam(mode){
+    state.cam = mode;
+    document.body.classList.toggle('split', mode === 'split');
+    resize();
+    scene.updateMatrixWorld(true);
+    controls.enabled = mode !== 'chase';
+    var tgt = new THREE.Vector3();
+    if (mode === 'module') {
+      tgt.copy(moduleGroup.localToWorld(new THREE.Vector3(6.1, 1.05, 0)));
+      camera.position.copy(moduleGroup.localToWorld(new THREE.Vector3(6.1, 5.2, 16)));
+    } else if (mode === 'surface' || mode === 'split') {
+      tgt.set(2, 1, 0);
+      camera.position.set(-8, 22, 36);
+    } else if (mode === 'chase') {
+      tgt.copy(selectedRover().position);
+      camera.position.copy(tgt).add(new THREE.Vector3(-7, 4, 6));
+    }
+    controls.target.copy(tgt);
+    controls.update();
+  }
+  function snapRover(r){ r.position.y = 0.02 + getH(r.position.x, r.position.z); }
+
+  function addItem(kit, spec){
+    var it = {
+      Item_ID: spec.id || nid('D' + pad(kit.day) + kit.activity.slice(0, 3).toUpperCase()),
+      Day_Needed: kit.day,
+      Mission_Activity: kit.activity,
+      Current_Location: 'Earth cargo processing',
+      Destination: 'Habitat — ' + (DEST[kit.activity] || 'Dock'),
+      Priority: spec.priority,
+      Handling_Requirements: spec.handling,
+      Assigned_Actor: actorFor(spec.handling),
+      Retrieval_Time_Sec: 30,
+      Lifecycle_Status: 'Stored',
+      massKg: spec.mass,
+      category: spec.category,
+      kitId: kit.id,
+      fault: false,
+      latch: true
+    };
+    if (ACTORS.indexOf(it.Assigned_Actor) < 0) it.Assigned_Actor = 'Internal Cargo Robot';
+    kit.items.push(it);
+    items.push(it);
+    kit.massKg += spec.mass;
+    if (spec.priority < kit.priority) kit.priority = spec.priority;
+    return it;
+  }
+
+  function buildManifest(){
+    items = [];
+    kits = [];
+    state.seq = {};
+    state.exceptions = [];
+    state.highlights = {};
+    state.faulted = false;
+    state.faultSnap = null;
+    for (var day = 1; day <= 14; day++) {
+      ACTIVITIES.forEach(function (act) {
+        var kit = {
+          id: 'KIT-D' + pad(day) + '-' + act, day: day, activity: act,
+          cargoType: 'CTB', uSize: 1, massKg: 0, priority: 5, cold: false, heavy: false,
+          latch: true, carrier: 'module', items: [], fault: false, halo: null,
+          ox: 0, oy: 0, oz: 0, bedZ: (kits.length % 5) * 0.08, prefCol: null, station: DEST[act]
+        };
+        if (act === 'Meal' && day % 2 === 0) { kit.uSize = 2; kit.heavy = true; }
+        if (act === 'Maintenance' && (day === 7 || day === 14)) { kit.uSize = 4; kit.cargoType = 'Locker'; }
+        if (act === 'Science' && day % 5 === 0) kit.cargoType = 'Locker';
+        if (act === 'Medical' && (day === 1 || day === 4 || day === 8 || day === 12)) kit.cold = true;
+        if (act === 'Meal') {
+          addItem(kit, {category:'Food', mass:1.45, priority:3, handling:'Nominal food stowage'});
+          if (kit.heavy) addItem(kit, {category:'Water', mass:6.4, priority:2, handling:'Heavy potable water'});
+          else addItem(kit, {category:'Food', mass:0.45, priority:4, handling:'Nominal food stowage'});
+          addItem(kit, day % 2 ? {category:'Clothing', mass:0.85, priority:4, handling:'Nominal clothing stowage'} : {category:'Food', mass:0.35, priority:4, handling:'Nominal food stowage'});
+        } else if (act === 'EVA') {
+          addItem(kit, {category:'Clothing', mass:0.7, priority:3, handling:'Nominal EVA soft goods'});
+          addItem(kit, {category:'Spare Parts', mass:0.9, priority:3, handling:'Nominal filter cartridge'});
+          if (day % 4 === 1) addItem(kit, {category:'Tools', mass:0.8, priority:2, handling:'Safety authorization — suit seal check'});
+          else if (day % 4 === 2) addItem(kit, {category:'Batteries', mass:1.1, priority:2, handling:'Hazardous battery — safety authorization'});
+          else addItem(kit, {category:'Batteries', mass:0.6, priority:3, handling:'Nominal lamp battery'});
+        } else if (act === 'Science') {
+          addItem(kit, {category:'Science', mass:1.2, priority:3, handling:'Nominal science sample'});
+          addItem(kit, {category:'Science', mass:2.1, priority: day % 3 === 0 ? 2 : 3, handling: day % 3 === 0 ? 'Delicate science calibration' : 'Nominal instrument stowage'});
+          addItem(kit, {category:'Science', mass:0.4, priority:4, handling:'Nominal science consumable'});
+        } else if (act === 'Maintenance') {
+          addItem(kit, {category:'Tools', mass:2.4, priority:3, handling:'Nominal tool stowage'});
+          if (day === 9) addItem(kit, {id:'SPARE-O2-SCRUB-VALVE-D09', category:'Spare Parts', mass:0.42, priority:1, handling:'Nominal spare valve — Day 9 critical'});
+          else addItem(kit, {category:'Spare Parts', mass:0.7, priority:3, handling:'Nominal spare hardware'});
+          addItem(kit, {category:'Spare Parts', mass:0.55, priority:4, handling:'Nominal fastener kit'});
+        } else if (act === 'Fabrication') {
+          addItem(kit, {category:'Fabrication Feedstock', mass:3.2, priority:3, handling:'Polymer/metal feedstock spool'});
+          addItem(kit, {category:'Fabrication Feedstock', mass:0.8, priority:3, handling:'Nominal feedstock cartridge'});
+          addItem(kit, {category:'Tools', mass:0.5, priority:4, handling:'Nominal print tray'});
+        } else {
+          addItem(kit, {category:'Medical', mass:1.05, priority: kit.cold ? 2 : 3, handling: kit.cold ? 'Refrigerated medical — powered bay' : 'Nominal medical CTB'});
+          if (day === 1) addItem(kit, {id:'EMER-MED-D01', category:'Emergency', mass:1.7, priority:1, handling:'Medical intervention — crew administered'});
+          else addItem(kit, {category:'Medical', mass:0.6, priority:2, handling:'Nominal medical supply'});
+          addItem(kit, {category:'Medical', mass:0.3, priority:4, handling:'Nominal medical wipes'});
+        }
+        kits.push(kit);
+      });
+    }
+    [{id:'POD-O2', name:'O2', day:1, mass:32}, {id:'POD-N2', name:'N2', day:5, mass:30}, {id:'POD-H2O', name:'H2O', day:3, mass:34}, {id:'POD-WASTE', name:'Waste', day:14, mass:18}].forEach(function (p) {
+      var kit = {
+        id: p.id, day: p.day, activity: 'Maintenance', cargoType: 'POD', uSize: 6, massKg: 0, priority: 2,
+        cold: false, heavy: true, latch: p.id !== 'POD-O2', carrier: 'module', items: [], fault: false, halo: null,
+        ox:0, oy:0, oz:0, bedZ:0, prefCol:null, station:'Maintenance Bay'
+      };
+      addItem(kit, {id: p.id, category: p.name === 'H2O' ? 'Water' : 'Spare Parts', mass: p.mass, priority: 2, handling: 'Pressurized cylinder in bulkhead cradle'});
+      kit.items[0].latch = kit.latch;
+      kits.push(kit);
+    });
+    packAll();
+    state.startMass = items.reduce(function (s, it) { return s + it.massKg; }, 0);
+    return summary();
+  }
+
+  function packAll(){
+    resetSlots();
+    state.exceptions = [];
+    var list = kits.filter(function (k) { return k.carrier === 'module' || k.carrier === 'staging'; });
+    list.sort(function (a, b) {
+      if (b.day !== a.day) return b.day - a.day;
+      if (b.massKg !== a.massKg) return b.massKg - a.massKg;
+      return (b.cold ? 1 : 0) - (a.cold ? 1 : 0);
+    });
+    list.filter(function (k) { return k.cargoType === 'POD'; }).sort(function (a, b) { return a.day - b.day; }).forEach(placePod);
+    list.forEach(function (k) { if (k.cargoType !== 'POD') placeKit(k); });
+    list.forEach(describeKit);
+    var masses = bayMasses();
+    Object.keys(masses).forEach(function (b) {
+      if (masses[b] > 180) state.exceptions.push('Earth stack limit: bay ' + b + ' is ' + masses[b].toFixed(1) + ' kg (limit 180 kg).');
+    });
+    updateCog();
+  }
+  function bayMasses(){
+    var m = {};
+    kits.forEach(function (k) {
+      if (!k.bay || k.carrier !== 'module') return;
+      m[k.bay] = (m[k.bay] || 0) + k.massKg;
+    });
+    return m;
+  }
+  function placeKit(kit){
+    if (kit.cargoType === 'POD') return placePod(kit);
+    var need = kit.uSize >= 4 ? 4 : kit.uSize >= 2 ? 2 : 1;
+    var span = kit.uSize >= 4 ? 2 : 1;
+    var natural = Math.round(((kit.day - 1) / 13) * 9);
+    var pref = kit.prefCol != null ? kit.prefCol : (kit.cold ? 0 : natural);
+    if (kit.cold && natural !== 0) state.exceptions.push('LIFO exception: ' + kit.id + ' refrigerated cargo forced into powered aft bays 1–2.');
+    var order = [];
+    for (var r = 0; r < 10; r++) {
+      if (r === 0) order.push(pref);
+      else { order.push(pref + r); order.push(pref - r); }
+    }
+    var tiers = kit.heavy ? [0, 1, 2, 3] : [1, 2, 3, 0];
+    for (var oi = 0; oi < order.length; oi++) {
+      var col = order[oi];
+      if (col < 0 || col + span - 1 > 9) continue;
+      if (kit.cold && col !== 0) continue;
+      for (var si = 0; si < 2; si++) {
+        for (var ti = 0; ti < 4; ti++) {
+          var t = tiers[ti];
+          var cells = [];
+          var ok = true;
+          for (var c = 0; c < span; c++) {
+            var slot = slotAt(col + c, si, t);
+            var take = span === 1 ? need : 2;
+            if (!slot || slot.used + take > slot.cap) { ok = false; break; }
+            cells.push({slot: slot, take: take});
+          }
+          if (!ok) continue;
+          cells.forEach(function (cell) {
+            cell.slot.used += cell.take;
+            cell.slot.mass += kit.massKg / cells.length;
+            cell.slot.occ.push(kit.id);
+          });
+          var s0 = cells[0].slot;
+          kit.col = s0.col;
+          kit.bay = s0.bay;
+          kit.side = s0.side;
+          kit.tier = s0.tier;
+          kit.x = span === 2 ? (cells[0].slot.x + cells[1].slot.x) / 2 : s0.x;
+          kit.y = s0.y;
+          kit.z = s0.z;
+          kit.ox = 0; kit.oy = 0; kit.oz = 0;
+          if (need === 1 && s0.occ.length === 2) {
+            kit.oz = 0.2;
+            var other = kits.filter(function (q) { return q.id === s0.occ[0]; })[0];
+            if (other && other !== kit) other.oz = -0.2;
+          }
+          if (kit.heavy && s0.tier !== 'A') state.exceptions.push('Mass exception: ' + kit.id + ' placed on tier ' + s0.tier + ' because tier A was full.');
+          kit.retrieval = Math.round(16 + s0.col * 12);
+          kit.carrier = 'module';
+          return true;
+        }
+      }
+    }
+    state.exceptions.push('No open slot for ' + kit.id);
+    kit.x = 6; kit.y = 1.2; kit.z = 0; kit.bay = 0; kit.retrieval = 90;
+    return false;
+  }
+  function placePod(kit){
+    var prefer = kit.day >= 8 ? [2, 3, 0, 1] : [0, 1, 2, 3];
+    for (var n = 0; n < prefer.length; n++) {
+      var i = prefer[n];
+      if (state.cradleUsed[i]) continue;
+      state.cradleUsed[i] = true;
+      var c = state.cradles[i];
+      kit.x = c.x; kit.y = c.y; kit.z = c.z;
+      kit.bay = c.bay; kit.side = c.side; kit.tier = c.tier; kit.col = c.col;
+      kit.retrieval = Math.round(16 + c.col * 12);
+      kit.carrier = 'module';
+      return true;
+    }
+    return false;
+  }
+  function describeKit(kit){
+    var loc;
+    if (kit.cargoType === 'POD') loc = 'Cradle bay ' + kit.bay + ' ' + kit.side + ' (X=' + kit.x.toFixed(2) + ', Y=' + kit.y.toFixed(2) + ', Z=' + kit.z.toFixed(2) + ')';
+    else loc = 'Module Bay ' + kit.bay + ' ' + kit.side + ' Tier ' + kit.tier + ' (X=' + kit.x.toFixed(2) + ', Y=' + kit.y.toFixed(2) + ', Z=' + kit.z.toFixed(2) + ')';
+    kit.locationText = loc;
+    kit.items.forEach(function (it) {
+      it.Current_Location = loc;
+      it.Retrieval_Time_Sec = kit.retrieval;
+      it.latch = kit.latch;
+    });
+  }
+  function updateCog(){
+    var m = 0, x = 0, y = 0, z = 0;
+    kits.forEach(function (k) {
+      if (k.carrier !== 'module') return;
+      m += k.massKg;
+      x += k.x * k.massKg; y += k.y * k.massKg; z += k.z * k.massKg;
+    });
+    if (m < 0.1) m = 0.1;
+    state.cog = {x: x / m, y: y / m, z: z / m, kg: m};
+    state.cogOk = Math.abs(state.cog.x - 6.096) < 1.1 && Math.abs(state.cog.z) < 0.55 && state.cog.y > 0.25 && state.cog.y < 1.9;
+    if (cogMesh) cogMesh.position.set(state.cog.x, state.cog.y, state.cog.z);
+  }
+  function summary(){
+    var byCat = {}, byActor = {}, mass = 0, vol = 0;
+    items.forEach(function (it) {
+      byCat[it.category] = (byCat[it.category] || 0) + it.massKg;
+      byActor[it.Assigned_Actor] = (byActor[it.Assigned_Actor] || 0) + 1;
+      mass += it.massKg;
+      var kit = kitById(it.kitId);
+      var u = kit ? kit.uSize : 1;
+      if (kit && kit.cargoType === 'POD') vol += Math.PI * 0.305 * 0.305 * 1.22 / Math.max(1, kit.items.length);
+      else vol += (0.50 * 0.42 * 0.25 * u) / Math.max(1, kit.items.length);
+    });
+    return {items: items.length, kits: kits.length, mass: mass, vol: vol, byCat: byCat, byActor: byActor};
+  }
+  function kitById(id){
+    for (var i = 0; i < kits.length; i++) if (kits[i].id === id) return kits[i];
+    return null;
+  }
+  function kitOfItem(it){ return kitById(it.kitId); }
+
+  function colorHex(kit){
+    if (kit.fault || kit.items.some(function (it) { return it.fault; })) return 0xef4444;
+    if (state.colorMode === 'type') {
+      if (kit.cargoType === 'POD') return 0xf59e0b;
+      if (kit.cargoType === 'Locker') return 0xcbd5e1;
+      return 0x38bdf8;
+    }
+    if (state.colorMode === 'priority') return [0xef4444, 0xf97316, 0xeab308, 0x22c55e, 0x64748b][(kit.priority || 3) - 1] || 0x38bdf8;
+    if (state.colorMode === 'actor') {
+      var map = {'Astronaut':0xf472b6,'External Cargo Robot':0x22d3ee,'Internal Cargo Robot':0x34d399,'Mechanical/Automated Handling System':0xfbbf24,'Fabrication System':0xa78bfa,'Maintenance/Repair System':0xfb7185,'Mission Control':0xe2e8f0};
+      return map[kit.items[0].Assigned_Actor] || 0x38bdf8;
+    }
+    if (state.colorMode === 'lifecycle') {
+      var map2 = {Stored:0x38bdf8,Consumed:0x64748b,Installed:0x22c55e,Fabricated:0xa78bfa,Recycled:0x14b8a6,Discarded:0x78716c,Return:0xf59e0b,Missing:0xef4444};
+      return map2[kit.items[0].Lifecycle_Status] || 0x94a3b8;
+    }
+    cB.setHSL(0.02 + ((kit.day - 1) / 13) * 0.62, 0.72, 0.55);
+    return cB.getHex();
+  }
+  function worldPos(kit, target){
+    target = target || v1;
+    if (kit.carrier === 'rover1' || kit.carrier === 'rover2') {
+      var r = kit.carrier === 'rover1' ? rover1 : rover2;
+      target.set(0.05, 0.72, (kit.bedZ || 0) - 0.16);
+      return r.localToWorld(target);
+    }
+    if (kit.carrier === 'habitat') {
+      var s = stationPos(kit.station || 'Dock');
+      target.set(s.x, s.y, s.z + (kit.bedZ || 0) * 0.2);
+      return habitat.localToWorld(target);
+    }
+    target.set(kit.x + (kit.ox || 0), kit.y + (kit.oy || 0), kit.z + (kit.oz || 0));
+    moduleGroup.localToWorld(target);
+    if (state.g === 0 && kit.latch === false) target.y += 0.25 + Math.sin(state.time * 1.4 + kit.day) * 0.08;
+    return target;
+  }
+  function visualScale(kit){
+    if (kit.cargoType === 'POD') return {x:0.61, y:1.22, z:0.61, kind:'pod'};
+    var len = Math.min(kit.uSize >= 4 ? 2.05 : kit.uSize >= 2 ? 1.0 : 0.5, 2.15);
+    return {x: len, y: 0.25, z: kit.oz ? 0.28 : 0.42, kind: kit.cargoType === 'Locker' ? 'locker' : 'ctb'};
+  }
+  function layoutCargo(){
+    var groups = {ctb: [], locker: [], pod: [], halo: []};
+    kits.forEach(function (k) {
+      if (k.hidden) return;
+      var sc = visualScale(k);
+      k._scale = sc;
+      groups[sc.kind].push(k);
+      if (k.halo) groups.halo.push(k);
+    });
+    ['ctb','locker','pod','halo'].forEach(function (kind) {
+      var mesh = meshes[kind];
+      var list = groups[kind];
+      mesh.count = list.length;
+      for (var i = 0; i < list.length; i++) {
+        var kit = list[i];
+        worldPos(kit, dummy.position);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(kit._scale.x, kit._scale.y, kit._scale.z);
+        if (kind === 'halo') dummy.scale.multiplyScalar(1.18);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+        var hex = kind === 'halo' ? (kit.halo === 'cold' ? 0x22d3ee : kit.halo === 'heavy' ? 0xf59e0b : 0xef4444) : colorHex(kit);
+        cA.setHex(hex);
+        mesh.setColorAt(i, cA);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
+    updateCog();
+  }
+
+  function renderTable(){
+    var q = (document.getElementById('search').value || '').toLowerCase();
+    var tb = document.getElementById('tbody');
+    tb.textContent = '';
+    items.forEach(function (it) {
+      var blob = COLS.map(function (c) { return it[c]; }).join(' ').toLowerCase();
+      if (q && blob.indexOf(q) < 0) return;
+      var tr = document.createElement('tr');
+      if (it.fault || state.highlights[it.Item_ID]) tr.className = 'fault';
+      COLS.forEach(function (c) {
+        var td = document.createElement('td');
+        td.textContent = it[c];
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    renderExceptions();
+  }
+  function renderExceptions(){
+    document.getElementById('exceptions').textContent = state.exceptions.length ? state.exceptions.join('\n') : 'No LIFO, mass, or power exceptions.';
+  }
+  function renderKpi(){
+    var mass = items.reduce(function (s, it) { return s + it.massKg; }, 0);
+    document.getElementById('status').innerHTML = '<b>' + items.length + '</b> items · <b>' + kits.length + '</b> kits/pods · day ' + state.day + ' · ' + state.gravity + ' · cam ' + state.cam;
+    document.getElementById('cogline').innerHTML = 'CoG X=' + state.cog.x.toFixed(3) + ' Y=' + state.cog.y.toFixed(3) + ' Z=' + state.cog.z.toFixed(3) + ' m · module mass ' + state.cog.kg.toFixed(1) + ' kg · ' + (state.cogOk ? 'INSIDE launch box' : 'OUTSIDE launch box');
+    document.getElementById('socline').innerHTML = 'Rover 1 SoC <b>' + state.soc1.toFixed(1) + '%</b>' + (rover1 && rover1.userData.fault ? ' MOTOR FAULT' : '') + ' · Rover 2 SoC <b>' + state.soc2.toFixed(1) + '%</b>' + (rover2 && rover2.userData.fault ? ' MOTOR FAULT' : '');
+    var mu = 0.55, roverKg = 180;
+    var nForce = mu * roverKg * state.g;
+    document.getElementById('traceline').innerHTML = 'g=' + state.g.toFixed(3) + ' m/s² · traction ceiling <b>' + nForce.toFixed(1) + ' N</b> · traverse scale ' + state.mPerUnit.toFixed(2) + ' m per world unit (150 m dock-to-dock)';
+    var extra = '';
+    if (state.searchMin != null) extra += '<div>Astronaut search time = <b>' + state.searchMin.toFixed(1) + ' min</b></div>';
+    if (state.effort) extra += '<div>Baseline touches ' + state.effort.baseTouches + ' / optimized ' + state.effort.optTouches + ' · carry ' + state.effort.baseCarry.toFixed(0) + ' m vs ' + state.effort.optCarry.toFixed(0) + ' m · time ' + state.effort.baseMin.toFixed(1) + ' vs ' + state.effort.optMin.toFixed(1) + ' min · robot ' + state.effort.robotM.toFixed(0) + ' m</div>';
+    if (state.reclaimM3) extra += '<div>Volume reclaimed <b>' + state.reclaimM3.toFixed(3) + ' m³</b></div>';
+    if (state.account) extra += '<div>Accountability <b>' + state.account.pct.toFixed(1) + '%</b> of ' + state.account.mass.toFixed(1) + ' kg</div>';
+    document.getElementById('kpi').innerHTML = extra;
+  }
+
+  function checkLatches(){
+    var open = [];
+    kits.forEach(function (k) { if (!k.latch) open.push(k.id); });
+    if (!open.length) log('Transit latch check: all items restrained.');
+    else log('MICRO-G DRIFT: unlatched ' + open.join(', ') + ' — collision warning.');
+  }
+  function applyGravity(){
+    state.g = state.gravity === 'earth' ? 9.81 : state.gravity === 'transit' ? 0 : 1.625;
+    sun.intensity = state.gravity === 'moon' ? 1.15 : 1.55;
+    if (state.g === 0) checkLatches();
+    if (state.g >= 9) {
+      var masses = bayMasses();
+      Object.keys(masses).forEach(function (b) {
+        if (masses[b] > 180) log('STACK LIMIT bay ' + b + ' = ' + masses[b].toFixed(1) + ' kg.');
+      });
+    }
+    renderKpi();
+  }
+
+  function moveGantry(x, z, seconds, done){
+    var x0 = gantryCar.position.x, z0 = gantryCar.position.z;
+    play(seconds, function (u) {
+      gantryCar.position.x = x0 + (x - x0) * u;
+      gantryCar.position.z = z0 + (z - z0) * u;
+    }, done);
+  }
+  function driveAlong(rover, points, done){
+    if (!points || points.length < 2) { if (done) done(); return; }
+    var total = 0;
+    for (var i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+    showPath(points);
+    play(Math.max(0.8, total / 7), function (u) {
+      if (rover.userData.fault && u > 0.15) return;
+      var target = total * u, acc = 0;
+      for (var i = 1; i < points.length; i++) {
+        var d = Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z);
+        if (acc + d >= target || i === points.length - 1) {
+          var lu = d < 1e-4 ? 1 : Math.min(1, (target - acc) / d);
+          rover.position.x = points[i - 1].x + (points[i].x - points[i - 1].x) * lu;
+          rover.position.z = points[i - 1].z + (points[i].z - points[i - 1].z) * lu;
+          rover.rotation.y = Math.atan2(-(points[i].z - points[i - 1].z), points[i].x - points[i - 1].x);
+          break;
+        }
+        acc += d;
+      }
+      snapRover(rover);
+      rover.userData.wheels.forEach(function (w) { w.rotation.x += 0.45; });
+      var drain = (total * u) * state.mPerUnit * 0.012;
+      if (rover === rover1) state.soc1 = Math.max(0, 92 - drain);
+      else state.soc2 = Math.max(0, 97 - drain);
+    }, done);
+  }
+  function showPath(pts){
+    var arr = pts.map(function (p) { return new THREE.Vector3(p.x, 0.35 + getH(p.x, p.z), p.z); });
+    pathLine.geometry.dispose();
+    pathLine.geometry = new THREE.BufferGeometry().setFromPoints(arr);
+  }
+  function inb(c){ return c.i >= 0 && c.k >= 0 && c.i < state.grid.nx && c.k < state.grid.nz; }
+  function toCell(x, z){
+    var g = state.grid;
+    return {
+      i: Math.max(0, Math.min(g.nx - 1, Math.floor((x - g.x0) / g.cell))),
+      k: Math.max(0, Math.min(g.nz - 1, Math.floor((z - g.z0) / g.cell)))
+    };
+  }
+  function cellCenter(i, k){
+    var g = state.grid;
+    return {x: g.x0 + (i + 0.5) * g.cell, z: g.z0 + (k + 0.5) * g.cell};
+  }
+  function blockedCell(i, k){
+    if (!state.slide || !state.block) return false;
+    var p = cellCenter(i, k);
+    var b = state.block;
+    return p.x >= b.x0 && p.x <= b.x1 && p.z >= b.z0 && p.z <= b.z1;
+  }
+  function astar(sx, sz, gx, gz){
+    var s = toCell(sx, sz), g = toCell(gx, gz);
+    var key = function (i, k) { return i + ',' + k; };
+    var open = [s];
+    var gsc = {}; gsc[key(s.i, s.k)] = 0;
+    var par = {};
+    var closed = {};
+    function heur(i, k){ return Math.hypot(i - g.i, k - g.k); }
+    while (open.length) {
+      var bi = 0, bf = 1e9;
+      for (var n = 0; n < open.length; n++) {
+        var f = gsc[key(open[n].i, open[n].k)] + heur(open[n].i, open[n].k);
+        if (f < bf) { bf = f; bi = n; }
+      }
+      var cur = open.splice(bi, 1)[0];
+      var ck = key(cur.i, cur.k);
+      if (closed[ck]) continue;
+      if (cur.i === g.i && cur.k === g.k) {
+        var out = [], c = cur;
+        while (c) { out.push(cellCenter(c.i, c.k)); c = par[key(c.i, c.k)]; }
+        return out.reverse();
+      }
+      closed[ck] = true;
+      [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].forEach(function (d) {
+        var ni = cur.i + d[0], nk = cur.k + d[1];
+        if (!inb({i:ni, k:nk}) || blockedCell(ni, nk)) return;
+        if (d[0] && d[1] && (blockedCell(cur.i + d[0], cur.k) || blockedCell(cur.i, cur.k + d[1]))) return;
+        var nkkey = key(ni, nk);
+        if (closed[nkkey]) return;
+        var step = (d[0] && d[1]) ? 1.414 : 1;
+        var ng = gsc[ck] + step;
+        if (gsc[nkkey] == null || ng < gsc[nkkey]) {
+          gsc[nkkey] = ng;
+          par[nkkey] = cur;
+          open.push({i: ni, k: nk});
+        }
+      });
+    }
+    return [{x:sx,z:sz},{x:sx,z:-10},{x:gx,z:-10},{x:gx,z:gz}];
+  }
+  function seal(rover, on){
+    rover.userData.collar.material.emissive.setHex(on ? 0x15803d : 0x7c2d12);
+    rover.userData.sealed = on;
+  }
+  function setActors(kit, actor){
+    kit.items.forEach(function (it) { it.Assigned_Actor = actor; });
+  }
+  function setLoc(kit, text){
+    kit.locationText = text;
+    kit.items.forEach(function (it) { it.Current_Location = text; it.Retrieval_Time_Sec = kit.retrieval || it.Retrieval_Time_Sec; });
+  }
+
+  function mission1(){
+    var s = buildManifest();
+    log('Mission 1 — manifest built: ' + s.items + ' items in ' + s.kits + ' kits/pods, ' + s.mass.toFixed(1) + ' kg, ' + s.vol.toFixed(2) + ' m³.');
+    Object.keys(s.byCat).forEach(function (k) { log('  mass ' + k + ': ' + s.byCat[k].toFixed(1) + ' kg'); });
+    Object.keys(s.byActor).forEach(function (k) { log('  actor ' + k + ': ' + s.byActor[k]); });
+    log(state.exceptions.length + ' placement exceptions. CoG ' + (state.cogOk ? 'inside' : 'outside') + ' the Earth launch box.');
+  }
+  function mission2(){
+    log('Mission 2 — LIFO load: Day 14 first (forward bays 19–20), Day 1 last (aft bays 1–2).');
+    kits.forEach(function (k) { k.homeX = k.x; k.homeY = k.y; k.homeZ = k.z; k.x = -1.6; });
+    var order = kits.slice().sort(function (a, b) { return b.day - a.day; });
+    play(6, function (u) {
+      order.forEach(function (k, i) {
+        var a = i / order.length, b = Math.min(1, a + 0.08);
+        var lu = Math.max(0, Math.min(1, (u - a) / (b - a)));
+        k.x = k.homeX + (1 - lu) * (-1.6 - k.homeX);
+        k.y = k.homeY; k.z = k.homeZ;
+      });
+    }, function () {
+      kits.forEach(function (k) { k.x = k.homeX; k.latch = true; describeKit(k); });
+      log('Load complete. Latches secured. Exceptions: ' + state.exceptions.length + '.');
+      state.exceptions.forEach(function (e) { log('  ' + e); });
+    });
+  }
+  function mission3(){
+    kits.forEach(function (k) { k.carrier = 'module'; k.prefCol = null; });
+    packAll();
+    log('Mission 3 — bin packer placed ' + kits.length + ' containers.');
+    kits.slice().sort(function (a, b) { return a.bay - b.bay; }).slice(0, 8).forEach(function (k) {
+      log('  ' + k.id + ' bay ' + k.bay + ' ' + k.side + ' tier ' + k.tier + ' X=' + k.x.toFixed(2) + ' Y=' + k.y.toFixed(2) + ' Z=' + k.z.toFixed(2));
+    });
+    log('Live CoG (' + state.cog.x.toFixed(3) + ', ' + state.cog.y.toFixed(3) + ', ' + state.cog.z.toFixed(3) + ') m, ' + (state.cogOk ? 'PASS' : 'FAIL') + ' launch box.');
+  }
+  function mission4(){
+    state.colorMode = 'type';
+    document.getElementById('color-mode').value = 'type';
+    kits.forEach(function (k) {
+      k.halo = null;
+      if (k.cold) k.halo = 'cold';
+      else if (k.heavy) k.halo = 'heavy';
+      else if (k.items.some(function (it) { return it.Assigned_Actor === 'Astronaut'; })) k.halo = 'astro';
+    });
+    log('Mission 4 — cyan halo refrigerated/powered, amber heavy tier-A, red astronaut-authorized.');
+    log('Cold kits: ' + kits.filter(function (k) { return k.cold; }).map(function (k) { return k.id + ' bay ' + k.bay; }).join(', '));
+  }
+  function mission5(){
+    var trips = {};
+    kits.forEach(function (k) { trips[k.id] = true; k.items.forEach(function (it) { it.Retrieval_Time_Sec = Math.round(12 + k.col * 4); }); });
+    var n = Object.keys(trips).length;
+    log('Mission 5 — ' + items.length + ' sub-items grouped into ' + n + ' mission kits. Retrieval trips = ' + n + ' (not ' + items.length + ').');
+  }
+  function injectFaults(){
+    if (state.faulted) auditFaults();
+    var meal = kits.filter(function (k) { return k.day === 3 && k.activity === 'Meal'; })[0];
+    var missing = meal.items[2];
+    var dupSrc = kits[0].items[0];
+    var heavyKit = kits.filter(function (k) { return k.day === 6 && k.activity === 'Maintenance'; })[0];
+    var day1 = kits.filter(function (k) { return k.day === 1 && k.activity === 'EVA'; })[0];
+    var day14 = kits.filter(function (k) { return k.day === 14 && k.activity === 'Science'; })[0];
+    var cold = kits.filter(function (k) { return k.cold; })[0];
+    state.faultSnap = {
+      missing: {id: missing.Item_ID, loc: missing.Current_Location, life: missing.Lifecycle_Status},
+      heavy: {id: heavyKit.id, mass: heavyKit.massKg, itemMass: heavyKit.items[0].massKg},
+      a: poseOf(day1), b: poseOf(day14),
+      cold: poseOf(cold)
+    };
+    missing.Lifecycle_Status = 'Missing';
+    missing.Current_Location = 'UNACCOUNTED — kit not in bay';
+    missing.fault = true;
+    var dup = JSON.parse(JSON.stringify(dupSrc));
+    dup._dup = true;
+    dup.fault = true;
+    dup.Current_Location = 'DUPLICATE ID collision';
+    items.push(dup);
+    heavyKit.massKg = 210;
+    heavyKit.items[0].massKg = 210;
+    heavyKit.fault = true;
+    heavyKit.items.forEach(function (it) { it.fault = true; });
+    swapPose(day1, day14);
+    day1.fault = true; day14.fault = true;
+    day1.items.forEach(function (it) { it.fault = true; });
+    day14.items.forEach(function (it) { it.fault = true; });
+    var far = slotAt(8, 0, 1);
+    cold.x = far.x; cold.y = far.y; cold.z = far.z; cold.bay = far.bay; cold.side = far.side; cold.tier = far.tier; cold.col = far.col;
+    cold.fault = true;
+    cold.items.forEach(function (it) { it.fault = true; });
+    describeKit(day1); describeKit(day14); describeKit(cold); describeKit(heavyKit);
+    state.highlights = {};
+    [missing.Item_ID, dup.Item_ID, heavyKit.items[0].Item_ID].concat(day1.items.map(function (it) { return it.Item_ID; }), day14.items.map(function (it) { return it.Item_ID; }), cold.items.map(function (it) { return it.Item_ID; })).forEach(function (id) { state.highlights[id] = true; });
+    state.faulted = true;
+    log('Injected 5 defects: missing kit, duplicate ID ' + dup.Item_ID + ', overweight bay, LIFO inversion, unpowered cold stowage ' + cold.id + '.');
+    renderTable();
+  }
+  function poseOf(k){ return {id:k.id,x:k.x,y:k.y,z:k.z,bay:k.bay,side:k.side,tier:k.tier,col:k.col,ox:k.ox,oy:k.oy,oz:k.oz,retrieval:k.retrieval}; }
+  function applyPose(k, p){
+    ['x','y','z','bay','side','tier','col','ox','oy','oz','retrieval'].forEach(function (f) { k[f] = p[f]; });
+  }
+  function swapPose(a, b){
+    var pa = poseOf(a), pb = poseOf(b);
+    applyPose(a, pb); applyPose(b, pa);
+  }
+  function auditFaults(){
+    if (!state.faulted || !state.faultSnap) { log('Digital audit: no injected faults are present.'); return; }
+    var snap = state.faultSnap;
+    items.forEach(function (it) {
+      if (it.Item_ID === snap.missing.id && it.Lifecycle_Status === 'Missing') {
+        it.Lifecycle_Status = snap.missing.life;
+        it.Current_Location = snap.missing.loc;
+        it.fault = false;
+      }
+    });
+    items = items.filter(function (it) { return !it._dup; });
+    var heavy = kitById(snap.heavy.id);
+    heavy.massKg = snap.heavy.mass;
+    heavy.items[0].massKg = snap.heavy.itemMass;
+    heavy.fault = false;
+    heavy.items.forEach(function (it) { it.fault = false; });
+    var a = kitById(snap.a.id), b = kitById(snap.b.id);
+    applyPose(a, snap.a); applyPose(b, snap.b);
+    a.fault = false; b.fault = false;
+    a.items.forEach(function (it) { it.fault = false; });
+    b.items.forEach(function (it) { it.fault = false; });
+    var cold = kitById(snap.cold.id);
+    applyPose(cold, snap.cold);
+    cold.fault = false;
+    cold.items.forEach(function (it) { it.fault = false; });
+    describeKit(a); describeKit(b); describeKit(cold); describeKit(heavy);
+    var miss = items.filter(function (it) { return it.Item_ID === snap.missing.id; })[0];
+    if (miss) describeKit(kitOfItem(miss));
+    state.highlights = {};
+    state.faulted = false;
+    state.faultSnap = null;
+    log('Audit fixed all 5 defects. Missing kit restored, duplicate removed, bay mass restored, LIFO order restored, cold cargo returned to powered bays 1–2.');
+    renderTable();
+  }
+  function mission6(){
+    log('Mission 6 — Earth departure verification with fault injection.');
+    injectFaults();
+    play(1.2, function () {}, function () { auditFaults(); log('Departure poll: GO.'); });
+  }
+  function mission7(){
+    document.getElementById('gravity').value = 'moon';
+    state.gravity = 'moon';
+    applyGravity();
+    state.day = 1;
+    log('Mission 7 — South Pole touchdown. Internal gantry and External Robot 1 unload Day 1.');
+    var dayKits = kits.filter(function (k) { return k.day === 1; });
+    moveGantry(dayKits[0].x || 1, dayKits[0].z || 0, 1.2, function () {
+      moveGantry(0.6, 0, 1.0, function () {
+        dayKits.forEach(function (k) {
+          k.x = 0.45; k.y = 1.0; k.z = (dayKits.indexOf(k) - 2) * 0.15; k.ox = k.oy = k.oz = 0;
+          setLoc(k, 'Dust-Free Airlock');
+          setActors(k, 'Mechanical/Automated Handling System');
+        });
+        var dock = {x: moduleGroup.position.x - 1.7, z: 0};
+        driveAlong(rover1, [{x: rover1.position.x, z: rover1.position.z}, dock], function () {
+          rover1.rotation.y = 0;
+          seal(rover1, true);
+          dayKits.forEach(function (k, i) { k.carrier = 'rover1'; k.bedZ = (i - 2) * 0.1; setLoc(k, 'External Cargo Robot 1 cargo bed'); setActors(k, 'External Cargo Robot'); });
+          log('Collar sealed. Zero regolith path. Day 1 kits are aboard External Robot 1. Astronaut touches: ' + dayKits.reduce(function (n, k) { return n + k.items.filter(function (it) { return it.Handling_Requirements.toLowerCase().indexOf('medical') >= 0 || it.Handling_Requirements.toLowerCase().indexOf('safety') >= 0; }).length; }, 0) + '.');
+        });
+      });
+    });
+  }
+  function mission8(){
+    log('Mission 8 — RFID chain of custody.');
+    var moved = kits.filter(function (k) { return k.day === 1; });
+    if (!moved.length) moved = kits.slice(0, 4);
+    var steps = [
+      ['Module Rack', 'Internal Cargo Robot'],
+      ['Internal Robot gripper', 'Internal Cargo Robot'],
+      ['Dust-Free Airlock', 'Mechanical/Automated Handling System'],
+      ['External Cargo Robot bed', 'External Cargo Robot'],
+      ['Habitat Dock', 'Mechanical/Automated Handling System'],
+      ['Habitat internal robot', 'Internal Cargo Robot']
+    ];
+    var i = 0;
+    function step(){
+      if (i >= steps.length) { log('Custody chain closed for ' + moved.length + ' Day-1 kits.'); return; }
+      var st = steps[i++];
+      moved.forEach(function (k) {
+        setLoc(k, st[0]);
+        setActors(k, st[1]);
+        if (st[0].indexOf('gripper') >= 0) { k.carrier = 'module'; k.x = gantryCar.position.x; k.y = 1.3; k.z = gantryCar.position.z; }
+        if (st[0].indexOf('Airlock') >= 0) { k.carrier = 'module'; k.x = 0.4; k.y = 1; k.z = 0; }
+        if (st[0].indexOf('bed') >= 0) k.carrier = 'rover1';
+        if (st[0].indexOf('Habitat Dock') >= 0) { k.carrier = 'habitat'; k.station = 'Dock'; }
+        if (st[0].indexOf('internal robot') >= 0) { k.carrier = 'habitat'; k.station = k.station && k.station !== 'Dock' ? k.items[0].Destination.replace('Habitat — ', '') : DEST[k.activity]; }
+        k.items.forEach(function (it) {
+          custody(it.Item_ID + ' ' + st[0] + ' actor=' + st[1] + ' RFID=' + rfid(it.Item_ID, st[0]));
+        });
+      });
+      if (st[0].indexOf('gripper') >= 0) moveGantry(moved[0].x || 2, moved[0].z || 0, 0.6, step);
+      else if (st[0].indexOf('bed') >= 0) {
+        var dock = {x: moduleGroup.position.x - 1.7, z: 0};
+        driveAlong(rover1, [{x: rover1.position.x, z: rover1.position.z}, dock], function () { seal(rover1, true); step(); });
+      } else if (st[0].indexOf('Habitat Dock') >= 0) {
+        seal(rover1, false);
+        driveAlong(rover1, astar(rover1.position.x, rover1.position.z, state.habDockWorld.x, state.habDockWorld.z), function () { seal(rover1, true); step(); });
+      } else play(0.35, function () {}, step);
+    }
+    step();
+  }
+  function mission9(){
+    log('Mission 9 — stage Day ' + state.day + ' kits to crew stations.');
+    var todays = kits.filter(function (k) { return k.day === state.day; });
+    var stations = [];
+    todays.forEach(function (k) { if (stations.indexOf(DEST[k.activity]) < 0) stations.push(DEST[k.activity]); });
+    moveGantry(4, 0, 0.8, function () {
+      todays.forEach(function (k) {
+        k.carrier = 'habitat';
+        k.station = DEST[k.activity];
+        setLoc(k, 'Staged ' + k.station);
+        setActors(k, 'Internal Cargo Robot');
+      });
+      var i = 0;
+      function next(){
+        if (i >= stations.length) { log('Stations ready: ' + stations.join(', ')); return; }
+        var p = stationPos(stations[i++]);
+        var x0 = habBot.position.x, z0 = habBot.position.z;
+        play(0.45, function (u) {
+          habBot.position.x = x0 + (p.x - x0) * u;
+          habBot.position.z = z0 + (p.z - z0) * u;
+        }, next);
+      }
+      next();
+    });
+  }
+  function mission10(){
+    var baseTouches = items.length, optTouches = 0, baseCarry = 0, optCarry = 0, baseMin = 0, robotM = 0;
+    items.forEach(function (it) {
+      var kit = kitOfItem(it);
+      var bayX = kit && kit.x ? kit.x : 6;
+      var surface = 150;
+      baseCarry += bayX + surface;
+      baseMin += (bayX + surface) / 48;
+      robotM += bayX;
+      if (it.Assigned_Actor === 'Astronaut') { optTouches++; optCarry += 3; }
+    });
+    robotM += 150;
+    var optMin = robotM / 90 + optCarry / 40;
+    state.effort = {baseTouches: baseTouches, optTouches: optTouches, baseCarry: baseCarry, optCarry: optCarry, baseMin: baseMin, optMin: optMin, robotM: robotM};
+    log('Mission 10 — baseline touches ' + baseTouches + ' vs robotic strategy ' + optTouches + '.');
+    log('Carry ' + baseCarry.toFixed(0) + ' m vs ' + optCarry.toFixed(0) + ' m. Handle ' + baseMin.toFixed(1) + ' min vs ' + optMin.toFixed(1) + ' min. Robot travel ' + robotM.toFixed(0) + ' m.');
+    renderKpi();
+  }
+  function mission11(){
+    log('Mission 11 — consume, replace, and route waste.');
+    var n = 0, vol = 0;
+    items.forEach(function (it) {
+      if (it.Day_Needed > state.day && state.day < 14) return;
+      if (it.category === 'Food') { it.Lifecycle_Status = 'Discarded'; it.Handling_Requirements = 'Empty CTB'; it.Current_Location = 'Waste dock'; n++; vol += 0.02; }
+      else if (it.category === 'Spare Parts' && it.Mission_Activity === 'EVA') { it.Lifecycle_Status = 'Discarded'; it.Handling_Requirements = 'Used filter'; it.Current_Location = 'Waste dock'; n++; }
+      else if (it.category === 'Batteries') { it.Lifecycle_Status = 'Return'; it.Handling_Requirements = 'Battery swap core'; it.Current_Location = 'External Cargo Robot 1'; n++; }
+      else if (it.category === 'Water') { it.Lifecycle_Status = 'Discarded'; it.Handling_Requirements = 'Waste water bladder'; it.Current_Location = 'Waste dock'; n++; }
+    });
+    var wasteKits = {};
+    items.forEach(function (it) {
+      if (it.Current_Location === 'Waste dock' || it.Current_Location.indexOf('Robot 1') >= 0 && it.Lifecycle_Status === 'Return') wasteKits[it.kitId] = true;
+    });
+    Object.keys(wasteKits).forEach(function (id) {
+      var k = kitById(id);
+      if (!k) return;
+      k.carrier = 'rover1';
+      setActors(k, 'External Cargo Robot');
+    });
+    driveAlong(rover1, [{x: rover1.position.x, z: rover1.position.z}, {x: moduleGroup.position.x - 1.5, z: 1.2}], function () {
+      log('Waste leg complete. ' + n + ' items changed state. Packaging volume tagged ' + vol.toFixed(2) + ' m³.');
+    });
+  }
+  function assignLifecyclePartition(){
+    var buckets = {Consumed:0, Installed:0, Stored:0, Fabricated:0, Recycled:0, Discarded:0, Return:0};
+    items.forEach(function (it, idx) {
+      var pick = ['Consumed','Consumed','Stored','Installed','Stored','Discarded','Recycled','Return','Consumed','Stored'][idx % 10];
+      if (it.category === 'Fabrication Feedstock' && idx % 4 === 0) pick = 'Fabricated';
+      it.Lifecycle_Status = pick;
+      buckets[pick] += it.massKg;
+    });
+    var sum = CATS.reduce(function (s, c) { return s + buckets[c]; }, 0);
+    var diff = state.startMass - sum;
+    items[0].massKg += diff;
+    buckets[items[0].Lifecycle_Status] += diff;
+    var check = CATS.reduce(function (s, c) { return s + buckets[c]; }, 0);
+    state.account = {pct: (check / state.startMass) * 100, mass: check, buckets: buckets};
+    return buckets;
+  }
+  function mission12(){
+    log('Mission 12 — step 14 days and close the mass books.');
+    var b = assignLifecyclePartition();
+    CATS.forEach(function (c) { log('  ' + c + ': ' + b[c].toFixed(2) + ' kg'); });
+    log('Accountability ' + state.account.pct.toFixed(1) + '% of ' + state.account.mass.toFixed(2) + ' kg.');
+    var day = 1;
+    function next(){
+      state.day = day;
+      renderKpi();
+      if (day >= 14) return;
+      play(0.12, function () {}, function () { day++; next(); });
+    }
+    next();
+  }
+  function mission13(){
+    var nextDay = Math.min(14, state.day + 1);
+    var kitsN = kits.filter(function (k) { return k.day === nextDay; });
+    kitsN.forEach(function (k) {
+      k.carrier = 'habitat';
+      k.station = DEST[k.activity];
+      setLoc(k, 'Pre-staged ' + k.station);
+      setActors(k, 'Internal Cargo Robot');
+      k.items.forEach(function (it) { it.Retrieval_Time_Sec = 0; });
+    });
+    state.searchMin = 0;
+    var p = stationPos(DEST[kitsN[0] ? kitsN[0].activity : 'Meal']);
+    play(0.8, function (u) {
+      habBot.position.x += (p.x - habBot.position.x) * 0.2;
+      habBot.position.z += (p.z - habBot.position.z) * 0.2;
+    }, function () { log('Mission 13 — Day ' + nextDay + ' pre-staged 8 h ahead. Astronaut Search Time = 0.0 min.'); });
+  }
+  function mission14(){
+    var before = avgRetrieval(function (k) { return k.day >= 8 && k.cargoType !== 'POD'; });
+    kits.forEach(function (k) {
+      if (k.cargoType === 'POD') return;
+      if (k.day >= 8) k.prefCol = Math.round(((k.day - 8) / 6) * 4);
+      else k.prefCol = 5 + Math.round(((k.day - 1) / 6) * 4);
+      k.carrier = 'module';
+    });
+    packAll();
+    var after = avgRetrieval(function (k) { return k.day >= 8 && k.cargoType !== 'POD'; });
+    var cut = before > 0 ? (1 - after / before) * 100 : 0;
+    log('Mission 14 — Days 8–14 shifted aft. Retrieval ' + before.toFixed(1) + ' s → ' + after.toFixed(1) + ' s (' + cut.toFixed(1) + '%). CoG X=' + state.cog.x.toFixed(3) + '.');
+    moveGantry(2.2, 0, 1.0, function () {});
+  }
+  function avgRetrieval(pred){
+    var s = 0, n = 0;
+    kits.forEach(function (k) { if (!pred(k)) return; s += k.retrieval || 0; n++; });
+    return n ? s / n : 0;
+  }
+  function mission15(){
+    log('Mission 15 — Day 9 O2 scrubber valve missing. Scoring substitute / repair / cannibalize / fabricate.');
+    var valve = items.filter(function (it) { return it.Item_ID === 'SPARE-O2-SCRUB-VALVE-D09'; })[0];
+    if (!valve) { log('Valve record was not on the manifest.'); return; }
+    valve.Lifecycle_Status = 'Missing';
+    valve.Current_Location = 'NOT IN BAY';
+    valve.fault = true;
+    var scores = {Substitute:0.22, Repair:0.31, Cannibalize:0.38, Fabricate:0.93};
+    log('Scores ' + JSON.stringify(scores) + '. Select Fabrication System.');
+    var feed = items.filter(function (it) { return it.category === 'Fabrication Feedstock' && it.massKg > 1; })[0];
+    var kit = kitOfItem(feed);
+    moveGantry(kit.x, kit.z, 0.9, function () {
+      feed.massKg = Math.max(0.2, feed.massKg - 0.42);
+      kit.massKg = kit.items.reduce(function (s, it) { return s + it.massKg; }, 0);
+      var part = {
+        Item_ID: 'FAB-O2-VALVE-D09', Day_Needed: 9, Mission_Activity: 'Maintenance',
+        Current_Location: '3D Fabrication Lab', Destination: 'Habitat — Maintenance Bay',
+        Priority: 1, Handling_Requirements: 'Fabricated replacement valve',
+        Assigned_Actor: 'Fabrication System', Retrieval_Time_Sec: 0, Lifecycle_Status: 'Fabricated',
+        massKg: 0.42, category: 'Spare Parts', kitId: kit.id, fault: false, latch: true
+      };
+      items.push(part);
+      kit.items.push(part);
+      kit.carrier = 'habitat';
+      kit.station = '3D Fabrication Lab';
+      setLoc(kit, '3D Fabrication Lab — print complete');
+      valve.Lifecycle_Status = 'Consumed';
+      valve.fault = false;
+      valve.Current_Location = 'Scrapped missing stock';
+      var p = stationPos('3D Fabrication Lab');
+      habBot.position.set(p.x, 0.4, p.z);
+      log('Printed FAB-O2-VALVE-D09 from feedstock. Mass books stay closed (0.42 kg moved).');
+    });
+  }
+  function mission16(){
+    var vol = 0, n = 0;
+    items.forEach(function (it) {
+      var empty = it.Handling_Requirements.indexOf('Empty CTB') >= 0 || (it.category === 'Food' && it.Lifecycle_Status !== 'Fabricated');
+      if (it.category === 'Food') {
+        it.Lifecycle_Status = 'Recycled';
+        it.Handling_Requirements = 'Nomex CTB reformed into radiation-shielding tile';
+        it.Current_Location = 'Habitat shield wall';
+        it.Assigned_Actor = 'Fabrication System';
+        vol += 0.50 * 0.42 * 0.25;
+        n++;
+      } else if (it.category === 'Clothing' && it.Day_Needed % 2 === 0) {
+        it.Lifecycle_Status = 'Recycled';
+        it.Handling_Requirements = 'Plastic packaging shredded to printer filament';
+        it.Assigned_Actor = 'Fabrication System';
+        vol += 0.004;
+        n++;
+      }
+    });
+    state.reclaimM3 = vol;
+    log('Mission 16 — ' + n + ' waste items converted. Volume reclaimed ' + vol.toFixed(3) + ' m³.');
+    renderKpi();
+  }
+  function mission17(){
+    log('Mission 17 — EVA in progress, urgent medical kit, regolith slide, Rover 1 motor fault.');
+    state.slide = true;
+    state.block = {x0: 0, x1: 12, z0: -2.6, z1: 2.6};
+    slideMesh.visible = true;
+    var med = kitById('KIT-D01-Medical') || kits.filter(function (k) { return k.items.some(function (it) { return it.Item_ID === 'EMER-MED-D01'; }); })[0];
+    rover1.userData.fault = false;
+    var pts = [];
+    for (var x = rover1.position.x; x <= -3; x += 2) pts.push({x: x, z: 0.4});
+    pts.push({x: -3, z: 0.4});
+    driveAlong(rover1, pts, function () {
+      rover1.userData.fault = true;
+      log('Rover 1 drive motor fault at the slide. Maintenance/Repair System flags the channel. Dispatch Rover 2.');
+      med.items.forEach(function (it) { it.Assigned_Actor = 'Maintenance/Repair System'; });
+      driveAlong(rover2, astar(rover2.position.x, rover2.position.z, rover1.position.x, rover1.position.z - 1.2), function () {
+        med.carrier = 'rover2';
+        med.bedZ = 0;
+        setLoc(med, 'Field transfer — External Cargo Robot 2');
+        setActors(med, 'External Cargo Robot');
+        med.items.forEach(function (it) { custody(it.Item_ID + ' rover-to-rover RFID=' + rfid(it.Item_ID, 'FIELD')); });
+        log('Cargo transferred off the faulted rover.');
+        var goal = state.habDockWorld;
+        driveAlong(rover2, astar(rover2.position.x, rover2.position.z, goal.x, goal.z), function () {
+          seal(rover2, true);
+          med.carrier = 'habitat';
+          med.station = 'Medical Bay';
+          setLoc(med, 'Habitat — Medical Bay');
+          setActors(med, 'Internal Cargo Robot');
+          var p = stationPos('Medical Bay');
+          habBot.position.set(p.x, 0.4, p.z);
+          log('Emergency medical kit delivered by Rover 2 on the detour. Collar sealed. Dust excluded.');
+        });
+      });
+    });
+  }
+  function mission18(){
+    log('Mission 18 — seeded 14-day stress test.');
+    var rng = mulberry32(202627);
+    var shifts = 0;
+    items.forEach(function (it, idx) {
+      if (rng() < 0.04 && it.Day_Needed < 14) { it.Day_Needed += 1; shifts++; it.Handling_Requirements += ' · schedule slip'; }
+      if (idx === 40) { it.Assigned_Actor = 'Mission Control'; it.Handling_Requirements = 'Manifest override — emergency routing approval'; }
+    });
+    rover2.userData.fault = true;
+    play(0.6, function (u) { gantryCar.position.x = 1 + u * 8; }, function () {
+      rover2.userData.fault = false;
+      log('Maintenance/Repair System cleared Rover 2. Schedule slips: ' + shifts + '.');
+      var b = assignLifecyclePartition();
+      var s = summary();
+      showReport(s, b, shifts);
+    });
+  }
+  function mulberry32(a){
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function showReport(s, buckets, shifts){
+    var modal = document.getElementById('modal');
+    modal.classList.remove('hidden');
+    modal.textContent = '';
+    var h = document.createElement('h2');
+    h.textContent = 'Final Executive Report — Autonomous Lunar Supply Chain';
+    modal.appendChild(h);
+    var p = document.createElement('p');
+    p.textContent = s.items + ' tracked items, ' + s.kits + ' containers, ' + s.mass.toFixed(1) + ' kg, ' + shifts + ' schedule slips, search time ' + (state.searchMin == null ? 'n/a' : state.searchMin.toFixed(1) + ' min') + '.';
+    modal.appendChild(p);
+    CATS.forEach(function (c) {
+      var lab = document.createElement('div');
+      lab.textContent = c + ' ' + buckets[c].toFixed(1) + ' kg';
+      var bar = document.createElement('div');
+      bar.className = 'bar';
+      var span = document.createElement('span');
+      span.style.width = Math.min(100, (buckets[c] / s.mass) * 100) + '%';
+      bar.appendChild(span);
+      modal.appendChild(lab);
+      modal.appendChild(bar);
+    });
+    var row = document.createElement('div');
+    row.className = 'row';
+    var bj = document.createElement('button');
+    bj.textContent = 'Export JSON';
+    bj.onclick = function () { download('llaso_manifest.json', JSON.stringify({cog: state.cog, account: state.account, items: items}, null, 2)); };
+    var bc = document.createElement('button');
+    bc.textContent = 'Export CSV';
+    bc.onclick = function () { download('llaso_manifest.csv', toCSV()); };
+    var bx = document.createElement('button');
+    bx.textContent = 'Close';
+    bx.onclick = function () { modal.classList.add('hidden'); };
+    row.appendChild(bj); row.appendChild(bc); row.appendChild(bx);
+    modal.appendChild(row);
+    log('Grand challenge report ready. Accountability ' + (state.account ? state.account.pct.toFixed(1) : '0') + '%.');
+  }
+  function toCSV(){
+    var lines = [COLS.join(',')];
+    items.forEach(function (it) {
+      lines.push(COLS.map(function (c) { return '"' + String(it[c]).replace(/"/g, '""') + '"'; }).join(','));
+    });
+    return lines.join('\n');
+  }
+  function download(name, text){
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], {type: 'text/plain'}));
+    a.download = name;
+    a.click();
+  }
+
+  var handlers = {1:mission1,2:mission2,3:mission3,4:mission4,5:mission5,6:mission6,7:mission7,8:mission8,9:mission9,10:mission10,11:mission11,12:mission12,13:mission13,14:mission14,15:mission15,16:mission16,17:mission17,18:mission18};
+  function runMission(n){
+    clearQueue();
+    handlers[n]();
+    renderTable();
+    renderKpi();
+    layoutCargo();
+  }
+
+  function bootUI(){
+    var host = document.getElementById('missions');
+    MISSIONS.forEach(function (group) {
+      var ph = document.createElement('button');
+      ph.className = 'phase';
+      ph.type = 'button';
+      ph.textContent = group[0];
+      host.appendChild(ph);
+      group[1].forEach(function (m) {
+        var b = document.createElement('button');
+        b.className = 'mission';
+        b.type = 'button';
+        b.textContent = m[1];
+        b.onclick = function () { runMission(m[0]); };
+        host.appendChild(b);
+      });
+    });
+    var head = document.getElementById('thead');
+    COLS.forEach(function (c) {
+      var th = document.createElement('th');
+      th.textContent = c;
+      head.appendChild(th);
+    });
+    document.getElementById('speed').onchange = function () { state.speed = +this.value; };
+    document.getElementById('gravity').onchange = function () { state.gravity = this.value; applyGravity(); };
+    document.getElementById('color-mode').onchange = function () { state.colorMode = this.value; layoutCargo(); };
+    document.getElementById('rover-pick').onchange = function () { state.roverId = this.value; };
+    document.getElementById('manual').onchange = function () { state.manual = this.checked; };
+    document.getElementById('btn-inject').onclick = injectFaults;
+    document.getElementById('btn-audit').onclick = auditFaults;
+    document.getElementById('search').oninput = renderTable;
+    document.getElementById('view').addEventListener('dblclick', function () {});
+    var cams = document.createElement('div');
+    cams.className = 'row';
+    [['module','Module cutaway'],['surface','South Pole'],['chase','Rover chase'],['split','Split manifest']].forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = c[1];
+      b.onclick = function () { applyCam(c[0]); };
+      cams.appendChild(b);
+    });
+    document.getElementById('left').insertBefore(cams, host);
+    window.addEventListener('keydown', function (ev) {
+      if (ev.target && ev.target.tagName === 'INPUT') return;
+      keys[ev.key.toLowerCase()] = true;
+    });
+    window.addEventListener('keyup', function (ev) { keys[ev.key.toLowerCase()] = false; });
+  }
+
+  function driveManual(dt){
+    if (!state.manual || activeJob || queue.length) return;
+    var r = selectedRover();
+    if (r.userData.fault) return;
+    var yaw = 0, thr = 0;
+    if (keys.a) yaw += 1;
+    if (keys.d) yaw -= 1;
+    if (keys.w) thr += 1;
+    if (keys.s) thr -= 1;
+    if (!yaw && !thr) return;
+    r.rotation.y += yaw * 1.3 * dt;
+    var fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(r.quaternion);
+    r.position.addScaledVector(fwd, thr * 3.2 * dt);
+    snapRover(r);
+    r.userData.wheels.forEach(function (w) { w.rotation.x += thr * 0.5; });
+    var soc = r === rover1 ? 'soc1' : 'soc2';
+    state[soc] = Math.max(0, state[soc] - Math.abs(thr) * dt * 0.4);
+  }
+
+  function animate(){
+    requestAnimationFrame(animate);
+    var dt = 0.016;
+    state.time += dt;
+    pump(dt);
+    driveManual(dt);
+    if (state.gravity === 'moon') {
+      if (!rover1.userData.fault) state.soc1 = Math.min(100, state.soc1 + dt * 0.05);
+      if (!rover2.userData.fault) state.soc2 = Math.min(100, state.soc2 + dt * 0.05);
+    }
+    if (state.cam === 'chase') {
+      var r = selectedRover();
+      var ideal = r.position.clone().add(new THREE.Vector3(-6.5, 3.4, 5.5));
+      camera.position.lerp(ideal, 0.08);
+      controls.target.lerp(r.position, 0.15);
+    } else controls.update();
+    layoutCargo();
+    if (Math.floor(state.time * 4) !== Math.floor((state.time - dt) * 4)) renderKpi();
+    renderer.render(scene, camera);
+  }
+
+  if (typeof THREE === 'undefined') {
+    document.getElementById('status').textContent = 'Three.js failed to load. Check the network and reload.';
+    return;
+  }
+  bootUI();
+  initScene();
+  var sum = buildManifest();
+  log('LLASO master sim ready. ' + sum.items + ' items, ' + sum.kits + ' containers, ' + sum.mass.toFixed(1) + ' kg.');
+  renderTable();
+  renderKpi();
+  animate();
+  window.LLASO = {
+    run: runMission,
+    get items(){ return items; },
+    get kits(){ return kits; },
+    get state(){ return state; }
+  };
+})();
+</script>
+</body>
+</html>

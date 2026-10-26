@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AEGIS-V1 Dock Station</title>
+<meta name="description" content="Autonomous docking and charging garage for the AEGIS-V1 lunar cargo rover: clamp arms, scissor-lift magnetic coupler, sectional door, thermal control.">
+<style>
+/* macOS-style tool window: full-bleed viewport, translucent inspector on the right, segmented controls.
+   Colours: neutral graphite UI, system blue for selection, green = latched, amber = power/motion. */
+:root {
+  --bg: #0f1114; --panel: rgba(30, 32, 36, 0.72); --panel-solid: #1d1f23; --line: rgba(255,255,255,0.08); --line2: rgba(255,255,255,0.14);
+  --fg: #f2f3f5; --mute: #9a9ea6; --dim: #6b7079;
+  --blue: #0a84ff; --green: #30d158; --amber: #ff9f0a; --red: #ff453a;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+#app { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+#view { position: relative; min-width: 0; overflow: hidden; }
+#view canvas { display: block; width: 100%; height: 100%; }
+.toolbar { position: absolute; top: 14px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+.toolbar > * { pointer-events: auto; }
+.title { display: flex; flex-direction: column; margin-right: auto; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+.title b { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.title span { color: var(--mute); font-size: 12px; }
+.seg { display: inline-flex; background: rgba(40,42,47,.75); border: 0.5px solid var(--line2); border-radius: 8px; padding: 2px; backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); }
+.seg button { font: 500 12px var(--font); color: var(--fg); background: transparent; border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer; transition: background .2s, color .2s; }
+.seg button:hover { background: rgba(255,255,255,.06); }
+.seg button.on { background: rgba(255,255,255,.16); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.seg button:focus-visible, .btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+#state { position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; background: rgba(28,30,34,.78); border: 0.5px solid var(--line2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-weight: 600; font-size: 12px; letter-spacing: .02em; }
+#state i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: background .4s, box-shadow .4s; }
+#state.moving i { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+#state.docked i { background: var(--green); box-shadow: 0 0 10px var(--green); }
+#hint { position: absolute; right: 16px; bottom: 18px; color: var(--dim); font-size: 11px; pointer-events: none; }
+aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.group h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+.card { background: rgba(255,255,255,.035); border: 0.5px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.btn { font: 600 13px var(--font); color: #fff; background: var(--blue); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; transition: filter .15s, transform .15s; }
+.btn:hover { filter: brightness(1.12); }
+.btn:active { transform: scale(.98); }
+.btn.secondary { background: rgba(255,255,255,.1); }
+.btn:disabled { opacity: .4; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12px; }
+.kv dt { color: var(--mute); }
+.kv dd { margin: 0; text-align: right; font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+.bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 3px; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--blue); border-radius: 2px; transition: width .25s linear; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.steps li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; color: var(--dim); font-size: 12px; transition: color .3s, background .3s; }
+.steps li i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+.steps li.done { color: var(--mute); }
+.steps li.now { color: var(--fg); background: rgba(10,132,255,.16); }
+.steps li.now i { background: var(--blue); opacity: 1; }
+.parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 12px; }
+.parts li { display: grid; grid-template-columns: 10px 1fr; gap: 8px; }
+.parts li i { width: 10px; height: 10px; border-radius: 3px; margin-top: 3px; }
+.parts span { color: var(--mute); }
+@media (max-width: 820px) {
+  #app { position: static; display: block; }
+  #view { height: 62vh; min-height: 340px; }
+  aside { border-left: 0; border-top: 0.5px solid var(--line2); }
+  #hint { display: none; }
+  .toolbar { left: 12px; right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+#dock-hud { display: none !important; }
+
+    /* ?embed=1 — hosted inside the website preview: no inspector, compact action bar at the bottom */
+    .ebar { display: none; }
+    body.embed #app { grid-template-columns: minmax(0, 1fr); position: fixed; }
+    body.embed aside, body.embed #hint, body.embed .title, body.embed #status { display: none; }
+    body.embed #view { height: 100%; }
+    body.embed .ebar { display: inline-flex; position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); gap: 2px; padding: 3px; border-radius: 12px; background: rgba(36,38,42,.72); border: 0.5px solid rgba(255,255,255,.14); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); max-width: calc(100% - 24px); overflow-x: auto; }
+    body.embed .ebar button { font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; color: #f2f3f5; background: transparent; border: 0; border-radius: 9px; padding: 7px 12px; cursor: pointer; white-space: nowrap; transition: background .2s; }
+    body.embed .ebar button:hover { background: rgba(255,255,255,.08); }
+    body.embed .ebar button.on { background: rgba(255,255,255,.18); }
+    body.embed .ebar button:disabled { opacity: .4; }
+</style></head><body>
+<div id="app">
+  <div id="view">
+    <div class="toolbar">
+      <div class="title"><b>AEGIS-V1 Dock Station</b><span>Autonomous docking &amp; charging garage</span></div>
+      <div class="seg" id="cams" role="group" aria-label="Camera">
+        <button data-cam="iso" class="on">Overview</button><button data-cam="door">Door</button><button data-cam="coupler">Coupler</button><button data-cam="top">Top</button><button data-cam="therm">Thermal</button>
+      </div>
+      <div class="seg" role="group" aria-label="Cutaway"><button id="bCut" class="on" aria-pressed="true">Cutaway</button></div>
+    </div>
+    <div id="state"><i></i><span id="stateTag">DOCKED</span></div>
+    <div class="ebar" role="group" aria-label="Sequence">
+      <button data-click="bDock">Play docking</button><button data-click="bUndock">Depart</button><button data-click="bNight" data-alt="bDay">Night</button>
+    </div>
+    <div id="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+  </div>
+  <aside>
+    <div class="group">
+      <h2>Sequence</h2>
+      <div class="card">
+        <div class="row">
+          <button id="bDock" class="btn">Play docking</button>
+          <button id="bUndock" class="btn secondary">Depart</button>
+          <button id="bReset" class="btn secondary">Reset</button>
+        </div>
+        <ol class="steps" id="steps" style="margin-top:10px">
+          <li data-s="APPROACH"><i></i>Approach on UWB + 300 mm tag</li>
+          <li data-s="ALIGN"><i></i>Square up at the gate · door opens</li>
+          <li data-s="ENTER"><i></i>Visual-servo entry on the IR tag</li>
+          <li data-s="CAPTURE"><i></i>Clamp arms centre the rover</li>
+          <li data-s="LATCH"><i></i>Scissor lift lowers the coupler</li>
+          <li data-s="DOCKED"><i></i>Latched · charging · door closes</li>
+        </ol>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Environment</h2>
+      <div class="seg" role="group" aria-label="Environment"><button id="bDay" class="on">Lunar day</button><button id="bNight">Lunar night</button></div>
+    </div>
+    <div class="group">
+      <h2>Live readout</h2>
+      <div class="card">
+        <dl class="kv" id="kv">
+          <dt>Clamps</dt><dd id="kClamp">—</dd>
+          <dt>Coupler</dt><dd id="kCpl">—</dd>
+          <dt>Door</dt><dd id="kDoor">—</dd>
+          <dt>Rover speed</dt><dd id="kSpd">—</dd>
+          <dt>Charge</dt><dd id="kChg">—</dd>
+          <dt>PV / load</dt><dd id="kPv">—</dd>
+          <dt>Buffer</dt><dd id="kBuf">—</dd>
+          <dt>Warm box / radiator</dt><dd id="kTh">—</dd>
+          <dt>Louvers / heater</dt><dd id="kLv">—</dd>
+        </dl>
+        <div class="bar" title="station buffer"><i id="bufBar"></i></div>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Parts</h2>
+      <ul class="parts">
+        <li><i style="background:#cbd5e1"></i><div>Clamp arms<br><span>parallel jaws on a lead screw + two guide rods each; 0.725 m → 0.425 m from centreline</span></div></li>
+        <li><i style="background:#30d158"></i><div>Magnetic coupler<br><span>3-stage scissor lift, floating head, N42SH ring magnets, 4 pogo pins, hall array</span></div></li>
+        <li><i style="background:#0a84ff"></i><div>Sensors<br><span>aft 100 mm IR tag, facade 300 mm tag, UWB anchors, side ToF, bumper switch</span></div></li>
+        <li><i style="background:#ff9f0a"></i><div>Sectional door<br><span>6 hinged panels, torsion drum, chain opener with soft start/stop, motion beacon</span></div></li>
+        <li><i style="background:#f1f5f9"></i><div>Radiator + louvers<br><span>zenith-facing, bimetal louvers, ammonia heat pipes</span></div></li>
+        <li><i style="background:#d4a017"></i><div>MLI warm box<br><span>buffer battery, charger, MCU; survival heater at −20 °C</span></div></li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="js/motion.js"></script>
+<script src="js/studio.js"></script>
+<script src="js/rover_bom.js"></script>
+<script src="js/fusion_rover.js"></script>
+<script src="js/dock_station.js"></script>
+<script>
+(function () {
+  'use strict';
+  var D = window.NASA_Dock, C = D.C, MO = window.NASA_Motion, ST = window.NASA_Studio;
+  var view = document.getElementById('view');
+  var renderer = ST.renderer(view, { exposure: 1.05 });
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f1114);
+  scene.fog = new THREE.Fog(0x0f1114, 16, 42);
+  scene.environment = ST.environment(renderer, { key: 2.6 });
+  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 90);
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.07; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 0.8; controls.maxDistance = 22;
+  var camRig = new ST.CameraRig(camera, controls), idle = new ST.IdleSpin(controls, { delay: 14, speed: 0.35 });
+
+  scene.add(new THREE.HemisphereLight(0xdbe7f5, 0x1d2228, 0.55));
+  var sun = new THREE.DirectionalLight(0xfff4e2, 2.1); sun.position.set(6, 9, 4.5); sun.castShadow = true;
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.025; sun.shadow.radius = 3;
+  sun.shadow.mapSize.set(2048, 2048); ['left', 'right', 'top', 'bottom'].forEach(function (k, i) { sun.shadow.camera[k] = (i % 2 ? 1 : -1) * 7.5; });
+  scene.add(sun);
+  var bayLamp = new THREE.PointLight(0xe6f0ff, 0.0, 6, 2); bayLamp.position.set(-0.6, 1.3, 0); scene.add(bayLamp);
+  var ground = new THREE.Mesh(new THREE.CircleGeometry(18, 96), new THREE.MeshStandardMaterial({ color: 0x8a8b8e, map: ST.regolith([7, 7]), roughness: 1, metalness: 0, envMapIntensity: 0.25 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.002; ground.receiveShadow = true; scene.add(ground);
+
+  var hazTex = ST.hazard([1, 3.5], true), hazTex2 = ST.hazard([2, 1]);
+  var M = {
+    bay: new THREE.MeshStandardMaterial({ color: 0x9aa8b6, metalness: 0.55, roughness: 0.42 }),
+    bayDark: new THREE.MeshStandardMaterial({ color: 0x2c333c, metalness: 0.5, roughness: 0.45 }),
+    bayTrim: new THREE.MeshStandardMaterial({ color: 0xd5dbe2, metalness: 0.6, roughness: 0.32 }),
+    hazard: new THREE.MeshStandardMaterial({ color: 0xffffff, map: hazTex2, roughness: 0.55 }),
+    copper: new THREE.MeshStandardMaterial({ color: 0xd08a3a, metalness: 0.85, roughness: 0.3 }),
+    floor: new THREE.MeshStandardMaterial({ color: 0x6b7480, metalness: 0.45, roughness: 0.55 }),
+    wall: new THREE.MeshPhysicalMaterial({ color: 0xbfd2e6, metalness: 0.0, roughness: 0.12, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
+    pv: new THREE.MeshStandardMaterial({ color: 0x14306a, metalness: 0.6, roughness: 0.18 })
+  };
+  var mRoof = new THREE.MeshStandardMaterial({ color: 0xe9edf2, metalness: 0.25, roughness: 0.45, transparent: true, opacity: 1 });
+  var mRamp = new THREE.MeshStandardMaterial({ color: 0xffffff, map: hazTex, roughness: 0.6 });
+
+  var dock = new THREE.Group(); scene.add(dock);
+  function box(w, h, d, m, x, y, z, parent) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; (parent || dock).add(o); return o; }
+  box(5.4, 0.08, 3.5, M.floor, 0, 0.04, 0);
+  [-0.54, 0.54].forEach(function (z) { box(4.4, 0.006, 0.05, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x4ea8ff, emissiveIntensity: 0.0 }), -0.1, 0.083, z); });   // lane lights (lit while docking)
+  var laneMats = []; dock.children.slice(-2).forEach(function (o) { laneMats.push(o.material); });
+  var ramp = box(0.95, 0.04, 3.3, mRamp, 3.15, 0.02, 0); ramp.rotation.z = -Math.atan(0.08 / 0.95); ramp.position.y = 0.035;   // floor top 0.08 at the door → ground at x = 3.625
+  var walls = new THREE.Group(); dock.add(walls);
+  [-1.62, 1.62].forEach(function (z) { box(4.8, 1.42, 0.03, M.wall, -0.25, 0.78, z, walls).castShadow = false; });
+  box(0.03, 1.42, 3.34, M.wall, -2.55, 0.78, 0, walls).castShadow = false;
+  var roofG = new THREE.Group(); dock.add(roofG);
+  var roof = box(5.0, 0.08, 3.46, mRoof, -0.2, 1.49, 0, roofG);
+  // PV array: 4 panels on a tilted frame (C.PV_PANELS), each with a cell grid texture
+  var cellTex = ST.canvasTex(256, 256, function (c, w, h) {
+    c.fillStyle = '#0d2350'; c.fillRect(0, 0, w, h); c.strokeStyle = 'rgba(190,210,255,.35)'; c.lineWidth = 2;
+    for (var i = 0; i <= 6; i++) { c.beginPath(); c.moveTo(i * w / 6, 0); c.lineTo(i * w / 6, h); c.stroke(); c.beginPath(); c.moveTo(0, i * h / 6); c.lineTo(w, i * h / 6); c.stroke(); }
+  });
+  var mCells = new THREE.MeshStandardMaterial({ color: 0xffffff, map: cellTex, metalness: 0.55, roughness: 0.16, transparent: true, opacity: 1 });
+  var pv = new THREE.Group(); pv.position.set(-0.2, 1.62, 0); pv.rotation.z = 0.20; roofG.add(pv);
+  for (var pi = 0; pi < (C.PV_PANELS || 4); pi++) {
+    var px = -1.4 + pi * 0.94;
+    box(0.88, 0.03, 1.48, M.bayTrim, px, 0, 0, pv);
+    var cell = box(0.84, 0.01, 1.44, mCells, px, 0.02, 0, pv); cell.castShadow = false;
+  }
+  [-1.9, 1.5].forEach(function (x) { [-0.7, 0.7].forEach(function (z) { box(0.05, 0.16, 0.05, M.bayDark, x, -0.08 - (x > 0 ? 0.06 : -0.06), z, pv); }); });
+  [-2.4, -0.9, 0.6, 2.1].forEach(function (x) { [-1.68, 1.68].forEach(function (z) { box(0.12, 1.54, 0.12, M.bayDark, x, 0.81, z); }); });
+  var doorRig = D.buildDoor(THREE, dock, M);
+  var bump = box(0.14, 0.18, 1.4, M.hazard, -1.92, 0.17, 0);                       // hard-stop bumper (face at x = -1.85, ~22 mm nose gap when parked)
+
+  D.reset();
+  D.build(THREE, dock, M);
+  dock.traverse(function (o) { if (o.isMesh && o.material !== M.wall) { o.castShadow = true; o.receiveShadow = true; } });
+
+  // full rover model (same module as the simulator)
+  var rover = new THREE.Group(); scene.add(rover);
+  var wheelGroups = [], wheels = [];
+  NASA_FusionRover.init({ roverGroup: rover, wheelGroups: wheelGroups, wheels: wheels });
+  var rig = window.roverRig;
+  var pad = new THREE.Group(); pad.position.set(-0.22, 0.338, 0); rover.add(pad);   // coupler target (matches the pad on the rover)
+  var WB = 0.5387;                                                                    // front/rear axle offset from rover centre (m)
+
+  // ground height under the rover track (dock frame x): floor 0.08 inside, ramp, regolith outside
+  function surfaceY(x) { return x <= 2.675 ? 0.08 : (x >= 3.625 ? 0.0 : 0.08 * (3.625 - x) / 0.95); }
+
+  /* ---------- rover motion: accel-limited drive along the bay axis + a lateral settle on the way in ---------- */
+  var drive = new MO.Axis(C.PARK_ALONG, { vmax: 0.35, amax: 0.22, jerkTau: 0.22 });
+  var pitchS = new MO.Spring(0, { freq: 2.4, zeta: 0.42 }), heaveS = new MO.Spring(0, { freq: 3.2, zeta: 0.5 });
+  var latS = new MO.Spring(0, { freq: 0.35, zeta: 0.95 });       // lateral offset bleeds off like the Stanley controller does
+  var lastV = 0, accF = 0;
+  function placeRover(dt) {
+    var x = drive.pos, v = drive.vel;
+    var acc = dt > 0 ? (v - lastV) / dt : 0; lastV = v; accF += (acc - accF) * Math.min(1, dt * 10);
+    // the rover points into the bay (nose toward -x); forward speed is -v
+    var hf = surfaceY(x - WB), hm = surfaceY(x), hr = surfaceY(x + WB);
+    var geomPitch = Math.atan2(hf - hr, 2 * WB);
+    pitchS.target = geomPitch - accF * 0.06;                     // braking (rover decelerating while moving -x) dips the nose
+    heaveS.target = (hf + hr) / 2;
+    var pitch = pitchS.step(dt), heave = heaveS.step(dt);
+    var lat = latS.step(dt);
+    var yaw = Math.PI + Math.atan2(latS.v, Math.max(0.05, Math.abs(v))) * (v < 0 ? 1 : -1) * 0.9;
+    rover.position.set(x, heave + 0.01, lat);
+    rover.rotation.set(0, yaw, pitch);
+    // middle wheel follows the ground under it; front/rear take the residual from the spring lag
+    var bodyF = heave + Math.sin(pitch) * WB, bodyR = heave - Math.sin(pitch) * WB;
+    var tF = hf - bodyF, tM = hm - heave, tR = hr - bodyR;
+    rig.setTravel([tF, tM, tR, tF, tM, tR]);
+    rig.roll(-v * dt);
+    return v;
+  }
+
+  /* ---------- sequence ---------- */
+  var X_OUT = 7.2, GATE = C.GATE_ALONG;
+  var st = 'DOCKED', tState = 0, door = 0, wantDoor = 0, latchT = 0, cycle = false;
+  var stepsEl = document.getElementById('steps'), order = ['APPROACH', 'ALIGN', 'ENTER', 'CAPTURE', 'LATCH', 'DOCKED'];
+  function setState(s) {
+    st = s; tState = 0;
+    document.getElementById('stateTag').textContent = s === 'APPROACH' ? 'APPROACH' : s;
+    var pill = document.getElementById('state');
+    pill.className = (s === 'DOCKED') ? 'docked' : (s === 'STOWED' || s === 'DEPARTED' ? '' : 'moving');
+    var k = order.indexOf(s);
+    [].forEach.call(stepsEl.children, function (li, i) { li.className = (k < 0 ? (s === 'DOCKED' ? 'done' : '') : (i < k ? 'done' : (i === k ? 'now' : ''))); });
+    document.getElementById('bUndock').disabled = s !== 'DOCKED';
+  }
+  function startOutside() {
+    var S = D.state(); S.armTarget = 1; S.couplerTarget = 0; S.latched = false; S.contactsLive = false; S.chargeRamp = 0;
+    drive.snap(X_OUT); latS.snap(0.16); pitchS.snap(0); heaveS.snap(0); lastV = 0; accF = 0;
+    setState('APPROACH'); drive.vlimit = 0.35; drive.target = GATE;
+  }
+  document.getElementById('bDock').onclick = function () {
+    if (st === 'DOCKED') { cycle = true; setState('UNDOCK'); return; }       // full cycle: back out, then come home
+    if (st === 'STOWED' || st === 'DEPARTED') startOutside();
+  };
+  document.getElementById('bUndock').onclick = function () { if (st === 'DOCKED') { cycle = false; setState('UNDOCK'); } };
+  document.getElementById('bReset').onclick = function () { parked(); };
+  function setEnv(e, a, b) { D.state().env = e; a.classList.add('on'); b.classList.remove('on'); }
+  var bDay = document.getElementById('bDay'), bNight = document.getElementById('bNight');
+  bDay.onclick = function () { setEnv('day', bDay, bNight); }; bNight.onclick = function () { setEnv('night', bNight, bDay); };
+
+  // cutaway: roof + PV fade to a ghost so the mechanisms are visible (fades, never pops)
+  var cut = { on: true, k: 1 }, bCut = document.getElementById('bCut');
+  bCut.onclick = function () { cut.on = !cut.on; bCut.classList.toggle('on', cut.on); bCut.setAttribute('aria-pressed', cut.on); };
+
+  var cams = {
+    iso: [[5.0, 3.5, 4.9], [-0.3, 0.45, 0]], top: [[0.4, 10.5, 0.01], [-0.2, 0, 0]], door: [[8.4, 1.5, 2.6], [1.6, 0.7, 0]],
+    coupler: [[0.4, 1.25, 1.55], [-1.0, 0.6, 0]], therm: [[-4.4, 2.6, 3.6], [-2.2, 0.95, 0.9]]
+  };
+  function goCam(k) {
+    camRig.go(cams[k][0], cams[k][1]);
+    document.querySelectorAll('[data-cam]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cam') === k); });
+  }
+  document.querySelectorAll('[data-cam]').forEach(function (b) { b.onclick = function () { goCam(b.getAttribute('data-cam')); }; });
+  camera.position.fromArray(cams.iso[0]).multiplyScalar(1.25); controls.target.fromArray(cams.iso[1]);
+  camRig.go(cams.iso[0], cams.iso[1], { duration: 2.2 });                     // gentle settle-in on load
+
+  function resize() { var w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
+  addEventListener('resize', resize); resize();
+
+  var el = function (id) { return document.getElementById(id); };
+  var timeScale = Math.max(0.1, Math.min(8, +(new URLSearchParams(location.search).get('speed')) || 1));   // ?speed=2 plays faster (demo / tests)
+  var hudT = 0, clock = 0, last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min((now - last) / 1000, 0.05) * timeScale; last = now;
+    step(dt);
+    renderer.render(scene, camera);
+  }
+  function step(dt) {
+    tState += dt; clock += dt;
+    var S = D.state();
+
+    // ----- sequence logic (drives targets only; the followers make the motion) -----
+    if (st === 'APPROACH') {
+      wantDoor = drive.pos < GATE + 1.6 ? 1 : 0;                                 // UWB range trigger opens the door
+      if (drive.arrived(0.003)) setState('ALIGN');
+    }
+    if (st === 'ALIGN') { wantDoor = 1; if (tState > 0.9 && door > 0.85 && Math.abs(latS.x) < 0.02) { setState('ENTER'); drive.vlimit = 0.30; drive.target = C.PRECAP_ALONG; } }
+    if (st === 'ENTER') {
+      drive.vlimit = drive.pos > C.PARK_ALONG + 1.4 ? 0.30 : 0.18;
+      if (drive.pos <= C.PRECAP_ALONG + 0.002) { setState('CAPTURE'); S.armTarget = 0; drive.vlimit = 0.10; drive.target = C.PARK_ALONG; }
+    }
+    if (st === 'CAPTURE') {
+      S.armTarget = 0;
+      if (S.arm < 0.01 && drive.arrived(0.002)) { S.couplerTarget = 1; setState('LATCH'); pitchS.v += 0.03; }   // bumper kiss
+    }
+    if (st === 'LATCH' && S.coupler > 0.985) { latchT += dt; if (latchT > 0.6) { S.latched = true; S.contactsLive = true; latchT = 0; setState('DOCKED'); } }
+    if (st === 'DOCKED') wantDoor = 0;
+    if (st === 'UNDOCK') {
+      wantDoor = 1; S.contactsLive = false; S.latched = false; S.chargeRamp = 0; S.couplerTarget = 0;
+      if (S.coupler < 0.03) S.armTarget = 1;
+      if (S.arm > 0.97 && S.coupler < 0.03 && door > 0.85) { setState('EXIT'); drive.vlimit = 0.30; drive.target = X_OUT; }
+    }
+    if (st === 'EXIT') {
+      wantDoor = drive.pos < 3.2 ? 1 : 0;
+      if (drive.arrived(0.003)) { if (cycle) { cycle = false; setState('APPROACH'); drive.vlimit = 0.35; drive.target = GATE; } else setState('DEPARTED'); }
+    }
+    if (st === 'DEPARTED' || st === 'STOWED') wantDoor = 0;
+    latS.target = 0;
+
+    drive.step(dt);
+    var v = placeRover(dt);
+    door = doorRig.drive(wantDoor, dt);
+
+    // the dock module maps states to clamp / coupler targets; our page owns them, so pass a neutral state
+    var simState = st === 'DOCKED' ? 'DOCKED' : (st === 'UNDOCK' ? 'UNDOCK_HOLD' : 'PAGE');
+    D.update(dt, simState, pad);
+    var chargeW = st === 'DOCKED' ? D.chargePowerW(0.5) : 0;
+    D.stepStation(dt, st === 'DOCKED' ? 'DOCKED' : (st === 'DEPARTED' || st === 'STOWED' ? 'NONE' : 'ENTER'), chargeW);
+
+    // bay lighting: lane lights pulse in sequence while a rover is inside the door, bay lamp eases on/off
+    var active = (st === 'ENTER' || st === 'CAPTURE' || st === 'LATCH' || st === 'ALIGN' || st === 'UNDOCK' || st === 'EXIT');
+    laneMats.forEach(function (m) { m.emissiveIntensity += ((active ? 0.9 + 0.4 * Math.sin(clock * 3) : 0.0) - m.emissiveIntensity) * Math.min(1, dt * 3); });
+    bayLamp.intensity += (((door > 0.05 || active) ? 0.9 : 0.25) - bayLamp.intensity) * Math.min(1, dt * 2);
+    cut.k += ((cut.on ? 1 : 0) - cut.k) * Math.min(1, dt * 4);
+    mRoof.opacity = 1 - 0.86 * cut.k; mCells.opacity = 1 - 0.8 * cut.k; mRoof.depthWrite = mCells.depthWrite = cut.k < 0.5;
+    walls.visible = true; M.wall.opacity = 0.22 - 0.12 * cut.k;
+
+    hudT += dt;
+    if (hudT > 0.1) {
+      hudT = 0;
+      var th = S.th || {};
+      el('kClamp').textContent = Math.round((1 - S.arm) * 100) + '% closed';
+      el('kCpl').textContent = Math.round(S.coupler * 100) + '%' + (S.latched ? ' · latched' : '');
+      el('kDoor').textContent = Math.round(door * 100) + '% open';
+      el('kSpd').textContent = Math.abs(v).toFixed(2) + ' m/s';
+      el('kChg').textContent = chargeW.toFixed(1) + ' W' + (S.contactsLive ? ' · live' : '');
+      el('kPv').textContent = (S.pvW || 0).toFixed(0) + ' / ' + (S.loadW || 0).toFixed(1) + ' W';
+      el('kBuf').textContent = (S.bufferWh / C.BUFFER_WH * 100).toFixed(0) + '% · ' + S.bufferWh.toFixed(0) + ' Wh';
+      el('kTh').textContent = (th.box || 0).toFixed(0) + ' / ' + (th.radiator || 0).toFixed(0) + ' °C';
+      el('kLv').textContent = Math.round((th.louver || 0) * 100) + '% · ' + (th.heaterW || 0).toFixed(1) + ' W';
+      el('bufBar').style.width = (S.bufferWh / C.BUFFER_WH * 100).toFixed(1) + '%';
+    }
+    var moving = camRig.update(dt);
+    idle.update(dt, moving || (st !== 'DOCKED' && st !== 'DEPARTED' && st !== 'STOWED'));
+    controls.update();
+  }
+
+  // start parked and latched so every part is visible at rest
+  function parked() {
+    D.reset(); var S = D.state(); S.arm = 0; S.armTarget = 0; S.coupler = 1; S.couplerTarget = 1; S.latched = true; S.contactsLive = true; S.chargeRamp = 1;
+    drive.snap(C.PARK_ALONG); latS.snap(0); pitchS.snap(0); heaveS.snap(0.08); doorRig.snap(0); door = 0; wantDoor = 0; cycle = false;
+    setEnv(S.env, bDay, bNight); setState('DOCKED');
+  }
+  parked();
+  window.__dock = { tick: function (sec, h) { h = h || 1 / 30; for (var t = 0; t < sec; t += h) step(h); renderer.render(scene, camera); return st; }, state: function () { return st; }, D: D, drive: drive, door: function () { return door; }, rover: rover, play: function () { document.getElementById('bDock').click(); }, cam: goCam };
+  requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+/* embed mode wiring: the compact bar forwards clicks to the inspector controls, and mirrors their state */
+(function () {
+  if (!/[?&]embed=1/.test(location.search)) return;
+  document.body.classList.add('embed');
+  var bar = document.querySelector('.ebar');
+  bar.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = document.getElementById(b.getAttribute('data-click')), alt = b.getAttribute('data-alt');
+      if (alt && b.classList.contains('on')) { var a = document.getElementById(alt); if (a) a.click(); }
+      else if (t) t.click();
+    });
+  });
+  setInterval(function () {
+    bar.querySelectorAll('button').forEach(function (b) {
+      var t = document.getElementById(b.getAttribute('data-click')); if (!t) return;
+      b.disabled = t.disabled; b.classList.toggle('on', t.classList.contains('on'));
+    });
+  }, 250);
+  dispatchEvent(new Event('resize'));
+})();
+</script>
+</body></html>

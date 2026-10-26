@@ -3,29 +3,31 @@
  * High-sensitivity aggressive thermal physics responding dynamically to load, slip, and fan RPM.
  */
 (function (global) {
-  // LLASO external cargo rover planform: 2 ft × 2 ft (24 in × 24 in) PETG deck.
+  // Earth-demo planform from the bay-balance board: 4 ft long × 2 ft wide.
+  // Front avionics bay; 5 Ah hot-swap pack + ballast plate under the aft deck for rear-axle grip. Cargo bay is aft.
   var ROVER_FOOTPRINT = {
-    lengthFt: 2,
+    lengthFt: 4,
     widthFt: 2,
-    lengthM: 0.6096,
+    lengthM: 1.2192,
     widthM: 0.6096,
-    lengthIn: 24,
+    lengthIn: 48,
     widthIn: 24,
     refLengthM: 0.86,
     refWidthM: 0.52
   };
 
   var PARTS = [
-    { id: 'chassis', name: 'Polymaker PETG chassis (2×2 ft deck)', count: 1, spare: 0, massKg: 1.80, heatW: 0, size: [0.6096, 0.14, 0.6096], pos: [0, 0.13, 0], estimate: true, onVehicle: true },
+    { id: 'chassis', name: 'Polymaker PETG chassis (4×2 ft deck)', count: 1, spare: 0, massKg: 2.40, heatW: 0, size: [1.2192, 0.16, 0.6096], pos: [0, 0.12, 0], estimate: true, onVehicle: true },
     { id: 'wheel', name: 'Wheel', count: 6, spare: 0, massKg: 0.18, heatW: 0, size: [0.20, 0.078, 0.20], pos: [0, 0.09, 0], estimate: true, onVehicle: true },
     { id: 'shock', name: '1/10 RC shock', count: 6, spare: 2, massKg: 0.042, heatW: 0, size: [0.022, 0.090, 0.022], pos: [0, 0.14, 0], onVehicle: true },
     { id: 'motor', name: 'Greartisan 12V 100 RPM', count: 6, spare: 0, massKg: 0.200, heatW: 0, size: [0.078, 0.037, 0.037], pos: [0, 0.09, 0], onVehicle: true },
-    // Amazon / manual LFP1210: 151 × 65 × 95 mm (L×W×H) → mesh X×Z×Y height 95 mm
-    { id: 'battery', name: 'GOLDENMATE 12V 10Ah LiFePO4', count: 1, spare: 0, massKg: 1.20, heatW: 0.3, size: [0.151, 0.095, 0.065], pos: [-0.04, 0.16, 0], onVehicle: true, wh: 128, dimsMm: [151, 65, 95] },
-    { id: 'pi5', name: 'Raspberry Pi 4 (4GB) + active cooler', count: 1, spare: 0, massKg: 0.11, heatW: 7.0, size: [0.090, 0.028, 0.062], pos: [0.18, 0.19, -0.05], onVehicle: true },
-    { id: 'uno', name: 'Arduino Uno REV3', count: 1, spare: 0, massKg: 0.025, heatW: 0.4, size: [0.0686, 0.015, 0.0534], pos: [0.16, 0.185, 0.07], onVehicle: true },
-    { id: 'buck', name: 'YRDZXG 12V to 5V 5A buck', count: 1, spare: 0, massKg: 0.055, heatW: 1.5, size: [0.066, 0.018, 0.036], pos: [0.05, 0.185, 0.10], onVehicle: true },
-    { id: 'driver', name: 'Cytron MDD10A', count: 1, spare: 0, massKg: 0.050, heatW: 3.0, size: [0.095, 0.022, 0.065], pos: [0.04, 0.185, -0.11], onVehicle: true },
+    // 5 Ah pack (0.65 kg) + 1.75 kg steel ballast plate in the sealed sub-floor tray — ballast over rear / mid bogies.
+    { id: 'battery', name: '12.8V 5Ah LiFePO4 pack (hot-swap) + ballast plate', count: 1, spare: 1, massKg: 2.40, heatW: 0.45, size: [0.181, 0.076, 0.166], pos: [-0.30, 0.10, 0], onVehicle: true, wh: 64, dimsMm: [181, 166, 76] },
+    { id: 'imu', name: 'IMU tip sensor', count: 1, spare: 0, massKg: 0.012, heatW: 0.05, size: [0.022, 0.008, 0.016], pos: [0.28, 0.14, 0.08], onVehicle: true },
+    { id: 'pi5', name: 'pi-top [4] + Raspberry Pi 4 (4GB) + active cooler', count: 1, spare: 0, massKg: 0.11, heatW: 7.0, size: [0.326, 0.023, 0.222], piBoardSize: [0.090, 0.006, 0.062], pos: [0.32, 0.18, 0.06], onVehicle: true, dimsMm: [326, 23, 222] },
+    { id: 'uno', name: 'Arduino Uno REV3', count: 1, spare: 0, massKg: 0.025, heatW: 0.4, size: [0.0686, 0.015, 0.0534], pos: [0.30, 0.16, -0.08], onVehicle: true },
+    { id: 'buck', name: 'YRDZXG 12V to 5V 5A buck', count: 1, spare: 0, massKg: 0.055, heatW: 1.5, size: [0.066, 0.018, 0.036], pos: [0.22, 0.15, 0.10], onVehicle: true },
+    { id: 'driver', name: 'Cytron MDD10A', count: 1, spare: 0, massKg: 0.050, heatW: 3.0, size: [0.095, 0.022, 0.065], pos: [0.22, 0.15, -0.10], onVehicle: true },
     { id: 'fan', name: '30 mm 3007 fan', count: 4, spare: 2, massKg: 0.008, heatW: 0.15, size: [0.030, 0.030, 0.007], pos: [0, 0.16, 0], onVehicle: true },
     { id: 'camera', name: 'Arducam OV5647', count: 2, spare: 0, massKg: 0.004, heatW: 0.25, size: [0.025, 0.024, 0.017], pos: [0.32, 0.48, 0], onVehicle: true },
     { id: 'arm', name: 'Cargo arm', count: 1, spare: 0, massKg: 0.35, heatW: 0, size: [0.40, 0.08, 0.08], pos: [0.30, 0.32, 0.12], estimate: true, onVehicle: true },
@@ -35,7 +37,7 @@
     { id: 'petg_spool', name: 'Polymaker PETG spool', count: 1, spare: 0, massKg: 1.0, heatW: 0, size: [0.20, 0.07, 0.20], pos: null, onVehicle: false, estimate: true }
   ];
 
-  var BAY_HEAT_IDS = { pi5: 1, uno: 1, buck: 1, driver: 1, battery: 1, fan: 1 };
+  var BAY_HEAT_IDS = { pi5: 1, uno: 1, buck: 1, driver: 1, fan: 1 };
 
   function byId(id) {
     for (var i = 0; i < PARTS.length; i++) if (PARTS[i].id === id) return PARTS[i];
@@ -50,7 +52,11 @@
     return legacyZ * (ROVER_FOOTPRINT.widthM / ROVER_FOOTPRINT.refWidthM);
   }
 
-  function curbKg() {
+  // Prototype rover is 15 lb (6.804 kg) on its own. The CAD part masses are estimates, so they
+  // are scaled together to hit that figure; the split between parts is kept.
+  var LB_KG = 0.45359237;
+  var PROTOTYPE_CURB_KG = 15 * LB_KG;
+  function rawCurbKg() {
     var m = 0;
     for (var i = 0; i < PARTS.length; i++) {
       var p = PARTS[i];
@@ -58,13 +64,37 @@
     }
     return m;
   }
+  var MASS_SCALE = PROTOTYPE_CURB_KG / rawCurbKg();
+
+  /** Scaled mass of one BOM line (all units of it), kg. */
+  function partKg(p) {
+    return p.massKg * p.count * MASS_SCALE;
+  }
+
+  function curbKg() {
+    return PROTOTYPE_CURB_KG;
+  }
+
+  /** Where the 15 lb sits: every on-vehicle BOM line with its scaled mass, rover-local position and share. */
+  function massBreakdown() {
+    var rows = [];
+    var total = curbKg();
+    for (var i = 0; i < PARTS.length; i++) {
+      var p = PARTS[i];
+      if (!p.onVehicle) continue;
+      var kg = partKg(p);
+      rows.push({ id: p.id, name: p.name, kg: kg, lb: kg / LB_KG, share: kg / total, pos: p.pos ? p.pos.slice() : null });
+    }
+    rows.sort(function (a, b) { return b.kg - a.kg; });
+    return rows;
+  }
 
   function com() {
     var m = 0, x = 0, y = 0, z = 0;
     for (var i = 0; i < PARTS.length; i++) {
       var p = PARTS[i];
       if (!p.onVehicle || !p.pos) continue;
-      var w = p.massKg * p.count;
+      var w = partKg(p);
       m += w;
       x += p.pos[0] * w;
       y += p.pos[1] * w;
@@ -72,6 +102,48 @@
     }
     if (m <= 0) return { x: 0, y: 0, z: 0, kg: 0 };
     return { x: x / m, y: y / m, z: z / m, kg: m };
+  }
+
+  var G_LUNAR = 1.625;
+  var G_EARTH = 9.806;
+
+  /** Bogie axle X (m): front, mid, rear — matches fusion_rover axle tubes. */
+  function axleXM() {
+    return [dX(0.38), 0, dX(-0.38)];
+  }
+
+  /**
+   * Static pitch-plane load split (front vs rear bogie pairs) for grip budgeting.
+   * Optional cargo mass at cargoXM (aft bay center by default).
+   */
+  function tractionSnapshot(opts) {
+    opts = opts || {};
+    var grav = opts.g != null ? opts.g : G_LUNAR;
+    var cargoKg = Math.max(0, opts.cargoKg || 0);
+    var cargoX = opts.cargoX != null ? opts.cargoX : dX(-0.24);
+    var m0 = curbKg();
+    var c0 = com();
+    var massKg = m0 + cargoKg;
+    var cx = cargoKg > 0 ? (c0.x * m0 + cargoX * cargoKg) / massKg : c0.x;
+    var ax = axleXM();
+    var xF = ax[0];
+    var xR = ax[2];
+    var span = xF - xR;
+    var rearFrac = span > 0.01 ? Math.max(0.08, Math.min(0.92, (xF - cx) / span)) : 0.5;
+    var frontFrac = 1 - rearFrac;
+    var weightN = massKg * grav;
+    return {
+      g: grav,
+      massKg: +massKg.toFixed(3),
+      comX: +cx.toFixed(4),
+      comY: +c0.y.toFixed(4),
+      rearBogieN: +(weightN * rearFrac).toFixed(2),
+      frontBogieN: +(weightN * frontFrac).toFixed(2),
+      rearWheelN: +(weightN * rearFrac / 4).toFixed(2),
+      frontWheelN: +(weightN * frontFrac / 4).toFixed(2),
+      rearFrac: +rearFrac.toFixed(3),
+      cargoKg: cargoKg
+    };
   }
 
   function bayHeatW() {
@@ -83,19 +155,19 @@
     return w;
   }
 
-  // GOLDENMATE 12V 10Ah LiFePO4 — 12.8 V nominal, 128 Wh nameplate
+  // 12.8 V 5 Ah LiFePO4 hot-swap pack (64 Wh); a second pack charges in the dock. Aft under-cargo ballast for traction.
   var BATTERY = {
-    ah: 10,
+    ah: 5,
     vNom: 12.8,
-    wh: 128,
+    wh: 64,
     socReserve: 0.18,
-    name: 'GOLDENMATE 12V 10Ah LiFePO4'
+    name: '12.8V 5Ah LiFePO4 hot-swap pack (x2: rover + dock spare)'
   };
 
   var powerModeId = 'eco';
   var powerEcoMode = true;
 
-  /** Four energy profiles for the 10 Ah / 128 Wh pack (LLASO cargo rover). */
+  /** Four energy profiles for the 5 Ah / 64 Wh pack (LLASO cargo rover). */
   var POWER_MODES = {
     range: {
       id: 'range',
@@ -386,7 +458,7 @@
     chamberC: 24.5,    // Internal avionics chamber air
     driverC: 28.0,     // Cytron MDD10A dual H-bridge driver
     buckC: 26.5,       // 12V -> 5V 5A buck regulator
-    batteryC: 23.5,    // LiFePO4 12V 10Ah battery pack
+    batteryC: 23.5,    // LiFePO4 12V 5Ah pack (aft tray, outside avionics duct)
 
     // 6 Wheel Motors (Greartisan 12V 100 RPM)
     motorNames: ['FL', 'FR', 'ML', 'MR', 'BL', 'BR'],
@@ -439,8 +511,8 @@
     var qPi = 4.8 + (neuralOn ? 3.2 : 0.5) + (visionActive ? 1.8 : 0.3) + throttle * 1.6;
     var qDriver = 1.0 + 5.5 * Math.pow(throttle, 1.8) + (slip ? 4.5 : 0);
     var qBuck = 1.2 + qPi * 0.15;
-    var qBat = 0.5 + 2.0 * Math.pow(throttle, 2.0);
-    var totalBayHeat = qPi + qDriver + qBuck + qBat + (armMoving ? 2.5 : 0);
+    var qBat = 0.35 + 1.4 * Math.pow(throttle, 2.0);
+    var totalBayHeat = qPi + qDriver + qBuck + (armMoving ? 2.5 : 0);
     thermal.heatW = totalBayHeat;
 
     // 4x 3007 chassis fans forced air convection
@@ -496,6 +568,10 @@
       tempC: maxMotTemp
     };
 
+    var tBatTarget = thermal.ambientC + 6 + qBat * 4.2 + throttle * 3.5;
+    thermal.batteryC += (tBatTarget - thermal.batteryC) * (1 - Math.exp(-dt / 6.5));
+    thermal.batteryC = Math.max(thermal.ambientC, thermal.batteryC);
+
     // 5. Overall Thermal Status & Hardware Throttling
     var isThrottled = (thermal.piChipC >= 80.0 || maxMotTemp >= 78.0 || thermal.chamberC >= 60.0);
     thermal.throttling = isThrottled;
@@ -532,7 +608,15 @@
     dZ: dZ,
     byId: byId,
     curbKg: curbKg,
+    massBreakdown: massBreakdown,
+    partKg: partKg,
+    MASS_SCALE: MASS_SCALE,
+    LB_KG: LB_KG,
     com: com,
+    G_LUNAR: G_LUNAR,
+    G_EARTH: G_EARTH,
+    axleXM: axleXM,
+    tractionSnapshot: tractionSnapshot,
     bayHeatW: bayHeatW,
     battery: BATTERY,
     powerModeId: powerModeId,

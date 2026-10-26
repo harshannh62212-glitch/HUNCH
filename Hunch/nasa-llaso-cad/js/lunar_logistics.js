@@ -9,7 +9,8 @@
   var PAD = (typeof LOGISTICS_PAD !== 'undefined') ? LOGISTICS_PAD : { x: 45, z: -40 };
   var INTAKE = (typeof LOGISTICS_INTAKE !== 'undefined') ? LOGISTICS_INTAKE : { x: -21.2, z: -22 };
   var RACK = (typeof LOGISTICS_RACK !== 'undefined') ? LOGISTICS_RACK : { x: 45, z: -35.6 };
-  var BAY_CAP_KG = 10;
+  var CARGO_KG = 5 * 0.45359237;     // every pod is 5 lb (2.268 kg)
+  var BAY_CAP_KG = 2 * CARGO_KG + 0.02;   // two pods on the cradle
   var BAY_SLOTS = 2;
   var DEPOT_SLOTS = 12;
   var SLOT_CAP_KG = 10;
@@ -19,6 +20,8 @@
   var GRIP_CLOSED = 0.018;
   var JOINT_SPEED = 0.75;
   var DECK_Y = 0.30;
+  var backingOut = false;
+  var ARM_TIME = 0.5;              // every arm segment runs at this fraction of its original time (2x faster)
   var GRIP_SNAP_DIST = 0.065;     // Matched to claw finger envelope with visual servoing
   var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
 
@@ -29,6 +32,8 @@
   var depot = [];
   var trips = 0;
   var phase = 'idle';
+  var m1 = null;
+  var tipWarned = false;
   var craneWaitT = 0;
   var missionStats = {
     startT: 0,
@@ -65,18 +70,32 @@
   var haulerGroup = null;
   var groundY = 0;
   var landedCenterY = 0;
-  var parkGap = { pick: 0.22, drop: 0.22 };
-  var PICK_ROVER_Z_NOM = -35.20; // Calibrated for 0.38m reach envelope
-  var PICK_GAP_NOM = 0.22;
-  var DROP_ROVER_X_NOM = -19.68;
-  var DROP_GAP_NOM = 0.22;
+  // Rover footprint for contact checks: nose reaches 0.67 m ahead of the origin, wheels 0.47 m to each side.
+  var ROVER_HL = 0.67;
+  var ROVER_HW = 0.47;
+  var CLEAR_MARGIN = 0.03;                       // hard stand-off, m
+  var PICK_FACE_Z = RACK.z + 0.10;               // outermost point of the pickup bay (shutter slats, sill)
+  var DROP_FACE_X = -20.10;                      // outermost point of the airlock wall / intake table
+  var PICK_GAP_NOM = 0.06;                       // nose clearance when parked, m
+  var DROP_GAP_NOM = 0.05;
+  var parkGap = { pick: PICK_GAP_NOM, drop: DROP_GAP_NOM };
+  var PICK_ROVER_Z_NOM = PICK_FACE_Z + PICK_GAP_NOM + ROVER_HL;     // rover origin, nose clear of the shutter
+  var DROP_ROVER_X_NOM = DROP_FACE_X + DROP_GAP_NOM + ROVER_HL;     // rover origin, nose clear of the wall
+  var PRESENT_EXT = 0.19;                        // pickup tray travel out of the bay, m
+  var pickTray = null;
+  var trayP = 0;                                 // 0 = tray inside the bay, 1 = fully presented
+  var settling = [];                             // pods being guided onto a seat
+  var chargeAfterCurrent = false;
   var reachWarned = false;
   var traj = null;
   var armMode = null;
   var gripRetry = 0;
   var crane = null;
+  var pickupDoor = null;   // closed pickup bay shutter at the lander rack
+  var dropDoor = null;     // receiving shutter at the habitat airlock (drop-off bay)
   var _tip = new THREE.Vector3();
   var _grasp = new THREE.Vector3();
+  var _qId = new THREE.Quaternion();
   var _tipArm = new THREE.Vector3();
   var _tipErr = new THREE.Vector3();
 
@@ -162,6 +181,10 @@
     tableAnchor = new THREE.Object3D();
     tableAnchor.position.set(0.96, DECK_Y, 0);
     intake.add(tableAnchor);
+    // guide rails that walk a pod onto the anchor
+    var railMat = mat(0xf59e0b, 0.45, 0.35);
+    [-1, 1].forEach(function (sz) { box(0.36, 0.022, 0.012, railMat, intake, 0.96 - 0.03, DECK_Y + 0.011, sz * 0.092); });
+    box(0.012, 0.022, 0.20, railMat, intake, 0.96 - 0.215, DECK_Y + 0.011, 0);
     buildAirlock(baseGroup, deckLift);
 
     crane = buildCrane(baseGroup);
@@ -196,13 +219,47 @@
     skirt.position.set(0.05, 0.78, 0);
     wall.add(skirt);
     box(0.55, 0.015, 0.55, mat(0x334155, 0.7, 0.2), wall, 0.42, 0.02, 0);
+    buildReceivingDoor(wall, opening, sillH, headerH, wallH);
     parent.add(wall);
+    markCourse();
+  }
+
+  function ringMarker(parent, x, z, radius, color, y) {
+    var ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius - 0.12, radius, 40),
+      new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, (y || 0.04), z);
+    parent.add(ring);
+    return ring;
+  }
+
+  function markCourse() {
+    var course = new THREE.Group();
+    course.name = 'p2Course';
+    scene.add(course);
+    var padY = getH(PAD.x, PAD.z) + 0.05;
+    ringMarker(course, PAD.x, PAD.z, 6.5, 0xf97316, padY);
+    var stage = { x: 10, z: -28 };
+    var stageY = getH(stage.x, stage.z) + 0.05;
+    ringMarker(course, stage.x, stage.z, 2.2, 0x22d3ee, stageY);
+    var pad = new THREE.Mesh(
+      new THREE.CircleGeometry(1.6, 24),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.28, side: THREE.DoubleSide })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.set(stage.x, stageY + 0.01, stage.z);
+    course.add(pad);
   }
 
   function bumperGap() {
     if (!roverGroup || !window.AIRLOCK_FACE || typeof roverYaw === 'undefined') return null;
-    var fx = roverGroup.position.x + Math.cos(roverYaw) * 0.45;
-    var fz = roverGroup.position.z + Math.sin(roverYaw) * 0.45;
+    var nose = 0.32;
+    var chassis = window.NASA_RoverBOM && NASA_RoverBOM.byId && NASA_RoverBOM.byId('chassis');
+    if (chassis && chassis.size) nose = chassis.size[0] * 0.5 + 0.02;
+    var fx = roverGroup.position.x + Math.cos(roverYaw) * nose;
+    var fz = roverGroup.position.z - Math.sin(roverYaw) * nose;
     return Math.hypot(fx - window.AIRLOCK_FACE.x, fz - window.AIRLOCK_FACE.z);
   }
 
@@ -312,6 +369,7 @@
     readyLight.position.set(0.32, DECK_Y + 0.12, -0.05);
     rackGroup.add(readyLight);
     rackGroup.userData.deckLen = deckLen;
+    buildPickupBay();
 
     haulerGroup = new THREE.Group();
     haulerGroup.position.set(PAD.x + 7.2, getH(PAD.x + 7.2, PAD.z + 2), PAD.z + 2.2);
@@ -330,36 +388,262 @@
     scene.add(plume);
   }
 
+  // Canvas sign texture for bay signage (decal on walls)
+  function signTex(lines, bg, fg) {
+    var cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 128;
+    var c = cv.getContext('2d');
+    c.fillStyle = bg; c.fillRect(0, 0, 512, 128);
+    c.strokeStyle = fg; c.lineWidth = 6; c.strokeRect(6, 6, 500, 116);
+    c.fillStyle = fg;
+    c.font = '800 34px ui-monospace, monospace';
+    c.fillText(lines[0], 22, 56);
+    c.font = '600 22px ui-monospace, monospace';
+    c.fillText(lines[1], 22, 98);
+    return new THREE.CanvasTexture(cv);
+  }
+
+  // Rolling shutter door: pos 0 = closed, 1 = fully raised. Eased travel, lamp shows state.
+  function makeDoor(shutter, lamp, closedY, travel) {
+    return { shutter: shutter, lamp: lamp, closedY: closedY, travel: travel, pos: 0, target: 0 };
+  }
+
+  function stepDoor(door, dt) {
+    if (!door) return;
+    var step = (dt / 1.6) * 1.0;   // full travel in about 1.6 s
+    if (door.pos < door.target) door.pos = Math.min(door.target, door.pos + step);
+    else if (door.pos > door.target) door.pos = Math.max(door.target, door.pos - step);
+    door.shutter.position.y = door.closedY + door.travel * quintic(door.pos);
+    var moving = door.pos > 0.001 && door.pos < 0.999;
+    var col = moving ? 0xf59e0b : (door.pos >= 0.999 ? 0x22c55e : 0xef4444);
+    door.lamp.material.color.setHex(col);
+    door.lamp.material.emissive.setHex(col);
+  }
+
+  function doorReady(door) {
+    return !!door && door.pos >= 0.999;
+  }
+
+  function updateDoors(dt) {
+    var pickWanted = phase === 'align_pick' || phase === 'arm_pick' || armMode === 'pick' || trayP > 0.001;
+    var dropWanted = phase === 'align_drop' || phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place';
+    if (pickupDoor) pickupDoor.target = pickWanted ? 1 : 0;
+    if (dropDoor) dropDoor.target = dropWanted ? 1 : 0;
+    stepDoor(pickupDoor, dt);
+    stepDoor(dropDoor, dt);
+  }
+
+  // Pickup station: the lander rack becomes a closed bay. Pods sit inside on the rollers;
+  // a rolling shutter on the rover side opens before the arm reaches in, closes after the pick.
+  function buildPickupBay() {
+    var deckLen = rackGroup.userData.deckLen;
+    var backZ = -deckLen - 0.12;
+    var frontZ = 0.05;
+    var H = 1.0;
+    var ap = 0.36, apBot = 0.20, apTop = 0.92;
+    var wallMat = mat(0xcbd5e1, 0.55, 0.35);
+    var trimMat = mat(0x1e40af, 0.45, 0.35);
+    var hazMat = mat(0xf59e0b, 0.45, 0.3);
+    var bayGroup = new THREE.Group();
+    bayGroup.name = 'pickupBay';
+    rackGroup.add(bayGroup);
+    var depth = frontZ - backZ;
+    var midZ = (frontZ + backZ) * 0.5;
+
+    box(1.0, H, 0.06, wallMat, bayGroup, 0, H * 0.5, backZ);
+    [-0.5, 0.5].forEach(function (x) { box(0.06, H, depth, wallMat, bayGroup, x, H * 0.5, midZ); });
+    box(1.0, 0.04, depth, wallMat, bayGroup, 0, H + 0.02, midZ);
+    box(0.5 - ap, H, 0.06, wallMat, bayGroup, -(ap + (0.5 - ap) * 0.5), H * 0.5, frontZ);
+    box(0.5 - ap, H, 0.06, wallMat, bayGroup, ap + (0.5 - ap) * 0.5, H * 0.5, frontZ);
+    box(ap * 2, H - apTop, 0.06, wallMat, bayGroup, 0, (H + apTop) * 0.5, frontZ);
+    box(ap * 2, apBot, 0.06, wallMat, bayGroup, 0, apBot * 0.5, frontZ);
+    // blue trim and hazard sill
+    [-1, 1].forEach(function (sx) {
+      box(0.012, 0.07, depth + 0.2, trimMat, bayGroup, sx * 0.53, 0.14, midZ);
+    });
+    box(ap * 2, 0.025, 0.02, hazMat, bayGroup, 0, apBot + 0.012, frontZ + 0.035);
+
+    var sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.6, 0.15),
+      new THREE.MeshStandardMaterial({ map: signTex(['PICKUP BAY 01', 'LANDER CARGO RACK'], '#0f172a', '#f8fafc'), roughness: 0.6 })
+    );
+    sign.position.set(0, 0.1, frontZ + 0.034);
+    bayGroup.add(sign);
+
+    // Rolling shutter with slats, guides and a housing above the header
+    var shutterH = apTop - apBot + 0.02;
+    var shutter = new THREE.Group();
+    var panel = new THREE.Mesh(new THREE.BoxGeometry(ap * 2 - 0.01, shutterH, 0.014), mat(0x94a3b8, 0.4, 0.7));
+    panel.castShadow = true;
+    shutter.add(panel);
+    for (var sl = 0; sl < 9; sl++) {
+      var slat = new THREE.Mesh(new THREE.BoxGeometry(ap * 2 - 0.01, 0.004, 0.018), mat(0x64748b, 0.5, 0.6));
+      slat.position.set(0, -shutterH * 0.5 + 0.05 + sl * (shutterH - 0.1) / 8, 0.004);
+      shutter.add(slat);
+    }
+    var shutterZ = frontZ + 0.035;
+    shutter.position.set(0, (apBot + apTop) * 0.5, shutterZ);
+    bayGroup.add(shutter);
+    [-1, 1].forEach(function (sx) {
+      box(0.02, 1.9, 0.03, trimMat, bayGroup, sx * (ap + 0.012), 1.0, shutterZ);
+    });
+    box(ap * 2 + 0.1, 0.12, 0.12, wallMat, bayGroup, 0, 1.98, shutterZ);
+    var lamp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.01), mat(0xef4444, 0.3, 0.2, 0xef4444));
+    lamp.position.set(0.36, H - 0.02, frontZ + 0.034);
+    bayGroup.add(lamp);
+
+    // Raised position clears the header and sits just under the housing (top at y = 1.92)
+    var closedY = (apBot + apTop) * 0.5;
+    var travel = (1.92 - shutterH) - closedY;
+    pickupDoor = makeDoor(shutter, lamp, closedY, travel);
+
+    // Presentation tray: carries the first pod out through the open shutter so it sits clear of the
+    // rover nose, then pulls back in after the pick. The rover never has to enter the bay.
+    var trayMat = mat(0x475569, 0.5, 0.6);
+    pickTray = new THREE.Group();
+    pickTray.name = 'pickupTray';
+    box(0.36, 0.018, 0.22, trayMat, pickTray, 0, 0, 0);
+    [-1, 1].forEach(function (sx) { box(0.012, 0.03, 0.22, hazMat, pickTray, sx * 0.186, 0.012, 0); });
+    box(0.36, 0.03, 0.012, hazMat, pickTray, 0, 0.012, 0.116);
+    rackGroup.add(pickTray);
+    pickTray.position.set(0, DECK_Y + 0.02 - 0.0095, beltTargetZ(0));
+  }
+
+  // Drop-off station: receiving shutter across the habitat airlock opening, with its own
+  // signage and status lamp. The intake table behind it is the receiving tray.
+  function buildReceivingDoor(wall, opening, sillH, headerH, wallH) {
+    var shutterH = wallH - headerH - sillH + 0.02;
+    var closedY = sillH + (wallH - headerH - sillH) * 0.5;
+    var x = 0.06;
+    var shutter = new THREE.Group();
+    var panel = new THREE.Mesh(new THREE.BoxGeometry(0.012, shutterH, opening + 0.02), mat(0x94a3b8, 0.4, 0.7));
+    panel.castShadow = true;
+    shutter.add(panel);
+    for (var sl = 0; sl < 8; sl++) {
+      var slat = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.004, opening + 0.02), mat(0x64748b, 0.5, 0.6));
+      slat.position.set(0.004, -shutterH * 0.5 + 0.05 + sl * (shutterH - 0.1) / 7, 0);
+      shutter.add(slat);
+    }
+    shutter.position.set(x, closedY, 0);
+    wall.add(shutter);
+    [-1, 1].forEach(function (sz) {
+      box(0.03, shutterH + 0.04, 0.02, mat(0x0f172a, 0.45, 0.7), wall, x, closedY, sz * (opening * 0.5 + 0.01));
+    });
+    box(0.14, 0.12, opening + 0.1, mat(0xcbd5e1, 0.55, 0.35), wall, x, wallH + 0.04, 0);
+    var sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.7, 0.16),
+      new THREE.MeshStandardMaterial({ map: signTex(['DROP-OFF BAY 01', 'RECEIVING · HABITAT'], '#0f172a', '#fbbf24'), roughness: 0.6 })
+    );
+    sign.rotation.y = Math.PI / 2;
+    sign.position.set(x + 0.02, closedY + 0.05, -(opening * 0.5 + 0.52));
+    wall.add(sign);
+    var lamp = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.05, 0.05), mat(0xef4444, 0.3, 0.2, 0xef4444));
+    lamp.position.set(x + 0.02, wallH - headerH * 0.5, opening * 0.5 + 0.06);
+    wall.add(lamp);
+    var travel = (wallH + 0.1) - (closedY + shutterH * 0.5) - 0.02;
+    dropDoor = makeDoor(shutter, lamp, closedY, travel);
+  }
+
   function parcelColor(day) {
     var colors = [0xf97316, 0x22c55e, 0x38bdf8, 0xeab308, 0xa78bfa, 0xf43f5e];
     return colors[(day || 1) % colors.length];
   }
 
+  var labelCache = {};
+  function podLabelTex(rec) {
+    var key = String(rec.id) + '|' + String(rec.mass_kg) + '|' + String(rec.day_number);
+    if (labelCache[key]) return labelCache[key];
+    var cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 192;
+    var c = cv.getContext('2d');
+    c.fillStyle = '#e2e8f0'; c.fillRect(0, 0, 512, 192);
+    c.fillStyle = '#1e3a8a'; c.fillRect(0, 0, 512, 46);
+    c.fillStyle = '#f8fafc'; c.font = '700 22px ui-monospace, monospace';
+    c.fillText('LLASO · LUNAR CARGO POD', 14, 32);
+    c.fillStyle = '#0f172a'; c.font = '700 40px ui-monospace, monospace';
+    c.fillText(String(rec.id || 'POD').slice(0, 14), 14, 102);
+    c.fillStyle = '#334155'; c.font = '600 20px ui-monospace, monospace';
+    c.fillText(String(rec.source_item || '').slice(0, 30), 14, 136);
+    var kg = Number(rec.mass_kg || 0);
+    c.fillText('DAY ' + (rec.day_number || '-') + ' · ' + (kg / 0.45359237).toFixed(1) + ' lb · ' + kg.toFixed(2) + ' kg · ' + (kg * G_MOON).toFixed(1) + ' N', 14, 166);
+    c.fillStyle = '#f59e0b';
+    for (var x = 384; x < 512; x += 26) {
+      c.beginPath(); c.moveTo(x, 150); c.lineTo(x + 12, 150); c.lineTo(x + 26, 192); c.lineTo(x + 14, 192); c.closePath(); c.fill();
+    }
+    var tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    labelCache[key] = tex;
+    return tex;
+  }
+
+  // Sealed lunar cargo pod: thermal-white shell, gold MLI top blanket, NASA-blue band,
+  // regolith-dusted base, aluminium end caps, status LED, lifting bail over the grasp point.
   function makeParcelMesh(rec) {
     var pod = window.NASA_RoverBOM && NASA_RoverBOM.pod;
     var d = pod ? [pod.lengthM, pod.widthM, pod.heightM] : (rec.dim_m || [0.43, 0.25, 0.25]);
-    var h = d[2];
-    var mesh = new THREE.Mesh(new THREE.BoxGeometry(d[0], h, d[1]), mat(parcelColor(rec.day_number), 0.78, 0.08));
-    mesh.castShadow = true;
-    mesh.userData.rec = rec;
-    mesh.userData.h = h;
-    var stripe = new THREE.Mesh(new THREE.BoxGeometry(d[0] * 0.92, 0.015, 0.035), mat(0x111827, 0.5, 0.2));
-    stripe.position.y = h * 0.2;
-    mesh.add(stripe);
+    var L = d[0], W = d[1], h = d[2];
+    var root = new THREE.Group();
+    root.userData.rec = rec;
+    root.userData.h = h;
+
+    var shellGeo = THREE.RoundedBoxGeometry ? new THREE.RoundedBoxGeometry(L, h, W, 3, 0.012) : new THREE.BoxGeometry(L, h, W);
+    var shell = new THREE.Mesh(shellGeo, mat(0xe2e8f0, 0.5, 0.22));
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    root.add(shell);
+
+    var mli = new THREE.Mesh(new THREE.BoxGeometry(L * 0.9, 0.004, W * 0.9), mat(0xc9a14a, 0.32, 0.85));
+    mli.position.y = h * 0.5 + 0.002;
+    root.add(mli);
+
+    var dust = new THREE.Mesh(new THREE.BoxGeometry(L * 1.01, 0.01, W * 1.01), mat(0x6b645c, 0.98, 0.02));
+    dust.position.y = -h * 0.5 - 0.001;
+    root.add(dust);
+
+    var bandMat = mat(0x1d4ed8, 0.5, 0.3);
+    [-1, 1].forEach(function (sz) {
+      var band = new THREE.Mesh(new THREE.BoxGeometry(L * 0.96, h * 0.12, 0.003), bandMat);
+      band.position.set(0, -h * 0.3, sz * (W * 0.5 + 0.0015));
+      root.add(band);
+    });
+
+    var tex = podLabelTex(rec);
+    [1, -1].forEach(function (sz) {
+      var lab = new THREE.Mesh(
+        new THREE.PlaneGeometry(L * 0.66, h * 0.62),
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.05 })
+      );
+      lab.position.set(0, h * 0.06, sz * (W * 0.5 + 0.004));
+      if (sz < 0) lab.rotation.y = Math.PI;
+      root.add(lab);
+    });
+
+    var capMat = mat(0x334155, 0.4, 0.8);
+    [-1, 1].forEach(function (sx) {
+      var cap = new THREE.Mesh(new THREE.BoxGeometry(0.004, h * 0.9, W * 0.9), capMat);
+      cap.position.set(sx * (L * 0.5 + 0.002), 0, 0);
+      root.add(cap);
+    });
+    var led = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 10, 8), mat(0x22c55e, 0.3, 0.2, 0x16a34a));
+    led.position.set(L * 0.5 + 0.006, h * 0.22, 0);
+    root.add(led);
+
     var postMat = mat(0x1f2937, 0.45, 0.4);
     [-0.06, 0.06].forEach(function (x) {
-      var post = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.04, 0.015), postMat);
+      var post = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.04, 8), postMat);
       post.position.set(x, h * 0.5 + 0.02, 0);
-      mesh.add(post);
+      root.add(post);
     });
-    var bar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.016, 0.016), postMat);
-    bar.position.set(0, h * 0.5 + 0.038, 0);
-    mesh.add(bar);
+    var bail = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.14, 10), postMat);
+    bail.rotation.z = Math.PI / 2;
+    bail.position.set(0, h * 0.5 + 0.045, 0);
+    root.add(bail);
+
     var grasp = new THREE.Object3D();
-    grasp.position.set(0, h * 0.5 + 0.038, 0);
-    mesh.add(grasp);
-    mesh.userData.grasp = grasp;
-    return mesh;
+    grasp.position.set(0, h * 0.5 + 0.045, 0);
+    root.add(grasp);
+    root.userData.grasp = grasp;
+    return root;
   }
 
   function halfH(mesh) {
@@ -594,7 +878,7 @@
     var grip = gripGap();
     var carried = heldMass();
     // Heavier cargo → gentler arm motion to avoid oscillation
-    var massRatio = carried > 0 ? Math.min(1, carried / 8) : 0;
+    var massRatio = carried > 0 ? Math.min(1, carried / CARGO_KG) : 0;
     var speed = JOINT_SPEED * (1.0 - 0.4 * massRatio);
     var segs = [];
     var missed = false;
@@ -607,7 +891,7 @@
       if (w.stow) {
         nextYaw = 0.0;
         nextSh = 1.15;
-        nextEl = -2.15;
+        nextEl = -2.45;
       } else if (w.local) {
         var ik;
         if (w.tipIk !== false) {
@@ -635,7 +919,7 @@
         sh0: sh, sh1: nextSh,
         el0: el, el1: nextEl,
         g0: grip, g1: nextGrip,
-        dur: dur,
+        dur: Math.max(0.14, dur * ARM_TIME),
         tag: w.tag || '',
         retargetGrasp: !!w.retargetGrasp,
         retargetPre: !!w.retargetPre,
@@ -805,7 +1089,13 @@
   }
 
   function beltSettled(mesh) {
-    return mesh && (mesh.userData.beltT >= mesh.userData.beltDur - 1e-3 || Math.abs(mesh.position.z - beltTargetZ(0)) < 0.06);
+    if (!mesh) return false;
+    var off = mesh.userData.onTray ? PRESENT_EXT * quintic(trayP) : 0;
+    return mesh.userData.beltT >= mesh.userData.beltDur - 1e-3 || Math.abs(mesh.position.z - off - beltTargetZ(0)) < 0.06;
+  }
+
+  function trayPresented() {
+    return belt.length > 0 && !!belt[0].userData.onTray && trayP >= 0.999;
   }
 
   function beltReady() {
@@ -835,9 +1125,22 @@
       } else {
         mesh.position.z = target;
       }
+      if (mesh.userData.onTray) mesh.position.z += PRESENT_EXT * quintic(trayP);
       mesh.position.y = DECK_Y + halfH(mesh) + 0.02;
       watchJump(mesh, dt);
     }
+    // Tray: runs out only while the arm wants a pod and the shutter is fully up
+    var wantPresent = phase === 'arm_pick' && doorReady(pickupDoor) && beltReady();
+    if (wantPresent && belt[0] && !belt[0].userData.onTray && trayP <= 0.001) belt[0].userData.onTray = true;
+    var loaded0 = belt.length > 0 && !!belt[0].userData.onTray;
+    var goalP = (wantPresent && loaded0) ? 1 : 0;
+    var stepP = dt / 1.5;
+    trayP += Math.max(-stepP, Math.min(stepP, goalP - trayP));
+    if (goalP === 0 && trayP <= 0.001) {
+      trayP = 0;
+      for (var bq = 0; bq < belt.length; bq++) belt[bq].userData.onTray = false;
+    }
+    if (pickTray) pickTray.position.z = beltTargetZ(0) + PRESENT_EXT * quintic(trayP);
     for (var r = 0; r < rollers.length; r++) {
       if (moving) rollers[r].rotation.x += dt * 5.5;
     }
@@ -845,6 +1148,7 @@
   }
 
   function dropFromQueue(mesh) {
+    mesh.userData.onTray = false;
     var rec = mesh.userData.rec;
     var qi = queue.indexOf(rec);
     if (qi >= 0) queue.splice(qi, 1);
@@ -854,22 +1158,22 @@
 
   function nudgeCloser() {
     if (phase === 'arm_pick' || armMode === 'pick') {
-      if (parkGap.pick > 0.16) parkGap.pick -= 0.05;
+      if (parkGap.pick > CLEAR_MARGIN + 0.005) parkGap.pick = Math.max(CLEAR_MARGIN + 0.005, parkGap.pick - 0.01);
       phase = 'align_pick';
     } else {
-      if (parkGap.drop > 0.16) parkGap.drop -= 0.05;
+      if (parkGap.drop > CLEAR_MARGIN + 0.005) parkGap.drop = Math.max(CLEAR_MARGIN + 0.005, parkGap.drop - 0.01);
       phase = 'align_drop';
     }
     traj = null;
     armMode = null;
     if (!reachWarned) {
       reachWarned = true;
-      log('<span class="text-amber-300">[ARM] Target outside the 0.45 m reach. Easing 5 cm closer.</span>');
+      log('<span class="text-amber-300">[ARM] Target outside the arm reach. Easing 1 cm closer.</span>');
     }
   }
 
   function startPickSequence() {
-    if (!beltReady()) return;
+    if (!beltReady() || !trayPresented()) return;
     ensureTip();
     var mesh = belt[0];
     var graspTip = worldTarget(mesh.userData.grasp);
@@ -883,23 +1187,29 @@
     var slots = window.cargoBaySlots || [];
     var slot = slots[bay.length] || slots[0];
     var seat = worldTarget(slot);
-    seat.y += mesh.userData.h + 0.01;
+    // Grasp point rides h/2 + 4.5 cm above the pod centre; stop 4 mm short of the cradle floor.
+    seat.y += mesh.userData.h * 0.5 + 0.045 + 0.004;
     var raised = seat.clone();
     raised.y += 0.14;
+    var nearSeat = seat.clone();
+    nearSeat.y += 0.03;
     // Arc mid-point: smooth parabolic transit avoids clipping rover shell
     var mid = new THREE.Vector3().addVectors(lift, raised).multiplyScalar(0.5);
     mid.y = Math.max(lift.y, raised.y) + 0.12;
     // Approach pre-grasp, then descend, close, lift with gentle arc, seat, release
     window.__pickReach = +Math.hypot(graspTip.x, graspTip.y, graspTip.z).toFixed(3);
     buildTraj([
-      { local: pre, grip: GRIP_OPEN, dur: 0.55, retargetGrasp: true, retargetPre: true },
-      { local: graspTip, grip: GRIP_OPEN, dur: 0.45, retargetGrasp: true },
-      { grip: GRIP_CLOSED, dur: 0.4, tag: 'close' },
-      { local: lift, grip: GRIP_CLOSED, dur: 0.5 },
+      { local: pre, grip: GRIP_OPEN, dur: 0.6, retargetGrasp: true, retargetPre: true },
+      { local: graspTip, grip: GRIP_OPEN, dur: 0.5, retargetGrasp: true },
+      { local: graspTip, grip: GRIP_OPEN, dur: 0.3, retargetGrasp: true },
+      { grip: GRIP_CLOSED, dur: 0.5, tag: 'close' },
+      { local: lift, grip: GRIP_CLOSED, dur: 0.6 },
       { local: mid, grip: GRIP_CLOSED },
       { local: raised, grip: GRIP_CLOSED },
-      { local: seat, grip: GRIP_CLOSED, dur: 0.5, tag: 'seat' },
-      { grip: GRIP_OPEN, dur: 0.4, tag: 'openBay' },
+      { local: nearSeat, grip: GRIP_CLOSED, dur: 0.55 },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat' },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.25 },
+      { grip: GRIP_OPEN, dur: 0.5, tag: 'openBay' },
       { local: raised, grip: GRIP_OPEN, dur: 0.35 },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPick' },
     ]);
@@ -921,10 +1231,12 @@
     var grasp = worldTarget(mesh.userData.grasp);
     var tableWp = new THREE.Vector3();
     tableAnchor.getWorldPosition(tableWp);
-    tableWp.y += mesh.userData.h + 0.04;
+    tableWp.y += mesh.userData.h + 0.045 + 0.004;   // grasp point when the pod touches down, plus 4 mm
     var place = armFrameLocal(tableWp);
     var placeUp = place.clone();
     placeUp.y += 0.14;
+    var placeNear = place.clone();
+    placeNear.y += 0.03;
     window.__armWhy = {
       g: solveArm(grasp).reachable,
       p: solveArm(place).reachable,
@@ -951,8 +1263,10 @@
       { local: pre, grip: GRIP_CLOSED, dur: 0.4 },
       { local: mid, grip: GRIP_CLOSED },
       { local: placeUp, grip: GRIP_CLOSED },
-      { local: place, grip: GRIP_CLOSED, dur: 0.6, tag: 'seat' },
-      { grip: GRIP_OPEN, dur: 0.4, tag: 'openTable' },
+      { local: placeNear, grip: GRIP_CLOSED, dur: 0.55 },
+      { local: place, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat' },
+      { local: place, grip: GRIP_CLOSED, dur: 0.25 },
+      { grip: GRIP_OPEN, dur: 0.5, tag: 'openTable' },
       { local: placeUp, grip: GRIP_OPEN, dur: 0.35 },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPlace' },
     ]);
@@ -988,6 +1302,48 @@
     mW.add(tipW).sub(gW);
     gr.worldToLocal(mW);
     mesh.position.copy(mW);
+  }
+
+  // Releases a pod onto a seat. It falls the last few mm under lunar gravity and the guide rails
+  // walk it into the slot over about half a second. No instant snap.
+  function releaseOn(parent, mesh, y) {
+    if (!parent || !mesh) return;
+    hideTies(mesh);
+    parent.attach(mesh);
+    mesh.userData.settling = true;
+    settling.push({
+      mesh: mesh, parent: parent, y: y || 0, t: 0, v: 0, yy: mesh.position.y,
+      p0: mesh.position.clone(), q0: mesh.quaternion.clone(),
+      dur: 0.55 + Math.min(0.5, Math.hypot(mesh.position.x, mesh.position.z) * 6)
+    });
+  }
+
+  function stepSettling(dt) {
+    for (var i = settling.length - 1; i >= 0; i--) {
+      var s = settling[i];
+      s.t += dt;
+      var a = Math.min(1, s.t / s.dur);
+      a = a * a * (3 - 2 * a);
+      s.v += G_MOON * dt;
+      s.yy -= s.v * dt;
+      var grounded = false;
+      if (s.yy <= s.y) {
+        s.yy = s.y;
+        grounded = true;
+        s.v = 0;
+      }
+      s.mesh.position.set(s.p0.x * (1 - a), s.yy, s.p0.z * (1 - a));
+      s.mesh.quaternion.copy(s.q0).slerp(_qId, a);
+      if (s.t >= s.dur && grounded) {
+        s.mesh.position.set(0, s.y, 0);
+        s.mesh.quaternion.identity();
+        s.mesh.userData.settling = false;
+        if (s.parent.userData && s.parent.userData.ties) {
+          s.parent.userData.ties.forEach(function (t) { t.visible = true; });
+        }
+        settling.splice(i, 1);
+      }
+    }
   }
 
   function seatFlat(parent, mesh, y) {
@@ -1066,7 +1422,7 @@
     } else if (tag === 'openBay' && held) {
       var slots = window.cargoBaySlots || [];
       var slot = slots[bay.length] || slots[0];
-      seatFlat(slot, held, 0);
+      releaseOn(slot, held, 0);
       bay.push(held);
       if (typeof window.noteCargoSeat === 'function') window.noteCargoSeat(held.userData.rec.mass_kg);
       log('<span class="text-emerald-300 font-bold">[ARM] Stowed ' + held.userData.rec.id + ' (' + held.userData.rec.mass_kg.toFixed(1) + ' kg, ' + (held.userData.rec.mass_kg * G_MOON).toFixed(1) + ' N lunar).</span>');
@@ -1080,7 +1436,7 @@
         held.getWorldPosition(now);
         missionStats.placementErrM = Math.hypot(now.x - target.x, now.y - target.y, now.z - target.z);
       }
-      seatFlat(tableAnchor, held, halfH(held));
+      releaseOn(tableAnchor, held, halfH(held));
       tableParcel = held;
       missionStats.parcelsDelivered += 1;
       missionStats.totalMassKg += held.userData.rec.mass_kg;
@@ -1106,7 +1462,7 @@
     setJoints(
       yaw + wrap(targetYaw - yaw) * Math.min(1, 2.2 * dt),
       arm.shoulder.rotation.z + (1.15 - arm.shoulder.rotation.z) * Math.min(1, 2.2 * dt),
-      arm.elbow.rotation.z + (-2.15 - arm.elbow.rotation.z) * Math.min(1, 2.2 * dt),
+      arm.elbow.rotation.z + (-2.45 - arm.elbow.rotation.z) * Math.min(1, 2.2 * dt),
       gripGap() + (GRIP_OPEN - gripGap()) * Math.min(1, 3 * dt)
     );
   }
@@ -1114,7 +1470,7 @@
   function applyCompliance(dt) {
     var arm = window.roverArm;
     if (!arm) return;
-    var tilt = held ? -0.035 * Math.min(1, heldMass() / 5) : 0;
+    var tilt = held ? -0.035 * Math.min(1, heldMass() / CARGO_KG) : 0;
     arm.base.rotation.x += (tilt - arm.base.rotation.x) * Math.min(1, 2.5 * dt);
   }
 
@@ -1138,8 +1494,8 @@
   function tickArm(dt) {
     ensureTip();
     if (!traj) {
-      if (phase === 'arm_pick') startPickSequence();
-      else if (phase === 'arm_place') startPlaceSequence();
+      if (phase === 'arm_pick' && doorReady(pickupDoor) && trayPresented()) startPickSequence();
+      else if (phase === 'arm_place' && doorReady(dropDoor)) startPlaceSequence();
     }
     if (traj) {
       var done = playTraj(dt);
@@ -1162,7 +1518,7 @@
   function startCraneJob() {
     if (!crane || crane.job || !crane.queue.length || !tableParcel) return;
     var mesh = crane.queue[0];
-    if (mesh !== tableParcel) return;
+    if (mesh !== tableParcel || mesh.userData.settling) return;
     var slotIndex = depot.length;
     if (slotIndex >= DEPOT_SLOTS || !depotAnchors[slotIndex]) {
       log('<span class="text-amber-300">[DEPOT] Shelves are full. The stacker is holding.</span>');
@@ -1242,7 +1598,7 @@
 
   function socLow() {
     if (typeof roverWh === 'undefined' || typeof MAXWH === 'undefined') return false;
-    return roverWh / MAXWH < 0.18;
+    return roverWh / MAXWH < 0.18 || chargeAfterCurrent;
   }
 
   function afterPick() {
@@ -1295,13 +1651,19 @@
   }
 
   function finishOrHangar() {
+    var lowNow = socLow();
+    if (lowNow) {
+      window.__autoChargeSession = window.__autoChargeSession || {};
+      window.__autoChargeSession.active = true;
+    }
+    chargeAfterCurrent = false;
     phase = 'rth';
     missionArmed = false;
     // Record energy consumed
     if (typeof roverWh !== 'undefined' && typeof MAXWH !== 'undefined') {
       missionStats.kwhUsed = +(MAXWH - roverWh).toFixed(1);
     }
-    if (socLow()) {
+    if (lowNow) {
       log('<span class="text-amber-300">[LOGISTICS] Battery low. Returning to the hangar.</span>');
     } else if (!queue.length) {
       log('<span class="text-emerald-400 font-bold">[LOGISTICS] ✅ MISSION COMPLETE — All rover parcels delivered to Artemis Base.</span>');
@@ -1421,9 +1783,126 @@
     plume.geometry.attributes.position.needsUpdate = true;
   }
 
+  function m1CheckoutCmd() {
+    var t = m1 ? m1.t : 0;
+    if (t < 1.2) return { steer: 0, throttle: 0.45, forward: true, reverse: false, brake: false };
+    if (t < 1.8) return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
+    if (t < 3.0) return { steer: 0.9, throttle: 0.25, forward: true, reverse: false, brake: false };
+    if (t < 4.2) return { steer: 0, throttle: -0.4, forward: false, reverse: true, brake: false };
+    return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
+  }
+
+  function sampleM1() {
+    if (!m1 || !roverGroup) return;
+    var v = (typeof vel === 'number') ? vel : 0;
+    var yaw = (typeof roverYaw === 'number') ? roverYaw : m1.yaw0;
+    if (Math.abs(v) > 0.12) m1.moved = true;
+    if (m1.moved && Math.abs(v) < 0.04) m1.stopped = true;
+    var dy = yaw - m1.yaw0;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    if (Math.abs(dy) > 0.35) m1.turned = true;
+    if (v < -0.06) m1.reversed = true;
+    var dPad = Math.hypot(roverGroup.position.x - PAD.x, roverGroup.position.z - PAD.z);
+    if (dPad < 3.2 && Math.abs(v) > 0.15) m1.struck = true;
+  }
+
+  function m1Report() {
+    if (!m1 || m1.reported) return;
+    m1.reported = true;
+    var rows = [
+      ['Start', m1.moved],
+      ['Stop', m1.stopped],
+      ['Turn', m1.turned],
+      ['Reverse', m1.reversed],
+      ['Clear of lander', !m1.struck]
+    ];
+    var pass = rows.every(function (r) { return r[1]; });
+    log('<span class="' + (pass ? 'text-emerald-300' : 'text-amber-300') + ' font-bold">[MISSION 1] ' + (pass ? 'PASS' : 'INCOMPLETE') + ' — ' + rows.map(function (r) { return r[0] + ' ' + (r[1] ? 'yes' : 'no'); }).join(', ') + '.</span>');
+  }
+
+  // Hard stand-off: the rover footprint may not enter the pickup bay or the airlock wall.
+  function enforceClearance() {
+    if (typeof roverGroup === 'undefined' || !roverGroup || typeof roverYaw === 'undefined') return;
+    var px = roverGroup.position.x, pz = roverGroup.position.z;
+    var c = Math.cos(roverYaw), sn = Math.sin(roverYaw);
+    var minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+    for (var i = 0; i < 4; i++) {
+      var lx = (i & 1) ? ROVER_HL : -ROVER_HL, lz = (i & 2) ? ROVER_HW : -ROVER_HW;
+      var wx = px + lx * c + lz * sn, wz = pz - lx * sn + lz * c;
+      if (wx < minX) minX = wx; if (wx > maxX) maxX = wx;
+      if (wz < minZ) minZ = wz; if (wz > maxZ) maxZ = wz;
+    }
+    var pushed = 0;
+    // pickup bay (shutter face looks toward +z)
+    var deckLen = (rackGroup && rackGroup.userData.deckLen) || 2.5;
+    var bx0 = RACK.x - 0.56, bx1 = RACK.x + 0.56, bz0 = RACK.z - deckLen - 0.3, bz1 = PICK_FACE_Z + CLEAR_MARGIN;
+    if (maxX > bx0 && minX < bx1 && maxZ > bz0 && minZ < bz1) {
+      pushed = bz1 - minZ;
+      roverGroup.position.z += pushed;
+    }
+    // airlock wall (face looks toward +x)
+    var wx0 = DROP_FACE_X - 3, wx1 = DROP_FACE_X + CLEAR_MARGIN, wz0 = INTAKE.z - 1.15, wz1 = INTAKE.z + 1.15;
+    if (maxZ > wz0 && minZ < wz1 && maxX > wx0 && minX < wx1) {
+      pushed = wx1 - minX;
+      roverGroup.position.x += pushed;
+    }
+    if (pushed > 0.0005 && typeof vel !== 'undefined' && vel > 0) vel = 0;
+    window.__clearancePush = pushed;
+  }
+
+  function cargoPoints() {
+    var out = [];
+    if (typeof roverGroup === 'undefined' || !roverGroup) return out;
+    var wp = new THREE.Vector3();
+    function add(mesh) {
+      mesh.getWorldPosition(wp);
+      roverGroup.worldToLocal(wp);
+      out.push({ kg: mesh.userData.rec.mass_kg, x: wp.x, y: wp.y, z: wp.z });
+    }
+    for (var i = 0; i < bay.length; i++) add(bay[i]);
+    if (held && bay.indexOf(held) < 0) add(held);
+    return out;
+  }
+
+  function needsRuns() {
+    var shelfRoom = depot.length + (crane ? crane.queue.length : 0) < DEPOT_SLOTS;
+    return bay.length > 0 || (queue.length > 0 && shelfRoom);
+  }
+
   var api = {
     phase: function () { return phase; },
+    cargoPoints: cargoPoints,
+    needsRuns: needsRuns,
+    // Called by the power supervisor. Returns true when logistics will bring the rover home itself.
+    requestCharge: function (critical) {
+      if (phase === 'arm_pick' || phase === 'arm_place' || phase === 'align_pick' || phase === 'align_drop' || phase === 'crane_wait') {
+        chargeAfterCurrent = true;
+        log('<span class="text-amber-300">[POWER] Low battery. Finishing this handover, then heading to the dock.</span>');
+        return true;
+      }
+      if (phase === 'transit_base' && bay.length && !critical) {
+        chargeAfterCurrent = true;
+        log('<span class="text-amber-300">[POWER] Low battery with cargo aboard. Delivering first, then charging.</span>');
+        return true;
+      }
+      if (phase === 'transit_lander' || phase === 'transit_base' || phase === 'transit_stage') {
+        phase = 'rth';
+        missionArmed = false;
+        if (typeof globalGoal !== 'undefined') globalGoal = null;
+        if (typeof waypoint !== 'undefined') waypoint = null;
+      }
+      return false;
+    },
+    resumeRuns: function () {
+      if (!needsRuns()) return false;
+      missionArmed = true;
+      beginTracking(false);
+      if (bay.length) beginLeg('transit_base'); else beginLeg('transit_lander');
+      return true;
+    },
     payloadKg: function () { return bayMass() + heldMass(); },
+    heldKg: function () { return heldMass(); },
     bayCount: function () { return bay.length; },
     depotKg: function () { return depotMass(); },
     trips: function () { return trips; },
@@ -1438,10 +1917,12 @@
       else if (phase === 'transit_base') phase = 'align_drop';
       else if (phase === 'transit_stage') {
         phase = 'idle';
-        log('<span class="text-emerald-300">[MISSION 1] Staging area reached. Clear of the landing zone.</span>');
+        log('<span class="text-emerald-300">[MISSION 1] Staging area reached.</span>');
+        m1Report();
       }
     },
     driveOverride: function () {
+      if (phase === 'm1_checkout') return m1CheckoutCmd();
       if (phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait') {
         return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
       }
@@ -1453,14 +1934,26 @@
       var dist = Math.hypot(dx, dz);
       var driveYaw = Math.atan2(-dz, dx);
       var stopYaw = (pose.targetYaw !== undefined) ? pose.targetYaw : Math.atan2(-(pose.faceZ - p.z), pose.faceX - p.x);
-      var useStop = dist < 0.28;
-      var yawErr = wrap((useStop ? stopYaw : driveYaw) - roverYaw);
+      // Park-axis frame: along = distance past the park point (nose direction), lat = starboard offset.
+      var hx = Math.cos(stopYaw), hz = -Math.sin(stopYaw);
+      var along = (p.x - pose.x) * hx + (p.z - pose.z) * hz;
+      var lat = (p.x - pose.x) * Math.sin(stopYaw) + (p.z - pose.z) * Math.cos(stopYaw);
+      // Forward-only driving cannot fix a sideways error beside the face, so back out onto the park axis first.
+      if (dist < 1.0 && Math.abs(lat) > 0.06 && along > -0.30) backingOut = true;
+      if (backingOut && (along < -0.90 || Math.abs(lat) < 0.025 || dist > 1.7)) backingOut = false;
+      if (backingOut) {
+        var yb = wrap(stopYaw - roverYaw);
+        return { steer: Math.max(-0.9, Math.min(0.9, yb * 1.5)), throttle: 0.60, forward: false, reverse: true, brake: false };
+      }
+      var useStop = dist < 1.0;   // lateral servo zone: steer onto the park axis while closing
+      var latYaw = stopYaw + Math.max(-0.40, Math.min(0.40, lat * 3.0));
+      var yawErr = wrap((useStop ? latYaw : driveYaw) - roverYaw);
       var stopErr = wrap(stopYaw - roverYaw);
       var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
       var pickAlign = phase === 'align_pick';
-      var distGate = pickAlign ? 0.14 : 0.22;
+      var distGate = pickAlign ? 0.07 : 0.09;
       var yawGate = pickAlign ? 0.18 : 0.28;
-      var fineDist = pickAlign ? 0.08 : 0.14;
+      var fineDist = pickAlign ? 0.04 : 0.05;
       var fineYaw = pickAlign ? 0.10 : 0.18;
       var velGate = pickAlign ? 0.05 : 0.06;
       if (dist < distGate && Math.abs(stopErr) < yawGate) {
@@ -1530,11 +2023,9 @@
       wanderOn = false;
       missionArmed = true;
       beginTracking(false);
-      phase = 'transit_stage';
-      var stage = { x: 10, z: -28 };
-      log('<span class="text-cyan-300 font-bold">[MISSION 1] Leaving the landing zone for the staging area.</span>');
-      if (typeof queueMissionOrUndock === 'function') queueMissionOrUndock(stage.x, stage.z, 'LEAVE LZ');
-      else if (typeof launchMissionGoal === 'function') launchMissionGoal(stage.x, stage.z, 'LEAVE LZ');
+      m1 = { t: 0, moved: false, stopped: false, turned: false, reversed: false, struck: false, yaw0: (typeof roverYaw === 'number' ? roverYaw : 0), reported: false };
+      phase = 'm1_checkout';
+      log('<span class="text-cyan-300 font-bold">[MISSION 1] Checkout: start, stop, turn, reverse, then leave for staging. Do not enter the lander keep-out.</span>');
     },
     startMission: function () {
       wanderOn = false;
@@ -1598,7 +2089,8 @@
         return;
       }
       phase = 'arm_pick';
-      startPickSequence();
+      // The arm only moves once the bay shutter is fully open (tickArm waits for it)
+      if (doorReady(pickupDoor) && trayPresented()) startPickSequence();
       log('<span class="text-emerald-400 font-bold">[ARM] Executing robotic arm pickup sequence.</span>');
     },
     dropCargo: function () {
@@ -1617,7 +2109,7 @@
       traj = null;
       armMode = null;
       gripRetry = 0;
-      startPlaceSequence();
+      if (doorReady(dropDoor)) startPlaceSequence();
       log('<span class="text-teal-400 font-bold">[ARM] Executing robotic arm drop sequence.</span>');
     },
     abort: function () {
@@ -1676,6 +2168,23 @@
         if (hatchPivot) hatchPivot.rotation.x = -hatchOpen * 1.35;
       }
       spawnPlume(dt);
+      if (phase === 'm1_checkout' && m1) {
+        m1.t += dt;
+        sampleM1();
+        if (m1.t >= 4.8) {
+          phase = 'transit_stage';
+          var stage = { x: 10, z: -28 };
+          log('<span class="text-cyan-300 font-bold">[MISSION 1] Checkout done. Leaving for the staging area.</span>');
+          if (typeof queueMissionOrUndock === 'function') queueMissionOrUndock(stage.x, stage.z, 'LEAVE LZ');
+          else if (typeof launchMissionGoal === 'function') launchMissionGoal(stage.x, stage.z, 'LEAVE LZ');
+        }
+      } else if (phase === 'transit_stage') {
+        sampleM1();
+      }
+      if (typeof smoothPitch === 'number' && typeof roverPayloadKg === 'function' && roverPayloadKg() > 0.4 && Math.abs(smoothPitch) > 0.22 && !tipWarned) {
+        tipWarned = true;
+        log('<span class="text-amber-300 font-bold">[IMU] Steep climb with pod aft — the battery + ballast plate sit under the aft deck for rear grip. Ease throttle; watch front wheel unload.</span>');
+      }
       if (missionStats.tracking && roverGroup) {
         var px = roverGroup.position.x;
         var pz = roverGroup.position.z;
@@ -1691,6 +2200,9 @@
           missionStats.lastWh = roverWh;
         }
       }
+      updateDoors(dt);
+      stepSettling(dt);
+      enforceClearance();
       tickBelt(dt);
       tickCrane(dt);
       if (phase === 'crane_wait') {
@@ -1710,6 +2222,11 @@
   };
 
   function onManifest(data) {
+    (data.parcels || []).forEach(function (r) {
+      if (r.manifest_mass_kg == null) r.manifest_mass_kg = r.mass_kg;
+      r.mass_kg = CARGO_KG;                       // prototype pods are 5 lb each
+    });
+    data.rover_payload_kg = +(CARGO_KG * (data.parcels || []).length).toFixed(1);
     manifest = data;
     queue = (data.parcels || []).slice().sort(function (a, b) {
       return a.day_number - b.day_number || (a.id < b.id ? -1 : 1);
@@ -1749,4 +2266,7 @@
     });
 
   window.NASA_Logistics = api;
+  window.NASA_LogisticsDoors = function () {
+    return { pick: pickupDoor ? pickupDoor.pos : null, drop: dropDoor ? dropDoor.pos : null };
+  };
 })();

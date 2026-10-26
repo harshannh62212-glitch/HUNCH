@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEGIS-V1 Rover CAD</title>
+  <meta name="description" content="Interactive 3D CAD of the AEGIS-V1 lunar cargo rover: 4 ft × 2 ft chassis, grabber arm pick-and-place, suspension, battery hot-swap bay.">
+  <style>
+    /* macOS-style inspector window: 3D viewport + translucent toolbar + right-hand inspector (drops below on phones). */
+    :root {
+      --bg: #0f1114; --panel: #1d1f23; --line: rgba(255,255,255,0.08); --line2: rgba(255,255,255,0.14);
+      --fg: #f2f3f5; --mute: #9a9ea6; --dim: #6b7079;
+      --blue: #0a84ff; --green: #30d158; --amber: #ff9f0a; --red: #ff453a;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+    #app { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+    #view { position: relative; min-width: 0; overflow: hidden; }
+    #view canvas { display: block; width: 100%; height: 100%; }
+    .toolbar { position: absolute; top: 14px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+    .toolbar > * { pointer-events: auto; }
+    .title { display: flex; flex-direction: column; margin-right: auto; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+    .title b { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+    .title span { color: var(--mute); font-size: 12px; }
+    .seg { display: inline-flex; background: rgba(40,42,47,.75); border: 0.5px solid var(--line2); border-radius: 8px; padding: 2px; backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); }
+    .seg button { font: 500 12px var(--font); color: var(--fg); background: transparent; border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer; transition: background .2s; }
+    .seg button:hover { background: rgba(255,255,255,.06); }
+    .seg button.on { background: rgba(255,255,255,.16); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+    button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+    #status { position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; background: rgba(28,30,34,.78); border: 0.5px solid var(--line2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-weight: 600; font-size: 12px; transition: opacity .4s; }
+    #status i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: background .4s, box-shadow .4s; }
+    #status.busy i { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+    #hint { position: absolute; right: 16px; bottom: 18px; color: var(--dim); font-size: 11px; pointer-events: none; }
+    #loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--mute); font-size: 12px; transition: opacity .6s ease; z-index: 3; }
+    #loading.gone { opacity: 0; pointer-events: none; }
+    #loading .spin { width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.12); border-top-color: var(--fg); animation: sp 1s linear infinite; margin: 0 auto 10px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    aside { background: var(--panel); border-left: 0.5px solid var(--line2); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .group h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    .card { background: rgba(255,255,255,.035); border: 0.5px solid var(--line); border-radius: 10px; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; padding: 10px 12px; font-size: 12px; margin: 0; }
+    .kv dt { color: var(--mute); }
+    .kv dd { margin: 0; text-align: right; font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+    .actions { display: grid; }
+    .act { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; background: none; border: 0; border-top: 0.5px solid var(--line); color: var(--fg); font: 13px var(--font); text-align: left; cursor: pointer; transition: background .15s; }
+    .act:first-child { border-top: 0; border-radius: 10px 10px 0 0; }
+    .act:last-child { border-radius: 0 0 10px 10px; }
+    .act:hover { background: rgba(255,255,255,.05); }
+    .act:disabled { opacity: .45; cursor: default; }
+    .act .ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; background: rgba(10,132,255,.18); color: #64b5ff; }
+    .act .ic svg { width: 16px; height: 16px; }
+    .act small { display: block; color: var(--mute); font-size: 11px; }
+    .act kbd { font: 500 10px var(--mono); color: var(--dim); border: 0.5px solid var(--line2); border-radius: 4px; padding: 1px 5px; }
+    .act.on .ic { background: var(--blue); color: #fff; }
+    .legend { list-style: none; margin: 0; padding: 10px 12px; display: grid; gap: 6px; font-size: 12px; }
+    .legend li { display: flex; gap: 8px; align-items: center; color: var(--mute); }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    @media (max-width: 820px) {
+      #app { position: static; display: block; }
+      #view { height: 62vh; min-height: 340px; }
+      aside { border-left: 0; border-top: 0.5px solid var(--line2); }
+  #hint { display: none; }
+    }
+  
+    /* ?embed=1 — hosted inside the website preview: no inspector, compact action bar at the bottom */
+    .ebar { display: none; }
+    body.embed #app { grid-template-columns: minmax(0, 1fr); position: fixed; }
+    body.embed aside, body.embed #hint, body.embed .title, body.embed #status { display: none; }
+    body.embed #view { height: 100%; }
+    body.embed .ebar { display: inline-flex; position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); gap: 2px; padding: 3px; border-radius: 12px; background: rgba(36,38,42,.72); border: 0.5px solid rgba(255,255,255,.14); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); max-width: calc(100% - 24px); overflow-x: auto; }
+    body.embed .ebar button { font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; color: #f2f3f5; background: transparent; border: 0; border-radius: 9px; padding: 7px 12px; cursor: pointer; white-space: nowrap; transition: background .2s; }
+    body.embed .ebar button:hover { background: rgba(255,255,255,.08); }
+    body.embed .ebar button.on { background: rgba(255,255,255,.18); }
+    body.embed .ebar button:disabled { opacity: .4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <div id="loading"><div><div class="spin"></div>Loading AEGIS-V1</div></div>
+    <div class="toolbar">
+      <div class="title"><b>AEGIS-V1 Rover</b><span>CAD v3.1 · 4 ft × 2 ft · 6-wheel drive</span></div>
+      <div class="seg" id="cams" role="group" aria-label="Camera">
+        <button data-cam="iso" class="on">Overview</button><button data-cam="side">Side</button><button data-cam="front">Front</button><button data-cam="top">Top</button><button data-cam="rear">Rear</button>
+      </div>
+    </div>
+    <div id="status"><i></i><span id="statusTxt">Ready</span></div>
+    <div class="ebar" role="group" aria-label="Animations">
+      <button data-click="aArm">Pick &amp; place</button><button data-click="aDrive">Drive</button><button data-click="aBat">Battery bay</button><button data-click="aLid">Lid</button><button data-click="fPetg" data-alt="fFlight">PETG finish</button>
+    </div>
+    <div id="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+  </div>
+  <aside>
+    <div class="group">
+      <h2>Model</h2>
+      <div class="card"><dl class="kv">
+        <dt>Planform</dt><dd id="dims">—</dd>
+        <dt>Curb mass</dt><dd id="mass">—</dd>
+        <dt>CoM offset (fwd +)</dt><dd id="com-x">—</dd>
+        <dt>Arm reach</dt><dd id="reach">—</dd>
+        <dt>Battery</dt><dd>12.8 V 5 Ah LiFePO₄</dd>
+      </dl></div>
+    </div>
+    <div class="group">
+      <h2>Animate</h2>
+      <div class="card actions">
+        <button class="act" id="aArm"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h7"/><path d="M7 20v-5l6-7"/><path d="M13 8l4 4"/><path d="M17 12l2-2M17 12l2 2"/></svg></span><span>Pick &amp; place pod<small>arm moves a pod between ground and cradle</small></span><kbd>P</kbd></button>
+        <button class="act" id="aDrive"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M3 12h15l3 5"/><path d="M6 12V8h8l4 4"/></svg></span><span>Drive test<small>accelerate, cruise, brake</small></span><kbd>D</kbd></button>
+        <button class="act" id="aBat"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2"/><path d="M7 12h6"/></svg></span><span>Battery hot-swap bay<small>latches, drop door, pack sled</small></span><kbd>B</kbd></button>
+        <button class="act" id="aLid"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18h16"/><path d="M5 18l3-9 11 2"/></svg></span><span>Avionics lid<small>gas-strut hinge</small></span><kbd>L</kbd></button>
+        <button class="act" id="aCover"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="9" width="12" height="6" rx="1"/><path d="M18 12h3M19 10l2 2-2 2"/></svg></span><span>Service cover<small>slides aft on carriages</small></span><kbd>C</kbd></button>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Display</h2>
+      <div class="seg" role="group" aria-label="Finish" style="margin-bottom:8px"><button id="fFlight" class="on">Flight finish</button><button id="fPetg">Prototype PETG</button></div>
+      <div class="seg" role="group" aria-label="Overlays"><button id="tCom">CoM marker</button><button id="tSpin" class="on">Idle turntable</button></div>
+    </div>
+    <div class="group">
+      <h2>Legend</h2>
+      <div class="card"><ul class="legend">
+        <li><i style="background:#f6f8fa"></i>White thermal-control paint</li>
+        <li><i style="background:#0b4fb3"></i>NASA-blue trim, hubs, joints</li>
+        <li><i style="background:#d9a21b"></i>Gold MLI foil (hatch, turret)</li>
+        <li><i style="background:#f97316"></i>Pod guides in the cargo cradle</li>
+        <li><i style="background:#c27a2c"></i>Copper charge contacts</li>
+        <li><i style="background:#e5361f"></i>E-stop · dampers</li>
+      </ul></div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="js/motion.js"></script>
+<script src="js/studio.js"></script>
+<script src="js/rover_bom.js"></script>
+<script src="js/fusion_rover.js"></script>
+<script>
+(function () {
+  'use strict';
+  var MO = window.NASA_Motion, ST = window.NASA_Studio, $ = function (id) { return document.getElementById(id); };
+  var view = $('view');
+  if (typeof THREE === 'undefined' || !window.NASA_FusionRover) { $('loading').textContent = 'Could not load three.js or the rover model. Serve the folder (python3 serve.py 8002) and reload.'; return; }
+
+  // ---------------------------------------------------------------- scene
+  var renderer = ST.renderer(view, { exposure: 0.95 });
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f1114);
+  scene.fog = new THREE.Fog(0x0f1114, 9, 30);
+  scene.environment = ST.environment(renderer);
+  var camera = new THREE.PerspectiveCamera(38, 1, 0.03, 80);
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.07; controls.minDistance = 0.6; controls.maxDistance = 9; controls.maxPolarAngle = Math.PI * 0.49;
+  var camRig = new ST.CameraRig(camera, controls), idle = new ST.IdleSpin(controls, { delay: 10, speed: 0.5 });
+
+  scene.add(new THREE.HemisphereLight(0xd8e6f5, 0x24201c, 0.5));
+  var key = new THREE.DirectionalLight(0xfff4e6, 2.6); key.position.set(3, 5, 2.2); key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048); key.shadow.radius = 4; key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+  ['left', 'right', 'top', 'bottom'].forEach(function (k, i) { key.shadow.camera[k] = (i % 2 ? 1 : -1) * 3.2; });
+  key.shadow.camera.far = 14; scene.add(key); scene.add(key.target);
+  var rim = new THREE.DirectionalLight(0x9cc8ff, 0.9); rim.position.set(-3, 2.5, -4); scene.add(rim);
+  var ground = new THREE.Mesh(new THREE.CircleGeometry(14, 96), new THREE.MeshStandardMaterial({ color: 0x7c7d80, map: ST.regolith([9, 9]), roughness: 1, envMapIntensity: 0.25 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+  // ---------------------------------------------------------------- rover
+  var rover = new THREE.Group(); rover.position.y = 0.01; scene.add(rover);       // wheel bottoms touch y = 0
+  var wheelGroups = [], wheels = [];
+  NASA_FusionRover.init({ roverGroup: rover, wheelGroups: wheelGroups, wheels: wheels });
+  var rig = window.roverRig, arm = window.roverArm, bay = window.batteryBay;
+  rover.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  var bom = window.NASA_RoverBOM;
+  if (bom) {
+    var ch = bom.byId('chassis');
+    if (ch) $('dims').textContent = (ch.size[0] * 1000).toFixed(0) + ' × ' + (ch.size[2] * 1000).toFixed(0) + ' mm';
+    if (bom.curbKg) $('mass').textContent = bom.curbKg().toFixed(2) + ' kg';
+    var cm = bom.com ? bom.com() : null; if (cm) $('com-x').textContent = (cm.x >= 0 ? '+' : '') + (cm.x * 1000).toFixed(1) + ' mm';
+  }
+  $('reach').textContent = ((arm.L1 + arm.L2) * 1000).toFixed(0) + ' mm';
+
+  // ---------------------------------------------------------------- cargo pod (1:4 Astrobotic pod with a top handle)
+  var pod = bom && bom.pod ? bom.pod : { lengthM: 0.305, widthM: 0.152, heightM: 0.152 };
+  var PL = pod.lengthM, PW = pod.widthM, PH = pod.heightM;
+  var podG = new THREE.Group();
+  (function () {
+    var white = new THREE.MeshStandardMaterial({ color: 0xeef1f4, roughness: 0.45, metalness: 0.1 });
+    var blue = new THREE.MeshStandardMaterial({ color: 0x0b4fb3, roughness: 0.4, metalness: 0.2 });
+    var dark = new THREE.MeshStandardMaterial({ color: 0x2a2f37, roughness: 0.5, metalness: 0.5 });
+    var b = new THREE.Mesh(new THREE.BoxGeometry(PL, PH, PW), white); podG.add(b);
+    var band = new THREE.Mesh(new THREE.BoxGeometry(PL + 0.002, 0.022, PW + 0.002), blue); band.position.y = PH * 0.18; podG.add(band);
+    [-1, 1].forEach(function (sx) { var p = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.03, 0.014), dark); p.position.set(sx * 0.05, PH / 2 + 0.015, 0); podG.add(p); });
+    var bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.012, 0.02), dark); bar.position.y = PH / 2 + 0.03; podG.add(bar);
+    podG.traverse(function (o) { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+  })();
+  var HANDLE_Y = PH / 2 + 0.03;                       // grasp point above pod centre
+  var POD_HOME = new THREE.Vector3(0.827, -0.01 + PH / 2, 0.122);   // on the ground in front of the nose (rover frame)
+  var slot = window.cargoBaySlots && window.cargoBaySlots[0];        // port slot (z = +0.125)
+  var podLoaded = false;
+  rover.updateMatrixWorld(true);
+  scene.add(podG); podG.position.copy(rover.localToWorld(POD_HOME.clone()));   // on the ground: belongs to the world, not the rover
+  function ties(on) { if (slot && slot.userData.ties) slot.userData.ties.forEach(function (t) { t.visible = on; }); }
+
+  // ---------------------------------------------------------------- arm IK (top-down grasp: gripper kept vertical)
+  var SH = new THREE.Vector3(arm.base.position.x, arm.base.position.y + arm.shoulder.position.y, arm.base.position.z);
+  var GRASP_OFF = 0.046;                              // wrist origin → jaw pad centre along the gripper axis
+  var GRIP_OPEN = 0.055, GRIP_CLOSED = 0.0185;
+  function ik(p, yawRef) {                            // p: grasp point in rover frame → [yaw, shoulder, elbow, wristPitch]
+    var w = new THREE.Vector3(p.x, p.y + GRASP_OFF, p.z), d = w.clone().sub(SH);
+    var yaw = Math.atan2(-d.z, d.x);
+    if (yawRef != null) yaw = yawRef + MO.wrapPi(yaw - yawRef);
+    var r = Math.hypot(d.x, d.z), h = d.y, L1 = arm.L1, L2 = arm.L2;
+    var c2 = MO.clamp((r * r + h * h - L1 * L1 - L2 * L2) / (2 * L1 * L2), -1, 1);
+    var t2 = -Math.acos(c2);                                     // elbow up
+    var t1 = Math.atan2(h, r) - Math.atan2(L2 * Math.sin(t2), L1 + L2 * Math.cos(t2));
+    return [yaw, t1, t2, -Math.PI / 2 - (t1 + t2)];
+  }
+  function setArm(q) {
+    arm.base.rotation.y = q[0]; arm.shoulder.rotation.z = q[1]; arm.elbow.rotation.z = q[2]; arm.wrist.rotation.z = q[3];
+    arm.fingerL.position.z = -q[4]; arm.fingerR.position.z = q[4];
+  }
+  var STOW = [0, arm.shoulder.rotation.z, arm.elbow.rotation.z, 0, GRIP_OPEN];
+  var armQ = STOW.slice(); setArm(armQ);
+
+  // ---------------------------------------------------------------- actuators (all motion goes through these)
+  var lid = new MO.Actuator(0, { vmax: 1.5, tmin: 0.7, comply: { freq: 3.0, zeta: 0.45 } });      // gas strut: slight settle at the end
+  var cover = new MO.Actuator(0, { vmax: 0.16, tmin: 0.8, comply: { freq: 5, zeta: 0.7 } });
+  var lidar = new MO.Actuator(0, { vmax: 9, tmin: 1.8 }); lidar.set(12);                              // spin-up after power-on
+  var comScale = new MO.Spring(0, { freq: 3.2, zeta: 0.7 });
+  var drive = new MO.Axis(0, { vmax: 0.55, amax: 0.45, jerkTau: 0.2 });
+  var pitchS = new MO.Spring(0, { freq: 2.2, zeta: 0.38 }), rollS = new MO.Spring(0, { freq: 2.6, zeta: 0.4 });
+  var batt = { open: 0, ext: 0, latch: 1, tl: null, out: false };
+  var job = null;                                       // the running demo (arm / drive / battery), one at a time
+
+  function busy(on, txt) {
+    $('status').className = on ? 'busy' : ''; $('statusTxt').textContent = txt || 'Ready';
+    ['aArm', 'aDrive', 'aBat'].forEach(function (id) { $(id).disabled = !!on && job && job.id !== id; });
+  }
+
+  // ---------------------------------------------------------------- demo: pick & place (load ↔ unload)
+  function inRover(obj, dy) { var p = new THREE.Vector3(); obj.getWorldPosition(p); rover.worldToLocal(p); p.y += dy || 0; return p; }
+  function armDemo() {
+    if (job) return;
+    var seatG = inRover(slot, HANDLE_Y), groundG = POD_HOME.clone(); groundG.y += HANDLE_Y;
+    var load = !podLoaded;
+    var from = load ? inRover(podG, HANDLE_Y) : seatG, fromYaw = load ? 0 : Math.PI;
+    var to = load ? seatG : groundG, toYaw = load ? Math.PI : 0;
+    var q = function (p, yawRef, grip) { var a = ik(p, yawRef); a.push(grip); return a; };
+    var up = function (p, dy) { var c = p.clone(); c.y += dy; return c; };
+    var at0 = q(from, fromYaw, GRIP_OPEN), at1 = q(to, toYaw, GRIP_CLOSED);
+    var pts = [
+      { q: q(up(from, 0.15), fromYaw, GRIP_OPEN), t: 2.1 },
+      { q: at0, t: 1.1, stop: true },
+      { q: at0.slice(0, 4).concat([GRIP_CLOSED]), t: 0.7, stop: true, tag: 'grab' },
+      { q: q(up(from, 0.20), fromYaw, GRIP_CLOSED), t: 1.1 },
+      { q: q(new THREE.Vector3(0.33, 0.62, -0.05), Math.PI / 2, GRIP_CLOSED), t: 1.7 },   // high over the hood, turret half-way round
+      { q: q(up(to, 0.13), toYaw, GRIP_CLOSED), t: 1.6 },
+      { q: at1, t: 1.1, stop: true },
+      { q: at1.slice(0, 4).concat([GRIP_OPEN]), t: 0.6, stop: true, tag: 'release' },
+      { q: q(up(to, 0.16), toYaw, GRIP_OPEN), t: 0.9 }
+    ];
+    if (Math.abs(toYaw) > 1) pts.push({ q: [Math.PI * 0.5, 1.25, -2.35, 0.0, GRIP_OPEN], t: 1.4 });
+    pts.push({ q: STOW.slice(), t: 1.6, stop: true });
+    if (!load) ties(false);                                                         // straps let go before the arm arrives
+    camRig.go(load ? [1.95, 1.25, 1.55] : [2.1, 1.1, 1.75], [0.42, 0.28, 0.1]);
+    job = { id: 'aArm', path: new MO.ViaPath(armQ.slice(), pts), settle: null, load: load };
+    busy(true, load ? 'Arm: loading pod' : 'Arm: unloading pod');
+  }
+  function armStep(dt) {
+    armQ = job.path.step(dt, function (tag) {
+      if (tag === 'grab') arm.wrist.attach(podG);
+      if (tag === 'release') {
+        var tgtParent = job.load ? rover : scene;
+        tgtParent.attach(podG);
+        var seat = job.load ? inRover(slot) : POD_HOME.clone();
+        if (!job.load) rover.localToWorld(seat);
+        job.settle = { from: podG.position.clone(), to: seat, rx: podG.rotation.x, rz: podG.rotation.z, t: 0 };
+      }
+    });
+    setArm(armQ);
+    if (job.settle) {                                   // pod drops the last few mm under 1/6 g, then the straps tighten
+      var s = job.settle; s.t += dt;
+      var u = Math.min(1, s.t / 0.45), e = u * u;
+      podG.position.lerpVectors(s.from, s.to, e);
+      podG.rotation.x = s.rx * (1 - e); podG.rotation.z = s.rz * (1 - e);
+      if (job.load && s.t > 0.9) ties(true);
+    }
+    if (job.path.done()) {
+      podLoaded = job.load; job = null; busy(false);
+      $('aArm').querySelector('span:nth-child(2)').firstChild.nodeValue = podLoaded ? 'Unload pod' : 'Pick & place pod';
+    }
+  }
+
+  // ---------------------------------------------------------------- demo: drive
+  function driveDemo() {
+    if (job) return;
+    var dir = podLoaded ? 1 : -1;                     // pod on the ground in front → back away from it first
+    job = { id: 'aDrive', leg: 0, dir: dir };
+    drive.vlimit = dir > 0 ? 0.55 : 0.35; drive.target = 1.6 * dir;
+    busy(true, dir > 0 ? 'Drive: forward' : 'Drive: reverse');
+  }
+  var lastV = 0, accF = 0;
+  function driveStep(dt) {
+    if (job.leg === 0 && drive.arrived(0.004)) { job.leg = 1; job.wait = 0.8; }
+    else if (job.leg === 1) { job.wait -= dt; if (job.wait <= 0) { job.leg = 2; drive.vlimit = job.dir > 0 ? 0.35 : 0.55; drive.target = 0; busy(true, job.dir > 0 ? 'Drive: reverse' : 'Drive: forward'); } }
+    else if (job.leg === 2 && drive.arrived(0.004)) { job = null; busy(false); }
+  }
+
+  // ---------------------------------------------------------------- demo: battery hot-swap bay
+  function batteryDemo() {
+    if (job) return;
+    var opening = !batt.out, tl = new MO.Timeline();
+    if (opening) {
+      tl.add(0.0, 0.35, function (u) { batt.latch = 1 - u; });                        // both cam latches quarter-turn
+      tl.add(0.45, 0.85, function (u) { batt.open = u; }, function (u) { return u < 0.7 ? 0.82 * Math.pow(u / 0.7, 2) : 0.82 + 0.18 * MO.easeOutCubic((u - 0.7) / 0.3); });   // gravity swing, damped stop
+      tl.add(1.45, 1.6, function (u) { batt.ext = u; });                               // sled rolls out on its rails
+      camRig.go([-1.55, 0.55, 0.95], [-0.62, 0.12, 0]);
+    } else {
+      tl.add(0.0, 1.5, function (u) { batt.ext = 1 - u; });
+      tl.add(1.55, 0.9, function (u) { batt.open = 1 - u; });
+      tl.add(2.5, 0.35, function (u) { batt.latch = u; });
+    }
+    tl.onDone = function () { batt.out = opening; job = null; busy(false); $('aBat').classList.toggle('on', opening); };
+    job = { id: 'aBat', tl: tl };
+    busy(true, opening ? 'Battery: opening bay' : 'Battery: closing bay');
+  }
+  var doorBounce = new MO.Spring(0, { freq: 6, zeta: 0.3 }), lastOpen = 0;
+
+  // ---------------------------------------------------------------- toggles
+  function toggleLid() { lid.set(lid.target > 0.5 ? 0 : 1.62); $('aLid').classList.toggle('on', lid.target > 0.5); }
+  function toggleCover() { cover.set(cover.target > 0.05 ? 0 : 0.17); $('aCover').classList.toggle('on', cover.target > 0.05); }
+  $('aArm').onclick = armDemo; $('aDrive').onclick = driveDemo; $('aBat').onclick = batteryDemo; $('aLid').onclick = toggleLid; $('aCover').onclick = toggleCover;
+  var comG = window.comMarkerGroup; comG.visible = false;
+  $('tCom').onclick = function () { var on = !this.classList.contains('on'); this.classList.toggle('on', on); comScale.target = on ? 1 : 0; };
+  $('tSpin').onclick = function () { idle.enabled = !idle.enabled; this.classList.toggle('on', idle.enabled); };
+  // finish crossfade: colour eases between thermal white and black PETG
+  var finish = { k: 0, target: 0 }, cWhite = new THREE.Color(0xf6f8fa), cBlack = new THREE.Color(0x1c1f24), cShadeW = new THREE.Color(0xe3e8ee), cShadeB = new THREE.Color(0x2a2e35);
+  function setFinish(petg) { finish.target = petg ? 1 : 0; $('fFlight').classList.toggle('on', !petg); $('fPetg').classList.toggle('on', petg); rig.setFinish(petg ? 'petg' : 'flight'); applyFinish(); }
+  function applyFinish() { var m = rig.materials; m.paint.color.copy(cWhite).lerp(cBlack, finish.k); m.paintShade.color.copy(cShadeW).lerp(cShadeB, finish.k); }
+  $('fFlight').onclick = function () { setFinish(false); }; $('fPetg').onclick = function () { setFinish(true); };
+  addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    var k = e.key.toLowerCase();
+    if (k === 'p') armDemo(); else if (k === 'd') driveDemo(); else if (k === 'b') batteryDemo(); else if (k === 'l') toggleLid(); else if (k === 'c') toggleCover();
+    else if (k === '1') goCam('iso');
+  });
+
+  // ---------------------------------------------------------------- cameras
+  var cams = {
+    iso: [[1.6, 0.95, 1.75], [0.08, 0.24, 0]], side: [[0.05, 0.55, 2.7], [0.05, 0.22, 0]], front: [[2.6, 0.55, 0.0], [0.2, 0.25, 0]],
+    top: [[0.02, 3.1, 0.01], [0.0, 0.2, 0]], rear: [[-2.3, 0.8, 1.1], [-0.3, 0.2, 0]]
+  };
+  function goCam(k) { camRig.go(cams[k][0], cams[k][1]); document.querySelectorAll('[data-cam]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cam') === k); }); }
+  document.querySelectorAll('[data-cam]').forEach(function (b) { b.onclick = function () { goCam(b.getAttribute('data-cam')); }; });
+  camera.position.set(3.4, 2.0, 3.6); controls.target.set(0.05, 0.26, 0);
+  camRig.go(cams.iso[0], cams.iso[1], { duration: 2.4 });
+
+  function resize() { var w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); }
+  addEventListener('resize', resize); resize();
+
+  // ---------------------------------------------------------------- frame
+  var timeScale = Math.max(0.1, Math.min(8, +(new URLSearchParams(location.search).get('speed')) || 1));
+  var follow = new THREE.Vector3();
+  function step(dt) {
+    if (job && job.id === 'aArm') armStep(dt);
+    if (job && job.id === 'aDrive') driveStep(dt);
+    if (job && job.id === 'aBat') job.tl.step(dt);
+
+    // drive + body dynamics: wheels roll with distance, body dives under braking and squats under throttle
+    var x0 = drive.pos; drive.step(dt); var dx = drive.pos - x0, v = drive.vel;
+    var acc = dt > 0 ? (v - lastV) / dt : 0; lastV = v; accF += (acc - accF) * Math.min(1, dt * 12);
+    pitchS.target = -accF * 0.045; var pitch = pitchS.step(dt);
+    rollS.target = 0; rollS.step(dt);
+    rover.position.x = drive.pos; rover.rotation.z = pitch;
+    rig.roll(dx);
+    var WB = 0.5387, tr = Math.sin(pitch) * WB;
+    rig.setTravel([tr, 0, -tr, tr, 0, -tr]);
+    if (Math.abs(v) > 0.01 || (job && job.id === 'aDrive')) {               // camera target follows the rover softly
+      follow.set(drive.pos + 0.05, 0.26, 0);
+      controls.target.x = MO.damp(controls.target.x, follow.x, 2.5, dt);
+      camera.position.x = MO.damp(camera.position.x, follow.x + (camera.position.x - controls.target.x), 2.5, dt);
+    }
+
+    // battery bay: write the timeline values, plus a little bounce when the door hits its stop
+    if (batt.open >= 0.999 && lastOpen < 0.999) doorBounce.v = -0.9;
+    lastOpen = batt.open; doorBounce.step(dt);
+    bay.set(MO.clamp(batt.open + doorBounce.x * 0.04, 0, 1.03), batt.ext, 0.82, batt.latch);
+
+    // lid, cover, lidar, CoM marker
+    window.avLidGroup.rotation.x = lid.step(dt);
+    if (cover.busy() || cover.value) window.cargoLidGroup.position.x = -0.6096 + 0.17 - cover.step(dt);
+    window.lidarHead.rotation.y += lidar.step(dt) * dt;
+    comScale.step(dt); comG.visible = comScale.x > 0.01; comG.scale.setScalar(Math.max(0.001, comScale.x));
+    finish.k += (finish.target - finish.k) * Math.min(1, dt * 5); applyFinish();
+
+    var moving = camRig.update(dt);
+    idle.update(dt, moving || !!job);
+    controls.update();
+  }
+  var last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min((now - last) / 1000, 0.05) * timeScale; last = now;
+    step(dt);
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(frame);
+  setTimeout(function () { $('loading').classList.add('gone'); }, 150);
+  window.__rover = { tick: function (sec, h) { h = h || 1 / 30; for (var t = 0; t < sec; t += h) step(h); renderer.render(scene, camera); return job ? job.id : null; },
+    arm: armDemo, drive: driveDemo, raw: function () { return job; }, battery: batteryDemo, lid: toggleLid, cam: goCam, job: function () { return job && job.id; }, pod: podG, armRef: arm, rig: rig, setFinish: setFinish };
+})();
+</script>
+
+<script>
+/* embed mode wiring: the compact bar forwards clicks to the inspector controls, and mirrors their state */
+(function () {
+  if (!/[?&]embed=1/.test(location.search)) return;
+  document.body.classList.add('embed');
+  var bar = document.querySelector('.ebar');
+  bar.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = document.getElementById(b.getAttribute('data-click')), alt = b.getAttribute('data-alt');
+      if (alt && b.classList.contains('on')) { var a = document.getElementById(alt); if (a) a.click(); }
+      else if (t) t.click();
+    });
+  });
+  setInterval(function () {
+    bar.querySelectorAll('button').forEach(function (b) {
+      var t = document.getElementById(b.getAttribute('data-click')); if (!t) return;
+      b.disabled = t.disabled; b.classList.toggle('on', t.classList.contains('on'));
+    });
+  }, 250);
+  dispatchEvent(new Event('resize'));
+})();
+</script>
+</body>
+</html>
