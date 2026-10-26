@@ -58,6 +58,7 @@
   var alignRec = null;
   var lastReport = null;
   var schedT = 0;
+  var sup = { paused: false, approve: false, pending: false, granted: false };
   var dispatchState = null;   // { reqs, plan, delivered:[{id,t}] }
   var landerLanded = true;
   var hatchOpen = 1.0;
@@ -1304,6 +1305,10 @@
   function startPlaceSequence() {
     // Wait for crane to clear the table before placing the next parcel
     if (!bay.length) return;
+    if (sup.approve && !sup.granted) {
+      if (!sup.pending) { sup.pending = true; log('<span class="text-fuchsia-300 font-bold">[SUPERVISOR] Ready to place ' + bay[bay.length - 1].userData.rec.source_item + '. Waiting for operator approval.</span>'); }
+      return;
+    }
     if (tableParcel) {
       // Table occupied — enter crane-wait phase
       phase = 'crane_wait';
@@ -1338,6 +1343,7 @@
     picking = mesh;
     gripRetry = 0;
     armMode = 'place';
+    sup.pending = false; sup.granted = false;   // approval is used up once the placement actually starts
     var mid = new THREE.Vector3().addVectors(grasp, placeUp).multiplyScalar(0.5);
     mid.y = Math.max(grasp.y, placeUp.y) + 0.12;
     // Gentler place trajectory: slower descents to prevent table bounce
@@ -2175,6 +2181,7 @@
       }
     },
     driveOverride: function () {
+      if (sup.paused) return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
       if (phase === 'm1_checkout') return m1CheckoutCmd();
       if (phase === 'arm_pick' || phase === 'arm_place' || phase === 'crane_wait') {
         return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
@@ -2237,6 +2244,7 @@
     obstacles: function () {
       var list = [{ x: BASE.x, z: BASE.z, r: 3.1 }];
       if (window.NASA_FaultsUI) list = list.concat(NASA_FaultsUI.obstacles());
+      if (window.NASA_SupplyRoute) list = list.concat(NASA_SupplyRoute.circles());
       if (landerLanded) {
         for (var i = -2; i <= 2; i++) list.push({ x: PAD.x + i * 2.4, z: PAD.z, r: 2.35 });
       }
@@ -2308,6 +2316,11 @@
       return true;
     },
     cargoFits: function () { return window.NASA_Cargo ? NASA_Cargo.ids().map(function (i) { return { id: i, fit: NASA_Cargo.fits(i), cradle: NASA_Cargo.cradleFor(i) }; }) : []; },
+    pause: function () { if (sup.paused) return false; sup.paused = true; log('<span class="text-fuchsia-300 font-bold">[SUPERVISOR] Mission paused. Rover held.</span>'); return true; },
+    resume: function () { if (!sup.paused) return false; sup.paused = false; log('<span class="text-fuchsia-300 font-bold">[SUPERVISOR] Mission resumed.</span>'); return true; },
+    setApproval: function (on) { sup.approve = !!on; if (!on) { sup.pending = false; sup.granted = false; } log('<span class="text-fuchsia-300">[SUPERVISOR] Operator approval before placement: ' + (on ? 'ON' : 'OFF') + '.</span>'); return true; },
+    approve: function () { if (!sup.pending) return false; sup.granted = true; log('<span class="text-fuchsia-300 font-bold">[SUPERVISOR] Placement approved.</span>'); return true; },
+    supervisor: function () { return { paused: sup.paused, approve: sup.approve, pending: sup.pending }; },
     report: function () { return lastReport; },
     stability: function () { return stab ? stab.result() : null; },
     sealState: function () { return seal ? seal.state : null; },
@@ -2456,6 +2469,7 @@
     },
     tick: function (dt) {
       if (!landerGroup) return;
+      if (sup.paused) { updateHud(); return; }
       if (roverGroup) roverGroup.updateMatrixWorld(true);
       if (phase === 'descent') {
         descendT += dt;
@@ -2510,6 +2524,8 @@
       }
       if (missionStats.tracking) missionStats.simT += dt;
       if (window.NASA_Faults) NASA_Faults.step(dt);
+      if (window.NASA_HabitatDisplay) NASA_HabitatDisplay.update(dt);
+      if (window.NASA_SupplyRoute) NASA_SupplyRoute.tick();
       schedT += dt;
       if (SC) {
         var dyn = window.NASA_Dynamics ? NASA_Dynamics.state() : null;

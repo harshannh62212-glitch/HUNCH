@@ -6605,6 +6605,12 @@ function applyRoverCommand(cmd) {
   if (faultCmd && window.NASA_Faults) return NASA_Faults.injectByName(faultCmd[1]);
   if (/^clear faults?$/.test(cmd) && window.NASA_Faults) { NASA_Faults.clearAll(); return true; }
   if (/^(dispatch|plan)\b/.test(cmd)) return window.NASA_Logistics.dispatch();
+  if (/^(supply route|route)$/.test(cmd) && window.NASA_SupplyRoute) return NASA_SupplyRoute.start();
+  if (/^(pause|hold)$/.test(cmd)) return window.NASA_Logistics.pause();
+  if (/^(resume|continue)$/.test(cmd)) return window.NASA_Logistics.resume();
+  if (/^approve$/.test(cmd)) return window.NASA_Logistics.approve();
+  var apprCmd = cmd.match(/^approval\s+(on|off)$/);
+  if (apprCmd) return window.NASA_Logistics.setApproval(apprCmd[1] === 'on');
   var urgentCmd = cmd.match(/^urgent\s*(.*)$/);
   if (urgentCmd) return window.NASA_Logistics.addUrgent(urgentCmd[1] || 'Emergency repair part', 'repair');
   if (cmd.includes('fleet') || cmd.includes('rocket') || cmd.includes('resupply')) {
@@ -6988,6 +6994,9 @@ window.runDockSelfTest = runDockSelfTest;
 <script src="js/faults_ui.js"></script>
 <script src="js/dispatcher.js"></script>
 <script src="js/dispatcher_ui.js"></script>
+<script src="js/supervisor_ui.js"></script>
+<script src="js/habitat_display.js"></script>
+<script src="js/supply_route.js"></script>
 <script src="js/lunar_logistics.js"></script>
 <script src="js/intro_landing.js"></script>
 </body>
