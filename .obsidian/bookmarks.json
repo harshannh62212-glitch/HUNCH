@@ -1,0 +1,78 @@
+{
+  "items": [
+    {
+      "type": "file",
+      "ctime": 1792915980624,
+      "path": "README.md",
+      "title": "Home (map of the vault)"
+    },
+    {
+      "type": "file",
+      "ctime": 1792915980624,
+      "path": "HANDOFF.md",
+      "title": "Team handoff"
+    },
+    {
+      "type": "group",
+      "ctime": 1792915980624,
+      "title": "Design & review",
+      "items": [
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-llaso-cad/review/INDEX.md",
+          "title": "Review package"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-llaso-cad/review/docs/cad-motion-upgrades.md",
+          "title": "CAD / dock / website upgrades (v3.1)"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-llaso-cad/review/docs/dock-station-design.md",
+          "title": "Dock station design"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-llaso-cad/review/docs/runtime-energy-analysis.md",
+          "title": "Runtime & energy"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-llaso-cad/review/CRITERIA_EVIDENCE.md",
+          "title": "Judge criteria \u2192 evidence"
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "ctime": 1792915980624,
+      "title": "Hardware",
+      "items": [
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-hunch-rover/cad_model/hardware_specification_sheet.md",
+          "title": "Hardware spec"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "Hunch/nasa-hunch-rover/onboard/README.md",
+          "title": "Onboard Pi software"
+        },
+        {
+          "type": "file",
+          "ctime": 1792915980624,
+          "path": "nas_192.168.1.27_specs.md",
+          "title": "NAS"
+        }
+      ]
+    }
+  ]
+}

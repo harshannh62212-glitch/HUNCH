@@ -1,0 +1,23 @@
+{
+  "useMarkdownLinks": true,
+  "newLinkFormat": "relative",
+  "alwaysUpdateLinks": true,
+  "showUnsupportedFiles": false,
+  "userIgnoreFilters": [
+    ".git/",
+    ".git.chat-app-wrong-backup/",
+    ".vercel/",
+    "node_modules/",
+    ".venv/",
+    "dist/",
+    "__pycache__/",
+    "Hunch/nasa-llaso-cad/logs/",
+    "Hunch/nasa-llaso-cad/meshes/",
+    "Hunch/nasa-hunch-rover/cad_model/meshes/",
+    "Hunch/coppeliabot/meshes/",
+    "Hunch/nasa-llaso-cad/review/test-results/",
+    "Templates/",
+    "Hunch/nasa-llaso-cad/_archive/"
+  ],
+  "attachmentFolderPath": "assets"
+}
