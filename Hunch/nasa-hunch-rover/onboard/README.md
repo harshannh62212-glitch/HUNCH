@@ -1,3 +1,8 @@
+---
+title: "Onboard bridge (sim policy → real rover)"
+date: 2026-10-01
+tags: [rover, hardware]
+---
 # Onboard bridge (sim policy → real rover)
 
 Connects the **same steer/throttle + escape supervisor semantics** as `nasa-llaso-cad/viewer.html` to Cytron MDD10A GPIO on a Raspberry Pi.

@@ -1,3 +1,8 @@
+---
+title: "Commercial Off-The-Shelf (COTS) Comparison"
+date: 2026-09-29
+tags: [review, design]
+---
 # Commercial Off-The-Shelf (COTS) Comparison
 
 **Purpose:** Show judges we evaluated existing parts before custom design (HUNCH tri-fold requirement).

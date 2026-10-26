@@ -1,3 +1,8 @@
+---
+title: "Test Plan — Simulation, Bench, and Review Demos"
+date: 2026-09-29
+tags: [review, design]
+---
 # Test Plan — Simulation, Bench, and Review Demos
 
 **Revision:** 2026-09-28  

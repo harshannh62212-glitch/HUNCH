@@ -1,3 +1,8 @@
+---
+title: "Judge demo videos"
+date: 2026-09-29
+tags: [review]
+---
 # Judge demo videos
 
 Place two **plain** recordings here (no music):

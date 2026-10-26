@@ -1,3 +1,8 @@
+---
+title: "Autonomy scenario checklist"
+date: 2026-09-26
+tags: [llaso, sim]
+---
 # Autonomy scenario checklist
 
 Run before judge demos or after changing `viewer.html` nav code.

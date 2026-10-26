@@ -1,3 +1,8 @@
+---
+title: "LLASO / AMR Engineering Validation Runbook"
+date: 2026-09-29
+tags: [llaso, sim]
+---
 # LLASO / AMR Engineering Validation Runbook
 
 **Project:** `LLASO-P1-AMR-2026`  

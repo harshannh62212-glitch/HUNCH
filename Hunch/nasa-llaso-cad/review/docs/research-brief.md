@@ -1,3 +1,8 @@
+---
+title: "NASA HUNCH Research Brief — LLASO Surface Logistics Rover"
+date: 2026-09-29
+tags: [review, design]
+---
 # NASA HUNCH Research Brief — LLASO Surface Logistics Rover
 
 **Project ID:** `LLASO-P1-AMR-2026`  

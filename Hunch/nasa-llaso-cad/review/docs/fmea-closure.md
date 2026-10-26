@@ -1,3 +1,8 @@
+---
+title: "FMEA Closure Log (Engineering Notebook Extract)"
+date: 2026-09-29
+tags: [review, design]
+---
 # FMEA Closure Log (Engineering Notebook Extract)
 
 Source narrative: `Hunch/nasa-hunch-rover/src/data/failureLog.js` — exported here for judges (print/PDF).

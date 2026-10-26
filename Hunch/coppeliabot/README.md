@@ -1,3 +1,8 @@
+---
+title: "CoppeliaBot - Professional Parametric CAD for CoppeliaSim"
+date: 2026-09-17
+tags: [coppeliasim]
+---
 # CoppeliaBot - Professional Parametric CAD for CoppeliaSim
 
 A modular, lightweight differential-drive mobile robot CAD package designed specifically for **CoppeliaSim (V-REP)**.

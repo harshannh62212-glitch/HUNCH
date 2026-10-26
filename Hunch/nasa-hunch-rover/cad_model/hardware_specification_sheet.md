@@ -1,3 +1,8 @@
+---
+title: "NASA HUNCH Autonomous Tracked Lunar Rover | Hardware & Engineering Specification"
+date: 2026-09-17
+tags: [rover, hardware]
+---
 # NASA HUNCH Autonomous Tracked Lunar Rover | Hardware & Engineering Specification
 **Project Reference:** `LLASO-P1-AMR-2026`  
 **Chassis Architecture:** Space-Frame Truss with Embedded Brass Heat-Set Inserts & Crawler Tracks

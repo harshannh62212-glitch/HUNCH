@@ -1,3 +1,8 @@
+---
+title: "How We Meet NASA HUNCH Judge Criteria"
+date: 2026-09-29
+tags: [review]
+---
 # How We Meet NASA HUNCH Judge Criteria
 
 **Package location:** `Hunch/nasa-llaso-cad/review/`  

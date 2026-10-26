@@ -1,3 +1,8 @@
+---
+title: "Install & Demo Instructions (Judges / Mentors)"
+date: 2026-09-29
+tags: [review, design]
+---
 # Install & Demo Instructions (Judges / Mentors)
 
 ## A. Simulation (no hardware)

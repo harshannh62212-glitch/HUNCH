@@ -1,3 +1,8 @@
+---
+title: "NASA HUNCH SFT 2026-27 | LLASO Project 1"
+date: 2026-10-25
+tags: [llaso, sim]
+---
 # NASA HUNCH SFT 2026-27 | LLASO Project 1
 ## Lunar Logistics Supply Chain (VR Simulation, Game & Math Model)
 **NASA Reference Name:** `LLASO-P1-VR-2026`  
@@ -61,7 +66,7 @@ The 14-Day reverse-chronological mission profile dictates:
   - Lateral balance ($\Delta Y = -0.022\,\text{m}$) is within strict flight margins ($<\pm 0.05\,\text{m}$).
 
 ### The 5 Fundamental NASA Tracking Variables
-All items in [`lunar_logistics_manifest.json`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/lunar_logistics_manifest.json) record:
+All items in [`lunar_logistics_manifest.json`](lunar_logistics_manifest.json) record:
 1. **Item** (Name & Cargo Type)
 2. **Quantity**
 3. **Location** (Bay, Side, Tier, and $[X,Y,Z]$ coordinates in meters)
@@ -84,7 +89,7 @@ All items in [`lunar_logistics_manifest.json`](file:///Users/nhharshan/projects/
 ## 🖥️ 5. How to View & Simulate
 
 ### A. Instant 3D Digital Twin Viewer (No install required)
-Open [`viewer.html`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/viewer.html) in your web browser:
+Open [`viewer.html`](viewer.html) in your web browser:
 - Interactive 3D orbit, pan, and zoom.
 - Toggle between **1/6 g Lunar** and **1.0 g Earth** gravity readouts.
 - Scrub the **Day 1–14 Timeline** to watch the internal robot navigate to the correct shelf.
@@ -93,9 +98,13 @@ Open [`viewer.html`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/vi
 
 ### B. CoppeliaSim Import (Joints & Dynamic Physics)
 1. Open **CoppeliaSim**.
-2. Click **File → Import → URDF...** and select [`llaso_cargo_module.urdf`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/llaso_cargo_module.urdf).
-3. Attach the script [`coppelia_unloading_simulation.lua`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/coppelia_unloading_simulation.lua) to the model.
+2. Click **File → Import → URDF...** and select [`llaso_cargo_module.urdf`](llaso_cargo_module.urdf).
+3. Attach the script [`coppelia_unloading_simulation.lua`](coppelia_unloading_simulation.lua) to the model.
 4. Press **Play** to run autonomous gantry cargo retrieval under $1/6\,\text{g}$ lunar physics!
 
 ### C. Direct CAD Mesh Import (Fusion 360, SolidWorks, Blender, FreeCAD)
-- Import [`llaso_lunar_cargo_container.obj`](file:///Users/nhharshan/projects/chat-app/nasa-llaso-cad/llaso_lunar_cargo_container.obj) (includes `.mtl` colors and separated parts).
+- Import [`llaso_lunar_cargo_container.obj`](llaso_lunar_cargo_container.obj) (includes `.mtl` colors and separated parts).
+
+## Review package
+
+Judge review materials, criteria mapping and demo instructions: [review/INDEX.md](review/INDEX.md).

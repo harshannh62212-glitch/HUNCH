@@ -46,6 +46,7 @@ Hunch/                          ← git root
 | Public mission site | `/index.html`, `app.js`, `vercel.json` |
 | React rover UI | `Hunch/nasa-hunch-rover/src/App.jsx` |
 | Hardware BOM | `nasa-hunch-rover/cad_model/hardware_specification_sheet.md` |
+| **pi-top 4** — run sim on Pi after clone | `Hunch/nasa-llaso-cad/scripts/pitop/README.md`, `scripts/pitop/run.sh` |
 
 ## `viewer.html` — monolith map (~5.7k lines)
 
