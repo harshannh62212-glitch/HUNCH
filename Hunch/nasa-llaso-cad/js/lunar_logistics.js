@@ -57,6 +57,8 @@
   var lastSealFault = null;
   var alignRec = null;
   var lastReport = null;
+  var schedT = 0;
+  var dispatchState = null;   // { reqs, plan, delivered:[{id,t}] }
   var landerLanded = true;
   var hatchOpen = 1.0;
   var descendT = 8;
@@ -1532,6 +1534,7 @@
       tableParcel = held;
       missionStats.parcelsDelivered += 1;
       missionStats.totalMassKg += held.userData.rec.mass_kg;
+      if (dispatchState) dispatchState.delivered.push({ id: held.userData.rec.id, t: Math.round(schedT - dispatchState.t0) });
       if (crane) crane.queue.push(held);
       log('<span class="text-cyan-300">[ARM] Set ' + held.userData.rec.id + ' on the intake table. (' + missionStats.parcelsDelivered + ' delivered, ' + missionStats.totalMassKg.toFixed(1) + ' kg total)</span>');
       held = null;
@@ -2260,6 +2263,38 @@
         }
       }
     },
+    dispatch: function (requests) {
+      var D = window.NASA_Dispatcher;
+      if (!D || !window.NASA_Cargo) return false;
+      if (bay.length || held || picking || !(phase === 'idle' || phase === 'rth')) { log('<span class="text-amber-300">[DISPATCH] Start a dispatch while the rover is idle and empty.</span>'); return false; }
+      if (fleet.on) { log('<span class="text-amber-300">[DISPATCH] The rocket fleet is supplying the rack. Abort it first.</span>'); return false; }
+      var reqs = requests || D.demoRequests(0);
+      dispatchState = { reqs: reqs, plan: null, delivered: [], t0: schedT };
+      var p = dispatchPlan();
+      loadRackInPlanOrder(p);
+      logPlan(p, 'Plan for ' + reqs.length + ' requests (arrival order ' + reqs.map(function (r) { return r.id; }).join(',') + ' becomes ' + p.order.join(',') + ')');
+      window.__dispatchPlan = p;
+      if (landerLanded) api.startMission();
+      else log('<span class="text-amber-300">[DISPATCH] Lander not down yet; mission starts after touchdown.</span>');
+      return true;
+    },
+    addUrgent: function (item, category) {
+      var D = window.NASA_Dispatcher;
+      if (!dispatchState) { log('<span class="text-amber-300">[DISPATCH] No dispatch running. Say "dispatch" first.</span>'); return false; }
+      if (held || picking || phase === 'arm_pick' || phase === 'align_pick') { log('<span class="text-amber-300">[DISPATCH] Rover is mid-pick; request noted after this handover.</span>'); return false; }
+      var n = dispatchState.reqs.length + 1;
+      dispatchState.reqs.push({ id: 'D' + n, item: item || 'Emergency repair part', category: category || 'repair', massKg: NASA_Cargo.get(D.CATEGORIES[category || 'repair'].cargo).massKg, createdS: schedT - dispatchState.t0, deadlineS: schedT - dispatchState.t0 + 900 });
+      var p = dispatchPlan();
+      // Keep anything already aboard; re-sort the rest.
+      var aboard = {};
+      bay.forEach(function (m) { aboard[m.userData.rec.id] = true; });
+      var rest = { trips: p.trips.map(function (t) { return { items: t.items.filter(function (i) { return !aboard[i.id]; }), order: t.order, robot: t.robot, route: t.route, routeLabel: t.routeLabel, routeWhy: t.routeWhy, startS: t.startS, etaS: t.etaS, chargeFirst: t.chargeFirst, onTime: t.onTime }; }).filter(function (t) { return t.items.length; }) };
+      loadRackInPlanOrder(rest);
+      logPlan(p, 'New request D' + n + ' arrived, re-planned');
+      window.__dispatchPlan = p;
+      return true;
+    },
+    dispatchStatus: function () { return dispatchState ? { plan: dispatchState.plan, delivered: dispatchState.delivered.slice() } : null; },
     setCargoType: function (mode) {
       if (!window.NASA_Cargo) return false;
       if (!(mode === 'mixed' || NASA_Cargo.TYPES[mode])) { log('<span class="text-amber-300">[CARGO] Unknown type. Use pod, cylinder, container or mixed.</span>'); return false; }
@@ -2475,6 +2510,7 @@
       }
       if (missionStats.tracking) missionStats.simT += dt;
       if (window.NASA_Faults) NASA_Faults.step(dt);
+      schedT += dt;
       if (SC) {
         var dyn = window.NASA_Dynamics ? NASA_Dynamics.state() : null;
         var spd = (typeof vel === 'number') ? vel : 0, yr = (typeof turnVel === 'number') ? turnVel : 0;
@@ -2509,6 +2545,63 @@
     rec.cargo_type = window.NASA_Cargo ? NASA_Cargo.pick(NASA_Cargo.mode, idx) : 'pod';
     rec.mass_kg = window.NASA_Cargo ? NASA_Cargo.get(rec.cargo_type).massKg : CARGO_KG;
     return rec;
+  }
+
+
+  // ---- Mission 11: dispatcher glue ----
+  function dispatchRobots() {
+    var wh = (typeof roverWh !== 'undefined') ? roverWh : 40;
+    return [{ id: 'AEGIS-1', socWh: wh, availableS: 0 }];
+  }
+
+  function dispatchPlan() {
+    var D = window.NASA_Dispatcher;
+    var nowS = schedT - dispatchState.t0;
+    var aboard = {};
+    bay.forEach(function (m) { aboard[m.userData.rec.id] = m.userData.rec; });
+    var pending = dispatchState.reqs.filter(function (r) { return !aboard[r.id] && !dispatchState.delivered.some(function (d) { return d.id === r.id; }); });
+    var p = D.plan(pending, dispatchRobots(), { nowS: nowS, haulBlocked: !!(window.NASA_Faults && NASA_Faults.isActive('road')) });
+    var ids = Object.keys(aboard);
+    if (ids.length) {
+      // Cargo already on the rover finishes its trip first; the new plan starts after it.
+      p.trips.forEach(function (t) { t.order += 1; });
+      p.trips.unshift({
+        order: 1, robot: 'AEGIS-1', route: 'in-progress', routeLabel: 'Already en route', routeWhy: 'cargo aboard is delivered first', startS: Math.round(nowS), etaS: Math.round(nowS),
+        whEst: 0, chargeFirst: false, onTime: true,
+        items: ids.map(function (id) { return { id: id, item: aboard[id].source_item, category: aboard[id].category, cargo: aboard[id].cargo_type, massKg: aboard[id].mass_kg, score: aboard[id].priority || 0, reason: 'aboard, delivering now' }; })
+      });
+      p.order = ids.concat(p.order);
+    }
+    dispatchState.plan = p;
+    return p;
+  }
+
+  function loadRackInPlanOrder(p) {
+    var byId = {};
+    dispatchState.reqs.forEach(function (r) { byId[r.id] = r; });
+    for (var bi = 0; bi < belt.length; bi++) { if (belt[bi].parent) belt[bi].parent.remove(belt[bi]); }
+    belt.length = 0;
+    var recs = [];
+    p.trips.forEach(function (t) {
+      t.items.forEach(function (it) {
+        var r = byId[it.id];
+        var ctype = it.cargo || 'pod';
+        recs.push({
+          id: it.id, source_item: it.item, category: it.category, mass_kg: NASA_Cargo.get(ctype).massKg, manifest_mass_kg: NASA_Cargo.get(ctype).massKg,
+          cargo_type: ctype, day_number: recs.length, part: 1, priority: it.score
+        });
+      });
+    });
+    queue = recs;
+    if (rackGroup) initConveyorParcels();
+  }
+
+  function logPlan(p, title) {
+    log('<span class="text-fuchsia-300 font-bold">[DISPATCH] ' + title + ' — ' + p.trips.length + ' trips, ' + p.lateCount + ' late.</span>');
+    p.trips.forEach(function (t) {
+      log('<span class="text-fuchsia-200">[DISPATCH] #' + t.order + ' ' + t.robot + ' · ' + t.routeLabel + ' (' + t.routeWhy + ') · start ' + t.startS + ' s, eta ' + t.etaS + ' s · ' +
+        t.items.map(function (i) { return i.id + ' ' + i.item + ' [' + i.reason + ']'; }).join(' + ') + (t.chargeFirst ? ' · charge first' : '') + (t.onTime ? '' : ' · LATE') + '</span>');
+    });
   }
 
   function onManifest(data) {

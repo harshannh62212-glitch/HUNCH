@@ -2,7 +2,8 @@
  * Mission 8: one rover, three cargo systems.
  * Every cargo type carries the same universal grapple bail, so the arm and the
  * lock work unchanged. What adapts is the cradle: its clamp span and saddle shape.
- * Dimensions are scaled to fit the 2 x 2 ft rover bay. The cylinder and container are
+ * Dimensions are scaled to fit the 2 x 2 ft rover bay and, just as important, the arm's reach:
+ * every type is about as tall as the pod (about 16 cm) so the arm can set it on the intake table. The cylinder and container are
  * generic concept stand-ins, not vendor specifications.
  * Pure logic (no THREE), so tools/cargo_types_test.js can run it in Node.
  */
@@ -19,13 +20,13 @@
     },
     cylinder: {
       id: 'cylinder', label: 'Cylindrical cargo module', shape: 'cylinder',
-      fullM: [4.5, 3.0, 3.0], scale: 10, massKg: 2.5,
-      note: 'Cylindrical module concept (4.5 m x 3 m dia) at 1:10, lying on its side'
+      fullM: [4.5, 3.0, 3.0], scale: 18, massKg: 2.5,
+      note: 'Cylindrical module concept (4.5 m x 3 m dia) at 1:18, lying on its side'
     },
     container: {
       id: 'container', label: '20 ft shipping container', shape: 'box',
-      fullM: [6.058, 2.438, 2.591], scale: 10, massKg: 3.0,
-      note: 'ISO 20 ft container at 1:10'
+      fullM: [6.058, 2.438, 2.591], scale: 16, massKg: 3.0,
+      note: 'ISO 20 ft container at 1:16'
     }
   };
 

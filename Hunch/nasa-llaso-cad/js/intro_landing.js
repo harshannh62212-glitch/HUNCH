@@ -85,7 +85,7 @@
     document.body.appendChild(bars);
     S.bars = bars;
     S.style = document.createElement('style');
-    S.style.textContent = '#hud-panels,#btn-hud-toggle,#dock-hud,#crash-screen,#fault-ui{visibility:hidden!important}';
+    S.style.textContent = '#hud-panels,#btn-hud-toggle,#dock-hud,#crash-screen,#fault-ui,#dispatch-ui{visibility:hidden!important}';
     document.head.appendChild(S.style);
     setTimeout(function () { var t = document.getElementById('intro-title'); if (t) t.style.opacity = '1'; }, 400);
   }

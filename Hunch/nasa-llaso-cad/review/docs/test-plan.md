@@ -50,3 +50,5 @@ Replace archetype CSV with a fresh export from the sim after each major demo.
 `node tools/mission_scoring_test.js` checks the tip gate, pod stability tracker, dust-seal state machine, placement and alignment verdicts, and the Mission 6 report.
 
 `node tools/cargo_types_test.js` checks cargo dimensions, bay fit, cradle settings and the shared grapple bail. `node tools/faults_test.js` checks fault detection, speed and tip effects, auto-clear and operator decisions.
+
+`node tools/dispatcher_test.js` checks priority ordering, deadline pressure, two-robot splitting, route choice with a blocked road, charge windows and tray limits.
