@@ -21,12 +21,12 @@
     });
     g.position.set(x, getH(x, z), z);
     scene.add(g);
-    rocks.push({ mesh: g, x: x, z: z, r: 1.7 });
+    rocks.push({ mesh: g, x: x, z: z, r: 1.7, aside: false });
     if (typeof navForceReplan !== 'undefined') navForceReplan = true;
   }
   function clearRocks() {
-    rocks.forEach(function (r) { scene.remove(r.mesh); });
-    rocks = [];
+    // A boulder that a robot pushed out of the corridor stays where it is as scenery.
+    rocks = rocks.filter(function (r) { if (r.aside) return true; scene.remove(r.mesh); return false; });
     if (typeof navForceReplan !== 'undefined') navForceReplan = true;
   }
 
@@ -50,6 +50,7 @@
       return null;
     },
     onDetect: function (id) {
+      if (id === 'road' && window.NASA_Coop) NASA_Coop.onRoadBlocked();
       if (id === 'battery' && window.NASA_Logistics) NASA_Logistics.requestCharge();
       render();
     },
@@ -59,7 +60,10 @@
   });
 
   window.NASA_FaultsUI = {
-    obstacles: function () { return rocks.map(function (r) { return { x: r.x, z: r.z, r: r.r }; }); }
+    obstacles: function () { return rocks.filter(function (r) { return !r.aside; }).map(function (r) { return { x: r.x, z: r.z, r: r.r }; }); },
+    blockingRock: function () { for (var i = 0; i < rocks.length; i++) if (!rocks[i].aside) return { x: rocks[i].x, z: rocks[i].z, i: i }; return null; },
+    moveRock: function (i, x, z) { var r = rocks[i]; if (!r) return; r.x = x; r.z = z; r.mesh.position.set(x, getH(x, z), z); },
+    markAside: function (i) { if (rocks[i]) rocks[i].aside = true; if (typeof navForceReplan !== 'undefined') navForceReplan = true; }
   };
 
   function btn(label, fn, color) {

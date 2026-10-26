@@ -52,3 +52,5 @@ Replace archetype CSV with a fresh export from the sim after each major demo.
 `node tools/cargo_types_test.js` checks cargo dimensions, bay fit, cradle settings and the shared grapple bail. `node tools/faults_test.js` checks fault detection, speed and tip effects, auto-clear and operator decisions.
 
 `node tools/dispatcher_test.js` checks priority ordering, deadline pressure, two-robot splitting, route choice with a blocked road, charge windows and tray limits.
+
+`node tools/supply_route_test.js` checks the zone geometry, scaled distance, slope check and violation counting. `node tools/coop_test.js` checks the status bus, collision-avoidance scaling, the kinematic driver and the clear-the-route task.

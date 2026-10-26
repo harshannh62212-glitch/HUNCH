@@ -2526,6 +2526,7 @@
       if (window.NASA_Faults) NASA_Faults.step(dt);
       if (window.NASA_HabitatDisplay) NASA_HabitatDisplay.update(dt);
       if (window.NASA_SupplyRoute) NASA_SupplyRoute.tick();
+      if (window.NASA_Coop) NASA_Coop.tick(dt);
       schedT += dt;
       if (SC) {
         var dyn = window.NASA_Dynamics ? NASA_Dynamics.state() : null;
