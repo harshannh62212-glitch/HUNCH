@@ -126,6 +126,7 @@
         project: 'LLASO-P1-AMR-2026',
         source: 'nasa-llaso-cad/viewer.html',
         summary: summary,
+        mission_report: window.__missionReport || null,
       };
       var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       var a = document.createElement('a');

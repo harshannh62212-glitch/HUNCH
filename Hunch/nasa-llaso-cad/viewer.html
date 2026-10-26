@@ -5636,7 +5636,7 @@ function updatePhysics(dt) {
   var rut = loaded ? 0.09 * G * (sinkRatio - 1) : 0;
   var rollResist = (0.05 * G * _soilSink * NASA_SoilTracks.dragFactor() + rut) * cosSlope;
   var thermThrottle = (typeof thermalNow !== 'undefined' && thermalNow && thermalNow.throttleFactor != null) ? thermalNow.throttleFactor : 1.0;
-  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale() * thermThrottle;
+  var ms = activeMotor.maxSpeed * (kd('shift') && !autoOn ? 1.5 : 1) * payloadSpeedScale() * (window.NASA_Scoring ? NASA_Scoring.speedScale() : 1) * thermThrottle;
   var af = (loaded ? (MOTOR_STALL_N / roverTotalKg()) : (activeMotor.torque * 2)) * thermThrottle;
   var ta = 0, _hold = false, _v0 = vel;
 
@@ -6970,6 +6970,7 @@ function runDockSelfTest(n) {
 }
 window.runDockSelfTest = runDockSelfTest;
 </script>
+<script src="js/mission_scoring.js"></script>
 <script src="js/lunar_logistics.js"></script>
 <script src="js/intro_landing.js"></script>
 </body>

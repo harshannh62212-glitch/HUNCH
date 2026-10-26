@@ -43,12 +43,20 @@
     distanceM: 0,
     whUsed: 0,
     placementErrM: null,
+    simT: 0,
     lastX: null,
     lastZ: null,
     lastWh: null,
     tracking: false
   };
   var missionArmed = false;
+  var SC = window.NASA_Scoring;
+  var stab = SC ? SC.createStability() : null;
+  var seal = SC ? SC.createSeal() : null;
+  var sealMesh = null;
+  var lastSealFault = null;
+  var alignRec = null;
+  var lastReport = null;
   var landerLanded = true;
   var hatchOpen = 1.0;
   var descendT = 8;
@@ -450,7 +458,23 @@
     var pickWanted = phase === 'align_pick' || phase === 'arm_pick' || armMode === 'pick' || trayP > 0.001;
     var dropWanted = phase === 'align_drop' || phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place';
     if (pickupDoor) pickupDoor.target = pickWanted ? 1 : 0;
-    if (dropDoor) dropDoor.target = dropWanted ? 1 : 0;
+    var sealWanted = phase === 'arm_place' || phase === 'crane_wait' || armMode === 'place';
+    if (seal) {
+      var tYaw = (typeof parkPose === 'function') ? parkPose().targetYaw : Math.PI;
+      var yawErr = (typeof roverYaw === 'number' && tYaw !== undefined) ? SC.wrap(roverYaw - tYaw) : 0;
+      var prev = seal.state;
+      seal.step(dt, sealWanted, yawErr, !dropDoor || dropDoor.pos < 0.001);
+      if (prev !== seal.state) {
+        if (seal.state === 'EXTEND') { alignRec = SC.alignVerdict(yawErr); log('<span class="text-cyan-300">[DOCK SEAL] Square to the airlock face (' + alignRec.yawErrDeg.toFixed(1) + '° off, limit ' + alignRec.tolDeg.toFixed(0) + '°). Extending dust collar.</span>'); }
+        else if (seal.state === 'SEALED') log('<span class="text-emerald-300 font-bold">[DOCK SEAL] Collar compressed. Dust-exclusion seal made, hatch may open.</span>');
+        else if (seal.state === 'RETRACTED' && prev === 'SEALED') log('<span class="text-slate-300">[DOCK SEAL] Hatch shut, collar retracted.</span>');
+      }
+      if (seal.state === 'FAULT' && phase === 'arm_place' && !armMode) { phase = 'align_drop'; log('<span class="text-amber-300">[DOCK SEAL] Backing off to square up again.</span>'); }
+      if (seal.state === 'FAULT' && seal.fault !== lastSealFault) log('<span class="text-amber-300 font-bold">[DOCK SEAL] Refused: ' + seal.fault + '. Realign before the hatch can open.</span>');
+      lastSealFault = seal.fault;
+      if (sealMesh) sealMesh.position.x = 0.04 + 0.05 * seal.extension();
+    }
+    if (dropDoor) dropDoor.target = (dropWanted && (!seal || seal.ready)) ? 1 : 0;
     stepDoor(pickupDoor, dt);
     stepDoor(dropDoor, dt);
   }
@@ -559,6 +583,15 @@
     sign.rotation.y = Math.PI / 2;
     sign.position.set(x + 0.02, closedY + 0.05, -(opening * 0.5 + 0.52));
     wall.add(sign);
+    // Dust-exclusion collar: a gasket frame that extends from the wall and compresses against the rover's nose plate.
+    sealMesh = new THREE.Group();
+    var gm = mat(0x1e293b, 0.9, 0.05);
+    var gy = sillH + (wallH - headerH - sillH) * 0.5, gh = wallH - headerH - sillH;
+    box(0.05, 0.03, opening + 0.06, gm, sealMesh, 0, gy + gh * 0.5 + 0.015, 0);
+    box(0.05, 0.03, opening + 0.06, gm, sealMesh, 0, gy - gh * 0.5 - 0.015, 0);
+    [-1, 1].forEach(function (sz) { box(0.05, gh + 0.06, 0.03, gm, sealMesh, 0, gy, sz * (opening * 0.5 + 0.015)); });
+    sealMesh.position.set(0.04, 0, 0);
+    wall.add(sealMesh);
     var lamp = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.05, 0.05), mat(0xef4444, 0.3, 0.2, 0xef4444));
     lamp.position.set(x + 0.02, wallH - headerH * 0.5, opening * 0.5 + 0.06);
     wall.add(lamp);
@@ -1456,7 +1489,12 @@
         var now = new THREE.Vector3();
         tableAnchor.getWorldPosition(target);
         held.getWorldPosition(now);
-        missionStats.placementErrM = Math.hypot(now.x - target.x, now.y - target.y, now.z - target.z);
+        // The pod's centre is meant to rest half its height above the anchor, so score against that seat point.
+        missionStats.placementErrM = Math.hypot(now.x - target.x, now.y - (target.y + halfH(held)), now.z - target.z);
+        if (SC) {
+          var pv = SC.placementVerdict(missionStats.placementErrM);
+          log('<span class="' + (pv.pass ? 'text-emerald-300' : 'text-amber-300') + ' font-bold">[MISSION 5] Placement error ' + (pv.errM * 100).toFixed(1) + ' cm (limit ' + (pv.tolM * 100).toFixed(0) + ' cm): ' + (pv.pass ? 'PASS' : 'OUT OF TOLERANCE') + '.</span>');
+        }
       }
       releaseOn(tableAnchor, held, halfH(held));
       tableParcel = held;
@@ -1672,6 +1710,23 @@
     finishOrHangar();
   }
 
+  function emitReport() {
+    if (SC && missionStats.parcelsDelivered > 0) {
+      lastReport = SC.buildReport({
+        simTimeS: missionStats.simT, distanceM: missionStats.distanceM, whUsed: missionStats.whUsed,
+        delivered: missionStats.parcelsDelivered, massKg: missionStats.totalMassKg, placementErrM: missionStats.placementErrM,
+        sealed: !!alignRec && alignRec.pass, stability: stab.result()
+      });
+      window.__missionReport = lastReport;
+      var stb = lastReport.stability;
+      log('<span class="' + (lastReport.success ? 'text-emerald-400' : 'text-amber-300') + ' font-bold">[MISSION 6 REPORT] ' + (lastReport.success ? 'PASS' : 'INCOMPLETE') +
+          ' | time ' + lastReport.simTimeS + ' s | distance ' + lastReport.distanceM + ' m | energy ' + lastReport.whUsed + ' Wh | placement ' +
+          (lastReport.placementErrM == null ? 'n/a' : (lastReport.placementErrM * 100).toFixed(1) + ' cm') + ' ' + (lastReport.placementPass ? 'ok' : 'FAIL') +
+          ' | seal ' + (lastReport.sealed ? 'ok' : 'FAIL') + ' | pod stability ' + (lastReport.stabilityPass ? 'ok' : 'FAIL') +
+          ' (min tip margin ' + (stb.minMargin == null ? 'n/a' : stb.minMargin.toFixed(2)) + ' m/s², ' + stb.starts + ' starts, ' + stb.stops + ' stops, ' + stb.turns + ' turns)</span>');
+    }
+  }
+
   function finishOrHangar() {
     var lowNow = socLow();
     if (lowNow) {
@@ -1699,6 +1754,7 @@
     } else {
       log('<span class="text-amber-300">[DEPOT] Shelves full. ' + queue.length + ' parcels remain on the lander belt.</span>');
     }
+    emitReport();
     if (typeof startReturnToDock === 'function') startReturnToDock();
   }
 
@@ -1708,6 +1764,9 @@
       missionStats.distanceM = 0;
       missionStats.whUsed = 0;
       missionStats.placementErrM = null;
+      missionStats.simT = 0;
+      if (stab) stab.reset();
+      alignRec = null;
       missionStats.lastX = null;
       missionStats.lastZ = null;
       missionStats.lastWh = (typeof roverWh !== 'undefined') ? roverWh : null;
@@ -2047,6 +2106,7 @@
       if (phase === 'transit_lander' || phase === 'transit_base' || phase === 'transit_stage') {
         phase = 'rth';
         missionArmed = false;
+        emitReport();
         if (typeof globalGoal !== 'undefined') globalGoal = null;
         if (typeof waypoint !== 'undefined') waypoint = null;
       }
@@ -2167,6 +2227,9 @@
         }
       }
     },
+    report: function () { return lastReport; },
+    stability: function () { return stab ? stab.result() : null; },
+    sealState: function () { return seal ? seal.state : null; },
     deployLander: function () {
       if (fleet.on) return;
       if (phase === 'descent' || landerLanded) {
@@ -2363,6 +2426,15 @@
           if (used > 0) missionStats.whUsed += used;
           missionStats.lastWh = roverWh;
         }
+      }
+      if (missionStats.tracking) missionStats.simT += dt;
+      if (SC) {
+        var dyn = window.NASA_Dynamics ? NASA_Dynamics.state() : null;
+        var spd = (typeof vel === 'number') ? vel : 0, yr = (typeof turnVel === 'number') ? turnVel : 0;
+        var mr = dyn ? dyn.tipMarginRoll : 9, mp = dyn ? dyn.tipMarginPitch : 9;
+        var carrying = (typeof roverPayloadKg === 'function' ? roverPayloadKg() : 0) > 0.2;
+        SC._scale = SC.tipSpeedScale(mr, mp, Math.abs(spd * yr));
+        if (missionStats.tracking) stab.add({ carrying: carrying, lockHeld: (bay.length > 0 || !!held), speed: spd, yawRate: yr, marginRoll: mr, marginPitch: mp, tilt: (typeof smoothPitch === 'number' ? Math.max(Math.abs(smoothPitch), Math.abs(typeof smoothRoll === 'number' ? smoothRoll : 0)) : 0) });
       }
       updateDoors(dt);
       stepSettling(dt);

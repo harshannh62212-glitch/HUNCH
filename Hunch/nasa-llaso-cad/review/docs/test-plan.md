@@ -44,3 +44,7 @@ python3 generate_hunch_review_bundle.py
 ```
 
 Replace archetype CSV with a fresh export from the sim after each major demo.
+
+## Scoring unit tests
+
+`node tools/mission_scoring_test.js` checks the tip gate, pod stability tracker, dust-seal state machine, placement and alignment verdicts, and the Mission 6 report.
