@@ -14,3 +14,11 @@ __pycache__/
 dist/
 **/dist/
 *.pth
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.obsidian/plugins/*/data.json
+
+# local archive of old copies (see Hunch/nasa-llaso-cad/_archive/README.txt)
+Hunch/nasa-llaso-cad/_archive/
+.env*
