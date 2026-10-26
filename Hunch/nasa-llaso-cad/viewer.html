@@ -6359,7 +6359,7 @@ function animate() {
     refreshNavMapOverlay(now);
     drawMap();
   }
-  updatePhysics(dt);
+  if (window.NASA_Intro && NASA_Intro.active) NASA_Intro.tick(dt); else updatePhysics(dt);
   updateGoalBeacon(now);
   if (enduranceRunning) noteEnduranceFrame(dt);
 
@@ -6556,7 +6556,7 @@ function startEnduranceTest() {
   if (typeof navStudyEmit === 'function') navStudyEmit('start', minutes + ' min endurance');
 }
 document.getElementById('btn-endurance').onclick = startEnduranceTest;
-setTimeout(function() {
+function startAutoMission() {
   var p = new URLSearchParams(location.search);
   if (p.get('endurance')) return;
   if (p.get('mission') === 'fleet') {
@@ -6574,6 +6574,11 @@ setTimeout(function() {
     btn.className = 'px-3 py-1.5 border border-red-500 bg-red-900/60 hover:bg-red-800 text-white rounded font-black text-[10px] tracking-wider transition shadow-[0_0_15px_rgba(239,68,68,0.4)]';
   }
   llog('<span class="text-cyan-400 font-bold">[WANDER] Survey started. Random goals across the field.</span>');
+}
+setTimeout(function() {
+  var q0 = new URLSearchParams(location.search);
+  if (q0.get('endurance') || !window.NASA_Intro) { startAutoMission(); return; }
+  NASA_Intro.play(startAutoMission);
 }, 1200);
 
 addEventListener('resize', function() {
@@ -6966,5 +6971,6 @@ function runDockSelfTest(n) {
 window.runDockSelfTest = runDockSelfTest;
 </script>
 <script src="js/lunar_logistics.js"></script>
+<script src="js/intro_landing.js"></script>
 </body>
 </html>

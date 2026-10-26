@@ -29,10 +29,6 @@ The deliverable is a prototype or a high-fidelity sim that shows navigation and 
 
 Later, if 1–6 are solid: scaled 2 km autonomy, three cargo interfaces, two-robot teamwork, a surprise fault, an AI dispatcher, and one capability NASA did not ask for.
 
-## What we already have
+## Status
 
-`viewer.html` drives with WASD and AI NAV (LiDAR map, A*, pure pursuit, optional Ollama dodge). `js/lunar_logistics.js` has touchdown, a lander pad, a staging goal, pickup, haul, and drop. The dust-seal “butt against the airlock,” a scored pod lock, and the three cargo shapes are not done yet.
-
-## Step 1 (started)
-
-Mission 1 is the only thing in progress. Saying “mission 1” or “leave” runs a checkout (start, stop, turn, reverse), then drives to staging at (10, −28) and prints pass or incomplete. Do not start Mission 2 until that line says PASS.
+See [Mission coverage](docs/mission-coverage.md) for the current state of each mission. The sim now opens with a rocket-delivered rover landing (`js/intro_landing.js`; skip with Space, disable with `?intro=0`).
