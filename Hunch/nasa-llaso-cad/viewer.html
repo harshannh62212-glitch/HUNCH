@@ -141,6 +141,7 @@
       </div>
       <div class="hidden">
         <button id="btn-cargo-mission" type="button">cargo</button>
+        <button id="btn-fleet-mission" type="button">fleet</button>
         <button id="btn-arm-pickup" type="button">pick</button>
         <button id="btn-arm-drop" type="button">drop</button>
         <button id="btn-go-base" type="button">base</button>
@@ -1090,7 +1091,7 @@ for (var ci = 0; ci < 5; ci++) {
 
 // Rear Spring-Loaded Docking Bumper Chocks & Optical Target
 var rearBumperBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 1.4), matHazard);
-rearBumperBeam.position.set(-1.92, 0.18, 0);   // hard-stop face at x=-1.85; parked rover (centre -1.18) reaches -1.828, 22 mm gap
+rearBumperBeam.position.set(-1.903, 0.18, 0);   // hard-stop face at x=-1.833; parked rover (centre -1.18) reaches -1.828, 5 mm gap
 dockGroup.add(rearBumperBeam);
 
 // 2. Corrugated Insulated Side Walls, Structural I-Beam Portal Ribs & Back Bulkhead
@@ -3777,10 +3778,10 @@ function computeAutopilot(dt) {
   var breathM = window.NASA_NavFusion ? NASA_NavFusion.BREATH_M : 0.34;
   var inRockGap = (rockCorridor && rockCorridor.mode === 'gap') || corridorClr >= ROVER_RADIUS + breathM * 0.45;
   var speedMs = Math.abs(vel);
-  var look = Math.max(3.0, Math.min(4.8, 2.8 + speedMs * 1.0));
+  var look = Math.max(4.2, Math.min(6.5, 3.8 + speedMs * 1.4)); // longer look-ahead = gentler turns
   var tgt = pathLookaheadPoint(p, plannedPathPoints, navPathIdx, look);
   if (!comfortLookTarget) comfortLookTarget = tgt.clone();
-  else comfortLookTarget.lerp(tgt, Math.min(1.0, 7.0 * dt));
+  else comfortLookTarget.lerp(tgt, Math.min(1.0, 2.5 * dt));
 
   var segA = plannedPathPoints[navPathIdx];
   var segB = plannedPathPoints[Math.min(navPathIdx + 1, plannedPathPoints.length - 1)];
@@ -3788,7 +3789,7 @@ function computeAutopilot(dt) {
   var segLen = Math.hypot(sdx, sdz) || 1;
   var normX = -sdz / segLen, normZ = sdx / segLen;
   var crossTrack = (p.x - segA.x) * normX + (p.z - segA.z) * normZ;
-  var deadband = 0.06;
+  var deadband = 0.15; // ignore small offsets, let them fade out slowly
   var effCrossTrack = Math.abs(crossTrack) < deadband ? 0 : (crossTrack > 0 ? crossTrack - deadband : crossTrack + deadband);
   var alpha = angleToGoalYawOnly(comfortLookTarget);
 
@@ -3807,9 +3808,9 @@ function computeAutopilot(dt) {
   // Damped course correction:
   // Pure pursuit angle alpha points toward lookahead point on the path.
   // Add gentle cross-track correction, with yaw velocity damping (turnVel) to eliminate overshoot hunting
-  var ctCorrection = Math.atan(0.35 * effCrossTrack / (speedMs + 1.2));
-  var steerCmd = alpha * 0.85 + ctCorrection * 0.40;
-  var yawDamp = (typeof turnVel !== 'undefined' ? turnVel : 0) * 0.22;
+  var ctCorrection = Math.atan(0.18 * effCrossTrack / (speedMs + 1.2));
+  var steerCmd = alpha * 0.7 + ctCorrection * 0.25;
+  var yawDamp = (typeof turnVel !== 'undefined' ? turnVel : 0) * 0.30;
   var steer = steerCmd - yawDamp;
 
   var turnAhead = 0, prevH = null, run = 0;
@@ -3894,7 +3895,7 @@ function computeAutopilot(dt) {
   }
 
   var rawSteer = steer;
-  var slew = inRockGap ? 2.5 * dt : 3.0 * dt;
+  var slew = inRockGap ? 0.9 * dt : 1.2 * dt; // gentle steering rate
   var dSteer = rawSteer - window_prevBestSteer;
   if (dSteer > slew) dSteer = slew;
   else if (dSteer < -slew) dSteer = -slew;
@@ -4039,7 +4040,7 @@ function computeAutopilotLegacy(dt) {
   }
 
   // 5. Critically-Damped Smooth Steering Transition
-  window_prevBestSteer += (bestSteer - window_prevBestSteer) * Math.min(1.0, 3.2 * dt);
+  window_prevBestSteer += (bestSteer - window_prevBestSteer) * Math.min(1.0, 1.8 * dt);
 
   // 6. Smooth Speed Control with obstacle braking
   var speed = smoothstep(0.4, 5.0, distToGoal);
@@ -6558,6 +6559,12 @@ document.getElementById('btn-endurance').onclick = startEnduranceTest;
 setTimeout(function() {
   var p = new URLSearchParams(location.search);
   if (p.get('endurance')) return;
+  if (p.get('mission') === 'fleet') {
+    var fleetTry = setInterval(function () {
+      if (window.NASA_Logistics && NASA_Logistics.startFleet) { clearInterval(fleetTry); NASA_Logistics.startFleet(); }
+    }, 500);
+    return;
+  }
   if (p.get('mission') === 'cargo' || p.get('mission') === 'logistics') return;
   wanderOn = true;
   pickWanderGoal();
@@ -6583,7 +6590,9 @@ function applyRoverCommand(cmd) {
     llog('<span class="text-rose-400 font-bold">[ERR] NASA Logistics subsystem initializing...</span>');
     return false;
   }
-  if (cmd.includes('cargo run') || cmd === 'run' || cmd === 'start' || cmd === 'mission' || cmd.includes('start cargo') || cmd.includes('cycle') || cmd.includes('mission 6')) {
+  if (cmd.includes('fleet') || cmd.includes('rocket') || cmd.includes('resupply')) {
+    window.NASA_Logistics.startFleet();
+  } else if (cmd.includes('cargo run') || cmd === 'run' || cmd === 'start' || cmd === 'mission' || cmd.includes('start cargo') || cmd.includes('cycle') || cmd.includes('mission 6')) {
     window.NASA_Logistics.startMission();
   } else if (cmd === 'drive' || cmd.includes('mission 1') || cmd.includes('staging') || cmd.includes('leave')) {
     window.NASA_Logistics.missionDrive();
@@ -6773,6 +6782,11 @@ if (document.getElementById('btn-quick-mission')) {
 }
 if (document.getElementById('btn-cargo-mission')) {
   document.getElementById('btn-cargo-mission').onclick = engageCargoRunMission;
+}
+if (document.getElementById('btn-fleet-mission')) {
+  document.getElementById('btn-fleet-mission').onclick = function () {
+    if (window.NASA_Logistics) NASA_Logistics.startFleet();
+  };
 }
 if (document.getElementById('btn-deploy-lander')) {
   document.getElementById('btn-deploy-lander').onclick = function () {

@@ -52,6 +52,9 @@
   var landerLanded = true;
   var hatchOpen = 1.0;
   var descendT = 8;
+  // Rocket resupply fleet: N rockets land one after another, drop pods on the rack, lift off.
+  var FLEET_SIZE = 3;
+  var fleet = { on: false, size: FLEET_SIZE, per: 4, arrived: 0, state: 'idle', t: 0 };
   var held = null;
   var picking = null;
   var landerGroup = null;
@@ -311,6 +314,25 @@
       foot.position.set(p[0] + (p[0] > 0 ? 0.2 : -0.2), -2.3, p[1]);
       landerGroup.add(foot);
     });
+
+    // Rocket details: nose cone, engine bell and four tail fins
+    var rocketWhite = mat(0xe7e5e4, 0.4, 0.5);
+    var nose = new THREE.Mesh(new THREE.ConeGeometry(1.5, 3.2, 32), mat(0xf59e0b, 0.4, 0.4));
+    nose.rotation.z = Math.PI / 2;
+    nose.position.x = -6.1 - 1.6;
+    landerGroup.add(nose);
+    var bell = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 1.0, 1.0, 20), mat(0x292524, 0.6, 0.7));
+    bell.rotation.z = Math.PI / 2;
+    bell.position.x = 6.5;
+    landerGroup.add(bell);
+    for (var fi = 0; fi < 4; fi++) {
+      var finG = new THREE.Group();
+      finG.rotation.x = fi * Math.PI / 2;
+      var fin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 0.07), rocketWhite);
+      fin.position.set(5.0, 1.95, 0);
+      finG.add(fin);
+      landerGroup.add(finG);
+    }
 
     hatchPivot = new THREE.Group();
     hatchPivot.position.set(0, 0.15, 1.5);
@@ -1665,6 +1687,8 @@
     }
     if (lowNow) {
       log('<span class="text-amber-300">[LOGISTICS] Battery low. Returning to the hangar.</span>');
+    } else if (!queue.length && fleet.on) {
+      log('<span class="text-cyan-300">[LOGISTICS] Pickup rack empty. Waiting at the dock for rocket ' + Math.min(fleet.size, fleet.arrived + 1) + '/' + fleet.size + '.</span>');
     } else if (!queue.length) {
       log('<span class="text-emerald-400 font-bold">[LOGISTICS] ✅ MISSION COMPLETE — All rover parcels delivered to Artemis Base.</span>');
       log('<span class="text-emerald-300">[SUMMARY] Parcels: ' + missionStats.parcelsDelivered +
@@ -1701,7 +1725,7 @@
     var phaseEl = document.getElementById('log-phase');
     if (bayEl) bayEl.textContent = bay.length + ' / ' + (bayMass() + heldMass()).toFixed(1) + ' kg';
     if (depEl) depEl.textContent = depot.length + '/' + DEPOT_SLOTS + ' · ' + depotMass().toFixed(1) + ' kg';
-    if (leftEl) leftEl.textContent = String(queue.length);
+    if (leftEl) leftEl.textContent = String(queue.length) + (fleet.on ? ' · rocket ' + fleet.arrived + '/' + fleet.size + ' ' + fleet.state : '');
     if (haulEl) haulEl.textContent = String(haulerItems.length);
     if (tripEl) tripEl.textContent = String(trips);
     if (phaseEl) phaseEl.textContent = phase.replace(/_/g, ' ').toUpperCase();
@@ -1755,7 +1779,7 @@
 
   function spawnPlume(dt) {
     if (!plume) return;
-    var descending = phase === 'descent';
+    var descending = phase === 'descent' || fleet.state === 'descent' || fleet.state === 'liftoff';
     var arr = plume.geometry.attributes.position.array;
     var n = plumeLife.length;
     if (descending && landerGroup) {
@@ -1870,8 +1894,142 @@
     return bay.length > 0 || (queue.length > 0 && shelfRoom);
   }
 
+  function fleetFreeSlots() {
+    return DEPOT_SLOTS - (depot.length + (crane ? crane.queue.length : 0) + bay.length + queue.length);
+  }
+
+  function addRocketCargo() {
+    var k = fleet.arrived;
+    for (var i = 0; i < fleet.per; i++) {
+      queue.push({
+        id: 'R' + k + String.fromCharCode(65 + i),
+        source_item: 'Rocket ' + k + ' resupply pod ' + (i + 1),
+        mass_kg: CARGO_KG,
+        manifest_mass_kg: CARGO_KG,
+        day_number: 100 * k + i,
+        part: 1
+      });
+    }
+    ensureBelt();
+    log('<span class="text-emerald-300">[ROCKET ' + k + '/' + fleet.size + '] ' + fleet.per + ' pods set down on the pickup rack. ' + queue.length + ' waiting.</span>');
+  }
+
+  function launchRoverForFleet() {
+    if (socLow()) { missionArmed = true; return; }
+    if (phase === 'idle' || phase === 'rth') {
+      phase = 'idle';
+      api.startMission();
+    } else {
+      missionArmed = true;
+    }
+  }
+
+  function setHatch(dt, target) {
+    hatchOpen += (target - hatchOpen) * Math.min(1, 2.0 * dt);
+    if (hatchPivot) hatchPivot.rotation.x = -hatchOpen * 1.35;
+  }
+
+  function tickFleet(dt) {
+    if (!fleet.on || !landerGroup) return;
+    fleet.t += dt;
+    var top = groundY + 28;
+    var u, ease;
+    if (fleet.state === 'liftoff') {
+      u = Math.min(1, fleet.t / 9);
+      landerGroup.position.y = landedCenterY + (top - landedCenterY) * (u * u);
+      setHatch(dt, 0);
+      if (u >= 1) {
+        landerGroup.visible = false;
+        if (fleet.arrived >= fleet.size) {
+          fleet.on = false;
+          fleet.state = 'done';
+          log('<span class="text-emerald-300">[ROCKET] Last rocket has left. ' + queue.length + ' pods still to move.</span>');
+          if (!needsRuns() && !bay.length) {
+            log('<span class="text-emerald-400 font-bold">[LOGISTICS] ✅ MISSION COMPLETE — All rocket cargo stored. Depot: ' + depot.length + '/' + DEPOT_SLOTS + ' slots filled.</span>');
+          }
+        } else {
+          fleet.state = 'gap';
+          fleet.t = 0;
+        }
+      }
+    } else if (fleet.state === 'gap') {
+      if (fleet.t >= 6) {
+        fleet.arrived += 1;
+        fleet.state = 'descent';
+        fleet.t = 0;
+        hatchOpen = 0;
+        if (hatchPivot) hatchPivot.rotation.x = 0;
+        landerGroup.visible = true;
+        landerGroup.position.y = top;
+        if (landerGroup.userData.light) landerGroup.userData.light.intensity = 6;
+        log('<span class="text-amber-300 font-bold">[ROCKET ' + fleet.arrived + '/' + fleet.size + '] On final descent to the pad.</span>');
+      }
+    } else if (fleet.state === 'descent') {
+      u = Math.min(1, fleet.t / 8);
+      ease = u * u * (3 - 2 * u);
+      landerGroup.position.y = top + (landedCenterY - top) * ease;
+      if (u >= 1) {
+        landerLanded = true;
+        landerGroup.position.y = landedCenterY;
+        if (landerGroup.userData.light) landerGroup.userData.light.intensity = 1.4;
+        navForceReplan = true;
+        fleet.state = 'unload';
+        fleet.t = 0;
+        log('<span class="text-emerald-400 font-bold">[ROCKET ' + fleet.arrived + '/' + fleet.size + '] Touchdown. Hatch opening.</span>');
+      }
+    } else if (fleet.state === 'unload') {
+      setHatch(dt, 1);
+      if (fleet.t >= 3.5) {
+        addRocketCargo();
+        fleet.state = 'hold';
+        fleet.t = 0;
+        launchRoverForFleet();
+      }
+    } else if (fleet.state === 'hold') {
+      if (fleet.t >= 5) {
+        landerLanded = false;
+        navForceReplan = true;
+        fleet.state = 'liftoff';
+        fleet.t = 0;
+        log('<span class="text-amber-300">[ROCKET ' + fleet.arrived + '/' + fleet.size + '] Cargo out. Lifting off.</span>');
+      }
+    }
+  }
+
   var api = {
     phase: function () { return phase; },
+    startFleet: function () {
+      if (fleet.on) { log('<span class="text-slate-400">[ROCKET] Resupply already under way.</span>'); return; }
+      if (!manifest) initFallbackManifest();
+      // The fleet replaces the manifest backlog (44 pods is more than the 12 shelf slots).
+      if (!bay.length && !held && !picking && (phase === 'idle' || phase === 'rth')) {
+        for (var bi = 0; bi < belt.length; bi++) { if (belt[bi].parent) belt[bi].parent.remove(belt[bi]); }
+        belt.length = 0;
+        queue = [];
+        log('<span class="text-slate-300">[ROCKET] Cleared the old manifest backlog from the rack.</span>');
+      }
+      var free = fleetFreeSlots();
+      fleet.size = FLEET_SIZE;
+      fleet.per = Math.floor(free / fleet.size);
+      if (fleet.per < 1) {
+        log('<span class="text-amber-300">[ROCKET] Not enough free shelf slots (' + free + ') for ' + fleet.size + ' rockets.</span>');
+        return;
+      }
+      fleet.on = true;
+      fleet.arrived = 0;
+      fleet.t = 0;
+      log('<span class="text-cyan-300 font-bold">[ROCKET] Resupply fleet: ' + fleet.size + ' rockets x ' + fleet.per + ' pods. Rover launches itself after each drop.</span>');
+      if (landerLanded && (queue.length || bay.length)) api.startMission();
+      if (landerLanded) {
+        landerLanded = false;
+        navForceReplan = true;
+        fleet.state = 'liftoff';
+      } else {
+        fleet.state = 'gap';
+        landerGroup.visible = false;
+      }
+    },
+    fleetInfo: function () { return { on: fleet.on, state: fleet.state, arrived: fleet.arrived, size: fleet.size, per: fleet.per }; },
     cargoPoints: cargoPoints,
     needsRuns: needsRuns,
     // Called by the power supervisor. Returns true when logistics will bring the rover home itself.
@@ -1951,9 +2109,9 @@
       var stopErr = wrap(stopYaw - roverYaw);
       var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
       var pickAlign = phase === 'align_pick';
-      var distGate = pickAlign ? 0.07 : 0.09;
+      var distGate = pickAlign ? 0.07 : 0.045;
       var yawGate = pickAlign ? 0.18 : 0.28;
-      var fineDist = pickAlign ? 0.04 : 0.05;
+      var fineDist = pickAlign ? 0.04 : 0.03;
       var fineYaw = pickAlign ? 0.10 : 0.18;
       var velGate = pickAlign ? 0.05 : 0.06;
       if (dist < distGate && Math.abs(stopErr) < yawGate) {
@@ -2010,6 +2168,7 @@
       }
     },
     deployLander: function () {
+      if (fleet.on) return;
       if (phase === 'descent' || landerLanded) {
         log('<span class="text-slate-400">[LANDER] Already down or on approach.</span>');
         return;
@@ -2040,7 +2199,11 @@
         log('<span class="text-amber-300">[LOGISTICS] Manifest pending; initializing defaults...</span>');
         initFallbackManifest();
       }
-      if (!landerLanded) {
+      if (fleet.on && !landerLanded && !queue.length && !bay.length) {
+        missionArmed = true;
+        return;
+      }
+      if (!landerLanded && !fleet.on) {
         if (phase !== 'descent') api.deployLander();
         beginLeg('transit_lander');
         return;
@@ -2167,6 +2330,7 @@
         hatchOpen += (1 - hatchOpen) * Math.min(1, 1.4 * dt);
         if (hatchPivot) hatchPivot.rotation.x = -hatchOpen * 1.35;
       }
+      tickFleet(dt);
       spawnPlume(dt);
       if (phase === 'm1_checkout' && m1) {
         m1.t += dt;
@@ -2228,6 +2392,7 @@
     });
     data.rover_payload_kg = +(CARGO_KG * (data.parcels || []).length).toFixed(1);
     manifest = data;
+    if (fleet.on) return; // rocket fleet supplies the pods
     queue = (data.parcels || []).slice().sort(function (a, b) {
       return a.day_number - b.day_number || (a.id < b.id ? -1 : 1);
     });
