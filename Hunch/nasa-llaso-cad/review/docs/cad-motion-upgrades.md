@@ -60,9 +60,9 @@ Rules of thumb:
 
 ## 3. Open questions for the team
 
-1. **Dock PV:** `dock_station.js` models 4 × 70 W panels (266 W bus); the BOM and the website list one HQST 100 W panel. Pick one and update the other.
+1. **Dock PV (resolved Oct 2026):** the code's 4 × 70 W panels (266 W bus) are the configuration of record; the dock BOM was updated to match. The website should be checked against it.
 2. **Website status:** the site still says *Planning · Phase 1*. With the CAD, dock and simulator running, Phase 2 may be the honest label.
-3. **Night survival:** the dock design note shows the buffer holds about 26 h of a 354 h night. Decide between a bigger buffer, RHUs, or declaring night survival out of scope.
+3. **Night survival (resolved Oct 2026):** the code's 1280 Wh buffer covers about 488 h at 2.1 W, which beats the 354 h night. Remaining risk: LiFePO4 cannot charge below 0 °C, so the code now blocks charging when the warm box is cold; confirm the heated box on hardware.
 
 ## 4. Next upgrades (in priority order)
 

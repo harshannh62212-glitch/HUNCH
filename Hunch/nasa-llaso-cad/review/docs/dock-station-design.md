@@ -7,7 +7,20 @@ tags: [review, design]
 
 **Project:** NASA HUNCH LLASO Project 2 · **Status:** design v1 + simulator implementation · **Code:** `Hunch/nasa-llaso-cad/js/dock_station.js`, hooks in `viewer.html`
 
-> **Read this first — the one thing that changes the design.**
+> **Configuration of record (Oct 2026): the simulator code is the source of truth.** The tables below were first written for a 100 W PV panel, a 5 Ah LTO buffer and a 41 W charger. The code and the sim now use:
+>
+> | Item | Value in code (`dock_station.js`) | Old figure in this note |
+> |---|---|---|
+> | PV | 4 × 70 W panels, 266 W at the bus | 1 × 100 W, 66.5 W at the bus |
+> | Buffer | 100 Ah LiFePO4, 1280 Wh (charging blocked below 0 °C box temperature) | 6S LTO 5 Ah, 69 Wh |
+> | Charger | 64 W CC (5 A) to the rover pack | 41 W (3.2 A) |
+> | Rover pack | 5 Ah / 64 Wh nameplate, 51.2 Wh usable after a 20 % derate | 4S 10 Ah, 128 Wh |
+> | Charge 25 % → 80 % / 100 % | about 28 / 45 min | 62 / 96 min |
+> | Night survival (2.1 W load) | about 488 h on the buffer, covers the 354 h night | about 26 h |
+>
+> Where a number below disagrees with this table, this table wins. Sections 1.1–1.5 and 5.3 are kept for the design reasoning (LTO is the better cold-charging chemistry) and need a hardware decision before purchase: either buy the 1280 Wh LiFePO4 buffer with a heated box, or keep the LTO pack and accept the shorter night. Runtime figures are in `runtime-energy-analysis.md`.
+
+> **Original note — the one thing that changes the design.**
 > A lunar night is about **354 h**. With the specified 5 Ah buffer (≈ 69 Wh, ≈ 55 Wh usable) the station can run its survival heater for **~26 h**, not 354 h. Surviving a full equatorial night needs **≈ 740 Wh (≈ 67 Ah @ 13.8 V)** or radioisotope heater units. This package therefore treats the 5 Ah pack as the *day-side operating and eclipse/short-shadow* buffer, defines a night-survival mode that is honest about its limit, and prices the upgrade (§1.5, §4.5). Everything else in the spec is met as written.
 
 ---
@@ -214,23 +227,23 @@ Notes: **Prototype** column is available COTS for an Earth-based HUNCH build; **
 ### 5.2 Actuation & mechanics
 | Item | Prototype part | Qty | ≈ $ |
 |---|---|---:|---:|
-| Clamp actuators | Actuonix L16 / L12-class 100 mm linear actuators with position feedback | 4 | 280 |
+| Clamp actuators | Actuonix L16-class **300 mm stroke** (jaws travel 0.30 m: 0.725 → 0.425 m) with position feedback, or the lead-screw drive shown in the CAD | 4 | 380 |
 | Door drive | NEMA17 + lead screw + TMC2209 (or existing slat door motor) | 1 | 60 |
-| Coupler lift | Actuonix L12-50-class | 1 | 70 |
+| Coupler lift | scissor or lead-screw lift, **≈ 0.9 m travel** (stow y = 1.30 m to pad y ≈ 0.43 m); a 50 mm linear actuator cannot do this | 1 | 120 |
 | Magnets | N42SH ring magnets 20 mm | 4 | 20 |
-| Pogo pins | spring-loaded 3 A class ×4 + keeper | 1 set | 15 |
+| Pogo pins | spring-loaded **5 A class**: 2 power pins in parallel pairs (2 + 2) plus 2 sense pins, with a keeper. The 64 W charger carries 5 A, and one failed power pin must not push 5 A through a 3 A part | 1 set | 30 |
 | Structure | 6061-T6 frame, G10 standoffs, stainless fasteners, rubber pads | — | 150 |
 | Dust seals | brush/labyrinth strips | — | 25 |
 
 ### 5.3 Power
 | Item | Prototype part | Qty | ≈ $ |
 |---|---|---:|---:|
-| PV panel | HQST 100 W (already in sim/BOM) | 1 | 100 |
+| PV panels | 4 × 70 W (matches `PV_PANELS`/`PV_EACH_W` in code; the old BOM listed one HQST 100 W) | 4 | 280 |
 | MPPT | Genasun GV-10-class (prototype); custom LM5176-based buck-boost (flight-like) | 1 | 120 |
 | Dock charger | CC/CV buck-boost, 14.4 V / 3–5 A (e.g., programmable DC-DC with CAN) | 1 | 60 |
-| Buffer battery | **6S LTO 5 Ah pack with BMS** (cells: Toshiba SCiB / Yinlong class — confirm cell and capacity with vendor) | 1 | 250 |
+| Buffer battery | **Code assumes 100 Ah LiFePO4 (1280 Wh) in a heated box.** Alternative: 6S LTO pack (cold-charge capable, smaller). Confirm cell and capacity with the vendor | 1 | 250 |
 | Contactor | automotive-grade relay + parallel FET stage | 1 | 20 |
-| Controller | Raspberry Pi 5 (already) or STM32 for safety layer + Arduino/STM32 motion | 1 | 50 |
+| Controller | Raspberry Pi 4 (the rover uses a Pi 4 in a pi-top 4; the BOM id `pi5` is only a legacy name) or STM32 for the safety layer + Arduino/STM32 motion | 1 | 50 |
 | Protection | fuses, TVS, reverse-polarity FET | — | 20 |
 
 ### 5.4 Thermal
@@ -259,3 +272,6 @@ Notes: **Prototype** column is available COTS for an Earth-based HUNCH build; **
 * **HUD (bottom-left):** state, active sensor, lateral/yaw error, clamp %, coupler %, latch, PV/load/buffer, warm-box/radiator/louver/heater; **ENV** button toggles day/night.
 * **Regression:** open `viewer.html?selftest=dock&n=10` (or run `runDockSelfTest(20)` in the console). Each run teleports the rover to a random apron pose, docks, charges 20 s, departs, and reports pre-capture error, final residual, retries and charge power.
 * **Files changed:** `js/dock_station.js` (new), `viewer.html` (hooks; original saved as `_archive/viewer.pre-dock-backup.html`).
+
+## Rover-side parts the dock needs (not yet in `rover_bom.js`)
+The dock controller assumes a UWB tag, an IR receiver, a global-shutter bay camera (IMX296 class), a ToF sensor (VL53L5CX class), a ferromagnetic keeper plate and charge pad on the top deck, and a swap sled for the spare pack. The rover BOM lists none of them (it has two OV5647 cameras and a Pi 4). Add them before the next BOM review. The 25 s robotic pack swap is a timer in the sim only: there is no BOM line or CAD for the swap robot yet.
