@@ -396,11 +396,14 @@
         var rod = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, ROD_L, 10), silver);
         rod.rotation.x = Math.PI / 2; grp.add(rod);
         var clev = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.03), m.bayDark); grp.add(clev);
+        // wall bracket: ties the barrel's outer end to the side wall (z = 1.62) so it does not hang in mid-air
+        var brk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.10, 0.11), m.bayDark); brk.position.set(C.PARK_ALONG + ax, 0.20, s * 1.565); brk.castShadow = true; grp.add(brk);
         acts.push({ cyl: cyl, rod: rod, clev: clev, ax: ax });
       });
       // lead-screw drive: motor can on the wall + threaded shaft into the bar
       var motor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.10, 16), m.bayDark);
       motor.rotation.x = Math.PI / 2; motor.position.set(C.PARK_ALONG, 0.28, s * 1.47); grp.add(motor);
+      var mbrk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.11), m.bayDark); mbrk.position.set(C.PARK_ALONG, 0.28, s * 1.565); grp.add(mbrk);   // motor mount to the wall
       var screw = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.0, 8), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.7, roughness: 0.35 }));
       screw.rotation.x = Math.PI / 2; grp.add(screw);
       var nut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.04), m.copper); grp.add(nut);
@@ -461,6 +464,7 @@
       var puck = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.06), m.bayDark); puck.position.set(2.22, 1.56, s * 1.58); G.add(puck);
       var ant = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.10, 6), silver); ant.position.set(2.22, 1.62, s * 1.58); G.add(ant);
       var tof = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.03), m.bayDark); tof.position.set(-0.2, 0.40, s * 1.51); G.add(tof);
+      var tofm = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.09), m.bayDark); tofm.position.set(-0.2, 0.40, s * 1.57); G.add(tofm);   // standoff to the wall
       var tl = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), led(0xef4444)); tl.position.set(-0.2, 0.40, s * 1.485); G.add(tl);
     });
     var sw = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.10), led(0xfacc15)); sw.position.set(-1.838, 0.245, 0.42); G.add(sw);   // bumper limit switch (front face of the hard stop)
