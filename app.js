@@ -26,7 +26,7 @@
   /* ---------- 2. preview stage ---------- */
   var stage = $('stage'), poster = $('stagePoster'), openLink = $('stageOpen'), frame = null;
   var tabs = [].slice.call(document.querySelectorAll('#preview [role="tab"]'));
-  var posters = { 0: 'assets/screens/rover-overview.jpg', 1: 'assets/screens/dock-overview.jpg' };
+  var posters = { 0: 'assets/screens/rover-overview.jpg', 1: 'assets/screens/dock-overview.jpg?v=2' };
   function load(src) {
     var f = document.createElement('iframe');
     f.title = 'Interactive 3D model'; f.src = src; f.setAttribute('allow', 'fullscreen');
