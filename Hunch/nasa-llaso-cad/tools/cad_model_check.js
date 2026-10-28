@@ -5,7 +5,8 @@
  *   - the simulator contract of the rover (handles the sim / logistics code relies on)
  *   - rover envelope, charge-pad height, cargo slot vs. pod guides / charge bridge clearances
  *   - arm reach (same IK as js/lunar_logistics.js) to the cargo slot and to ground pick-ups
- *   - docked fit: nose vs. hard-stop bumper, wheels/fenders vs. closed clamp bars, coupler pogos vs. pad
+ *   - rover v4: 24 in cube (stowed and with all modules steered), module sweep clearances, canister volumes
+ *   - docked fit: nose vs. hard-stop bumper, wheel modules vs. closed clamp jaws, coupler pogos vs. pad
  */
 'use strict';
 const path = require('path');
@@ -26,66 +27,76 @@ function bbox(tris, pred) {
 const root = new S.Obj(); const wheels = [], wheelGroups = [];
 NASA_FusionRover.init({ roverGroup: root, wheelGroups, wheels }).then(() => {
   // ---------- contract
-  const arm = window.roverArm;
-  check('6 wheels + wheelGroups with lowerEye/localPos', wheels.length === 6 && wheelGroups.length === 6 && wheelGroups.every(w => w.lowerEye && w.localPos && w.group && w.tire));
-  check('6 shock links with rest length', (window.shockLinks || []).length === 6 && window.shockLinks.every(l => l.rest > 0.05 && l.upper && l.lower));
-  check('arm handles (base/shoulder/elbow/wrist/fingers/tip, L1=0.34, L2=0.30)', arm && arm.base && arm.shoulder && arm.elbow && arm.wrist && arm.fingerL && arm.fingerR && arm.tip && arm.L1 === 0.34 && arm.L2 === 0.30);
+  const arm = window.roverArm, G = window.ROVER_GEOM;
+  check('6 wheels + wheelGroups with steer/lowerEye/localPos', wheels.length === 6 && wheelGroups.length === 6 && wheelGroups.every(w => w.lowerEye && w.localPos && w.group && w.tire && w.steer));
+  check('6 coil-over links with rest length', (window.shockLinks || []).length === 6 && window.shockLinks.every(l => l.rest > 0.02 && l.upper && l.lower));
+  check('arm handles + stow pose (L1=0.28, L2=0.25)', arm && arm.base && arm.shoulder && arm.elbow && arm.wrist && arm.fingerL && arm.fingerR && arm.tip && arm.L1 === 0.28 && arm.L2 === 0.25 && arm.stow);
   check('upperShellGroup origin at y=0 (sim drives its y for EXPLODE)', window.upperShellGroup && window.upperShellGroup.position.y === 0);
-  check('lid, cargo lid, lidar head, 2 headlights, CoM marker, cargo slot', window.avLidGroup && window.cargoLidGroup && window.lidarHead && window.headlights.length === 2 && window.comMarkerGroup && (window.cargoBaySlots || []).length >= 1);
+  check('lid, cargo lid, lidar head, 2 headlights, CoM marker, 2 cargo slots, battery bay', window.avLidGroup && window.cargoLidGroup && window.lidarHead && window.headlights.length === 2 && window.comMarkerGroup && (window.cargoBaySlots || []).length === 2 && window.batteryBay);
   check('fingers start open (fingerL.z<0<fingerR.z)', arm.fingerL.position.z < 0 && arm.fingerR.position.z > 0);
 
-  // ---------- envelope + pad
+  // ---------- 24 in cube + ground contact
+  const CUBE = 0.6096;
   const tris = worldTris(root);
   const bb = bbox(tris);
-  check('wheels touch ground (lowest point ≈ -0.01)', Math.abs(bb.y0 + 0.01) < 0.004, 'y0=' + bb.y0.toFixed(3));
-  check('overall width ≤ 0.80 m (dock clamps close to ±0.425)', bb.z1 - bb.z0 <= 0.80, 'width=' + (bb.z1 - bb.z0).toFixed(3));
-  check('nose ≤ 0.65 m ahead of centre (dock bumper gap)', bb.x1 <= 0.65, 'nose=' + bb.x1.toFixed(3));
-  const copper = bbox(tris, t => t.c === 0xc27a2c);
-  check('charge pad contacts at x≈-0.22, top ≈ 0.35 (dock coupler contact height)', Math.abs((copper.x0 + copper.x1) / 2 + 0.22) < 0.01 && copper.y1 > 0.343 && copper.y1 < 0.356, 'top=' + copper.y1.toFixed(3));
+  check('wheels touch the ground (lowest point at y = 0)', Math.abs(bb.y0) < 0.004, 'y0=' + bb.y0.toFixed(3));
+  check('length fits the 24 in cube (stowed)', bb.x1 - bb.x0 <= CUBE, 'L=' + (bb.x1 - bb.x0).toFixed(3));
+  check('width fits the 24 in cube', bb.z1 - bb.z0 <= CUBE, 'W=' + (bb.z1 - bb.z0).toFixed(3));
+  check('height fits the 24 in cube (top of lidar / stowed arm)', bb.y1 - bb.y0 <= CUBE, 'H=' + (bb.y1 - bb.y0).toFixed(3));
+  // every module swept through a full 360-degree steer stays inside the cube and clear of its neighbours and the tub
+  check('swept modules fit the cube (360 deg steer)', G.modX + G.sweepR <= CUBE / 2 && G.modZ + G.sweepR <= CUBE / 2, 'x ' + (G.modX + G.sweepR).toFixed(3) + ', z ' + (G.modZ + G.sweepR).toFixed(3));
+  const fork = Math.hypot(G.wheelR, 0.036 + 0.003);
+  check('module sweep radius covers the fork and tyre', fork <= G.sweepR + 1e-6, 'fork corner ' + fork.toFixed(3));
+  check('neighbouring modules never touch while steering', G.modX > 2 * G.sweepR, 'pitch ' + G.modX + ' vs ' + (2 * G.sweepR).toFixed(3));
+  check('belly tub clears the module sweep', 0.276 / 2 < G.modZ - G.sweepR, 'tub ' + (0.138).toFixed(3) + ' vs ' + (G.modZ - G.sweepR).toFixed(3));
+  [0.4, 1.1, 2.0, 3.0].forEach(a => wheelGroups.forEach(w => { w.steer.rotation.y = a; }));
+  const swept = bbox(worldTris(root));
+  check('steered modules stay inside the cube', swept.z1 - swept.z0 <= CUBE && swept.x1 - swept.x0 <= CUBE, 'L ' + (swept.x1 - swept.x0).toFixed(3) + ' W ' + (swept.z1 - swept.z0).toFixed(3));
+  wheelGroups.forEach(w => { w.steer.rotation.y = 0; });
 
-  // ---------- cargo slot clearances (pod 0.305 long in X, 0.152 wide, 0.152 tall)
-  // two slots side by side (z = ±0.125); check each pod volume
+  // ---------- charge pad
+  const copper = bbox(tris, t => t.c === 0xc27a2c);
+  check('charge pad contacts at x = pad.x, face 11 mm above the coupler reference', Math.abs((copper.x0 + copper.x1) / 2 - G.pad.x) < 0.01 && Math.abs(copper.y1 - (G.pad.y + 0.011)) < 0.002, 'face=' + copper.y1.toFixed(3));
+
+  // ---------- canister volumes (0.26 long along rover Z, 0.15 dia) must be free of cradle / arm / structure
   const slots = window.cargoBaySlots.map(o => o.getWorldPosition(new S.V3()));
-  const slot = slots[0];
-  check('pod sits on the cradle floor', Math.abs(slot.y - 0.076 - 0.186) < 0.004, 'pod bottom=' + (slot.y - 0.076).toFixed(3));
-  let hitsAll = [];
+  check('canister seat: bottom 4 mm above the deck', Math.abs(slots[0].y - 0.075 - (G.deckY + 0.004)) < 0.002, 'bottom=' + (slots[0].y - 0.075).toFixed(3));
+  let hitsAll = 0;
   slots.forEach(function (sp) {
-    const pod = { x0: sp.x - 0.1525, x1: sp.x + 0.1525, z0: sp.z - 0.076, z1: sp.z + 0.076, y0: sp.y - 0.076, y1: sp.y + 0.076 + 0.046 };
-    const inter = (t) => { const b = bbox([t]); return b.x1 > pod.x0 + 0.001 && b.x0 < pod.x1 - 0.001 && b.z1 > pod.z0 + 0.001 && b.z0 < pod.z1 - 0.001 && b.y1 > pod.y0 + 0.002 && b.y0 < pod.y1; };
-    const hits = tris.filter(inter).filter(t => { const b = bbox([t]); return !(b.y1 <= pod.y0 + 0.012 && b.y0 >= pod.y0 - 0.02) && !t.hidden; }); // ignore the floor/tie strips under the pod
-    if (process.env.HITS) hits.slice(0, 6).forEach(t => console.log('  hit', t.c.toString(16), JSON.stringify(bbox([t]))));
-    hitsAll = hitsAll.concat(hits);
+    tris.forEach(function (t) {
+      if (t.hidden) return;
+      if (t.v.some(v => Math.hypot(v[0] - sp.x, v[1] - sp.y) < 0.075 - 0.003 && Math.abs(v[2] - sp.z) < 0.13 - 0.003)) hitsAll++;
+    });
   });
-  check('nothing intrudes into either pod volume (guides, bridge, clamps)', hitsAll.length === 0, hitsAll.length + ' triangles');
+  check('nothing intrudes into either canister volume', hitsAll === 0, hitsAll + ' triangles');
+  check('the two canisters do not overlap', Math.abs(slots[0].x - slots[1].x) >= 0.15 + 0.004, 'pitch ' + Math.abs(slots[0].x - slots[1].x).toFixed(3));
 
   // ---------- arm reach (logistics IK)
   const L1 = arm.L1, L2 = arm.L2, bp = arm.base.position;
   function solve(l) { const yaw = Math.atan2(-l.z, l.x); let pl = Math.hypot(l.x, l.z), y = l.y, r = Math.hypot(pl, y); const mx = L1 + L2 - 0.02, mn = Math.abs(L1 - L2) + 0.04; const ok = r <= mx + 0.015; if (r > mx) { const s = mx / r; pl *= s; y *= s; r = mx; } r = Math.max(mn, r); let cE = (L1 * L1 + L2 * L2 - r * r) / (2 * L1 * L2); cE = Math.max(-1, Math.min(1, cE)); let cB = (L1 * L1 + r * r - L2 * L2) / (2 * L1 * r); cB = Math.max(-1, Math.min(1, cB)); return { yaw, sh: Math.atan2(y, Math.max(0.02, pl)) + Math.acos(cB), el: -(Math.PI - Math.acos(cE)), ok }; }
   function tipL() { const v = arm.tip.getWorldPosition(new S.V3()); return { x: v.x - bp.x, y: v.y - bp.y, z: v.z - bp.z }; }
   function ik(w) { let l = { ...w }, s; for (let i = 0; i < 4; i++) { s = solve(l); arm.base.rotation.y = s.yaw; arm.shoulder.rotation.z = s.sh; arm.elbow.rotation.z = s.el; const t = tipL(); l = { x: l.x + w.x - t.x, y: l.y + w.y - t.y, z: l.z + w.z - t.z }; } const t = tipL(); return { err: Math.hypot(w.x - t.x, w.y - t.y, w.z - t.z), ok: s.ok }; }
-  const seat = ik({ x: slot.x - bp.x, y: slot.y + 0.076 + 0.01 - bp.y, z: slot.z - bp.z });
-  check('arm reaches the cargo slot seat', seat.ok && seat.err < 0.005, (seat.err * 1000).toFixed(1) + ' mm');
-  const hy = -0.01 + 0.1524 + 0.038 + 0.01;
-  [[0.80, 0.0], [0.70, 0.30], [0.45, 0.50], [0.70, -0.15]].forEach(p => { const r = ik({ x: p[0] - bp.x, y: hy - bp.y, z: p[1] - bp.z }); check('arm reaches a ground pod handle at (' + p + ')', r.ok && r.err < 0.005, (r.err * 1000).toFixed(1) + ' mm'); });
-  arm.base.rotation.y = 0; arm.shoulder.rotation.z = 1.15; arm.elbow.rotation.z = -2.15;
+  slots.forEach((sp, k) => { const seat = ik({ x: sp.x - bp.x, y: sp.y + 0.075 + 0.045 - bp.y, z: sp.z - bp.z }); check('arm reaches the grapple knob in slot ' + (k + 1), seat.ok && seat.err < 0.005, (seat.err * 1000).toFixed(1) + ' mm'); });
+  const hy = 0.15 + 0.045;
+  [[0.45, 0.0], [0.40, 0.25], [0.35, -0.20]].forEach(p => { const r = ik({ x: p[0] - bp.x, y: hy - bp.y, z: p[1] - bp.z }); check('arm reaches a canister knob on the ground at (' + p + ')', r.ok && r.err < 0.005, (r.err * 1000).toFixed(1) + ' mm'); });
+  arm.base.rotation.y = arm.stow.yaw; arm.shoulder.rotation.z = arm.stow.sh; arm.elbow.rotation.z = arm.stow.el;
 
-  // ---------- docked fit (dock-local frame: rover yawed 180°, centre at PARK_ALONG, root 0.01 above the 0.08 floor)
-  const C = D.C, park = C.PARK_ALONG;
-  const docked = tris.map(t => ({ ...t, v: t.v.map(v => [park - v[0], v[1] + 0.09, -v[2]]) }));
+  // ---------- docked fit (dock-local frame: rover yawed 180 deg, centre at PARK_ALONG, ground on the 0.08 floor)
+  const C = D.C, park = C.PARK_ALONG, FLOOR = 0.08;
+  const docked = tris.map(t => ({ ...t, v: t.v.map(v => [park - v[0], v[1] + FLOOR, -v[2]]) }));
   const dbb = bbox(docked);
-  const bumperFace = -1.903 + 0.07;  // dock-station-cad.html hard stop at x = -1.903 (0.14 thick), about 5 mm nose gap
-  check('nose clears the hard-stop bumper face', dbb.x0 > bumperFace, 'gap=' + ((dbb.x0 - bumperFace) * 1000).toFixed(0) + ' mm');
-  const clampInner = 0.425 - 0.009 - 0.0036;   // closed jaw inner face 0.425, rubber pad face 9 mm in (dock_station.js), minus ~3.6 mm PETG thermal growth per side (60e-6/K x 0.78 m x 150 K / 2 / 2)
-  const span = bbox(docked, t => { const b = bbox([t]); return b.y1 > 0.135 && b.y0 < 0.265 && b.x1 > park - 0.75 && b.x0 < park + 0.75; });
-  check('wheels/fenders clear the closed clamp bars (bar band y 0.135–0.265)', Math.max(span.z1, -span.z0) < clampInner, 'half-width=' + Math.max(span.z1, -span.z0).toFixed(3) + ' vs ' + clampInner.toFixed(3));
-  const padTop = 0.09 + copper.y1, pogoBottom = (0.09 + 0.338) + 0.062 - 0.04 - 0.015;
-  check('coupler pogos land on the pad (1–8 mm compression)', padTop - pogoBottom > 0.001 && padTop - pogoBottom < 0.008, ((padTop - pogoBottom) * 1000).toFixed(1) + ' mm');
+  const bumperFace = -1.903 + 0.07;
+  check('nose clears the hard-stop bumper face (2-10 mm)', dbb.x0 - bumperFace > 0.002 && dbb.x0 - bumperFace < 0.010, 'gap=' + ((dbb.x0 - bumperFace) * 1000).toFixed(1) + ' mm');
+  const clampInner = 0.31 - 0.009 - 0.0025;   // closed jaw 0.31, rubber face 9 mm in, ~2.5 mm PETG thermal growth margin
+  const span = bbox(docked, t => { const b = bbox([t]); return b.y1 > 0.135 && b.y0 < 0.265 && b.x1 > park - 0.25 && b.x0 < park + 0.25; });
+  check('wheel modules clear the closed clamp jaws (jaw band y 0.135-0.265)', Math.max(span.z1, -span.z0) < clampInner, 'half-width=' + Math.max(span.z1, -span.z0).toFixed(3) + ' vs ' + clampInner.toFixed(3));
+  const padTop = FLOOR + copper.y1, pogoBottom = (FLOOR + G.pad.y) + 0.062 - 0.04 - 0.015;
+  check('coupler pogos land on the pad (1-8 mm compression)', padTop - pogoBottom > 0.001 && padTop - pogoBottom < 0.008, ((padTop - pogoBottom) * 1000).toFixed(1) + ' mm');
 
-  // ---------- coupler really lands on the rover pad (builds the dock hardware and runs its update())
   const dock = new S.Obj(); const M = (c) => ({ color: c, metalness: 0.2, roughness: 0.5 });
   D.reset(); D.build(THREE, dock, { bay: M(0x8fa1b3), bayDark: M(0x18222d), bayTrim: M(0xcbd5e1), hazard: M(0xe0a800), copper: M(0xf59e0b) });
-  const rv = new S.Obj(); dock.add(rv); rv.position.set(park, 0.09, 0); rv.rotation.set(0, Math.PI, 0);
-  const padObj = new S.Obj(); padObj.position.set(-0.22, 0.338, 0); rv.add(padObj);
+  const rv = new S.Obj(); dock.add(rv); rv.position.set(park, FLOOR, 0); rv.rotation.set(0, Math.PI, 0);
+  const padObj = new S.Obj(); padObj.position.set(G.pad.x, G.pad.y, G.pad.z); rv.add(padObj);
   const st = D.state(); st.arm = 0; st.coupler = 1; st.latched = true; st.contactsLive = true;
   for (let i = 0; i < 40; i++) D.update(0.05, 'DOCKED', padObj);
   const headTris = []; S.walk(dock, S.mat4(), headTris);

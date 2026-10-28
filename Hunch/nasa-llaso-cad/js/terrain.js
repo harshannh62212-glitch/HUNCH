@@ -371,10 +371,10 @@
         h[py * size + px] += dh * (0.5 + 0.5 * fresh);
       }
     }
-    var cv = doc.createElement('canvas'), bv = doc.createElement('canvas');
-    cv.width = cv.height = bv.width = bv.height = size;
-    var cc = cv.getContext('2d'), bc = bv.getContext('2d');
-    var ci = cc.createImageData(size, size), bi = bc.createImageData(size, size);
+    var cv = doc.createElement('canvas'), bv = doc.createElement('canvas'), nv = doc.createElement('canvas');
+    cv.width = cv.height = bv.width = bv.height = nv.width = nv.height = size;
+    var cc = cv.getContext('2d'), bc = bv.getContext('2d'), nc = nv.getContext('2d');
+    var ci = cc.createImageData(size, size), bi = bc.createImageData(size, size), ni = nc.createImageData(size, size);
     var mn = 1e9, mx = -1e9;
     for (i = 0; i < n; i++) { if (h[i] < mn) mn = h[i]; if (h[i] > mx) mx = h[i]; }
     var span = (mx - mn) || 1;
@@ -386,8 +386,18 @@
       var bvv = Math.round(hv * 255);
       bi.data[i * 4] = bi.data[i * 4 + 1] = bi.data[i * 4 + 2] = bvv; bi.data[i * 4 + 3] = 255;
     }
-    cc.putImageData(ci, 0, 0); bc.putImageData(bi, 0, 0);
-    return { color: cv, bump: bv };
+    // Tangent-space normal map from the same height field (central differences, wrapped): smooth, filterable
+    // shading of grains, clods and craterlets instead of a bump map, which aliases into a pixelated look.
+    var NS = 5.5 * size / 1024;
+    for (y = 0; y < size; y++) for (x = 0; x < size; x++) {
+      var xl = (x - 1 + size) % size, xr = (x + 1) % size, yu = (y - 1 + size) % size, yd = (y + 1) % size;
+      var dx = (h[y * size + xl] - h[y * size + xr]) / span * NS, dy = (h[yu * size + x] - h[yd * size + x]) / span * NS;
+      var inv = 1 / Math.sqrt(dx * dx + dy * dy + 1), j = (y * size + x) * 4;
+      ni.data[j] = Math.round((dx * inv * 0.5 + 0.5) * 255); ni.data[j + 1] = Math.round((dy * inv * 0.5 + 0.5) * 255);
+      ni.data[j + 2] = Math.round((inv * 0.5 + 0.5) * 255); ni.data[j + 3] = 255;
+    }
+    cc.putImageData(ci, 0, 0); bc.putImageData(bi, 0, 0); nc.putImageData(ni, 0, 0);
+    return { color: cv, bump: bv, normal: nv };
   }
 
   build();

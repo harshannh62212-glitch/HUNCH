@@ -5,34 +5,43 @@
 (function (global) {
   // Earth-demo planform from the bay-balance board: 4 ft long × 2 ft wide.
   // Front avionics bay; 5 Ah hot-swap pack + ballast plate under the aft deck for rear-axle grip. Cargo bay is aft.
+  // v4 planform: everything (wheels swept through a full 360-degree steer, mast, stowed arm) fits a 24 in cube.
   var ROVER_FOOTPRINT = {
-    lengthFt: 4,
+    lengthFt: 2,
     widthFt: 2,
-    lengthM: 1.2192,
+    lengthM: 0.6096,
     widthM: 0.6096,
-    lengthIn: 48,
+    lengthIn: 24,
     widthIn: 24,
-    refLengthM: 0.86,
-    refWidthM: 0.52
+    refLengthM: 0.6096,
+    refWidthM: 0.6096
   };
 
+  // Masses: vendor listings where a part is bought (cited in review/docs/rover-v4-design.md), estimates
+  // (estimate: true) for printed / machined parts. pos = centre of mass in the rover frame (x fwd, y up from
+  // ground, z port), m. Six identical items on symmetric corners sit at their common centroid.
   var PARTS = [
-    { id: 'chassis', name: 'Polymaker PETG chassis (4×2 ft deck)', count: 1, spare: 0, massKg: 2.40, heatW: 0, size: [1.2192, 0.16, 0.6096], pos: [0, 0.12, 0], estimate: true, onVehicle: true },
-    { id: 'wheel', name: 'Wheel', count: 6, spare: 0, massKg: 0.18, heatW: 0, size: [0.20, 0.078, 0.20], pos: [0, 0.09, 0], estimate: true, onVehicle: true },
-    { id: 'shock', name: '1/10 RC shock', count: 6, spare: 2, massKg: 0.042, heatW: 0, size: [0.022, 0.090, 0.022], pos: [0, 0.14, 0], onVehicle: true },
-    { id: 'motor', name: 'Greartisan 12V 100 RPM', count: 6, spare: 0, massKg: 0.200, heatW: 0, size: [0.078, 0.037, 0.037], pos: [0, 0.09, 0], onVehicle: true },
-    // 5 Ah pack (0.65 kg) + 1.75 kg steel ballast plate in the sealed sub-floor tray — ballast over rear / mid bogies.
-    { id: 'battery', name: '12.8V 5Ah LiFePO4 pack (hot-swap) + ballast plate', count: 1, spare: 1, massKg: 2.40, heatW: 0.45, size: [0.181, 0.076, 0.166], pos: [-0.30, 0.10, 0], onVehicle: true, wh: 64, dimsMm: [181, 166, 76] },
-    { id: 'imu', name: 'IMU tip sensor', count: 1, spare: 0, massKg: 0.012, heatW: 0.05, size: [0.022, 0.008, 0.016], pos: [0.28, 0.14, 0.08], onVehicle: true },
-    { id: 'pi5', name: 'pi-top [4] + Raspberry Pi 4 (4GB) + active cooler', count: 1, spare: 0, massKg: 0.11, heatW: 7.0, size: [0.326, 0.023, 0.222], piBoardSize: [0.090, 0.006, 0.062], pos: [0.32, 0.18, 0.06], onVehicle: true, dimsMm: [326, 23, 222] },
-    { id: 'uno', name: 'Arduino Uno REV3', count: 1, spare: 0, massKg: 0.025, heatW: 0.4, size: [0.0686, 0.015, 0.0534], pos: [0.30, 0.16, -0.08], onVehicle: true },
-    { id: 'buck', name: 'YRDZXG 12V to 5V 5A buck', count: 1, spare: 0, massKg: 0.055, heatW: 1.5, size: [0.066, 0.018, 0.036], pos: [0.22, 0.15, 0.10], onVehicle: true },
-    { id: 'driver', name: 'Cytron MDD10A', count: 1, spare: 0, massKg: 0.050, heatW: 3.0, size: [0.095, 0.022, 0.065], pos: [0.22, 0.15, -0.10], onVehicle: true },
-    { id: 'fan', name: '30 mm 3007 fan', count: 4, spare: 2, massKg: 0.008, heatW: 0.15, size: [0.030, 0.030, 0.007], pos: [0, 0.16, 0], onVehicle: true },
-    { id: 'camera', name: 'Arducam OV5647', count: 2, spare: 0, massKg: 0.004, heatW: 0.25, size: [0.025, 0.024, 0.017], pos: [0.32, 0.48, 0], onVehicle: true },
-    { id: 'arm', name: 'Cargo arm', count: 1, spare: 0, massKg: 0.35, heatW: 0, size: [0.40, 0.08, 0.08], pos: [0.30, 0.32, 0.12], estimate: true, onVehicle: true },
-    { id: 'mast', name: 'Mast and LiDAR', count: 1, spare: 0, massKg: 0.18, heatW: 0.4, size: [0.08, 0.30, 0.08], pos: [0.28, 0.42, -0.14], estimate: true, onVehicle: true },
-    { id: 'harness', name: 'Fasteners and wire', count: 1, spare: 0, massKg: 0.15, heatW: 0, size: [0.10, 0.02, 0.05], pos: [0, 0.14, 0], estimate: true, onVehicle: true },
+    { id: 'chassis', name: 'Belly tub + deck (6061 extrusion rails, PETG panels)', count: 1, spare: 0, massKg: 1.45, heatW: 0, size: [0.58, 0.14, 0.52], pos: [0.0, 0.160, 0], estimate: true, onVehicle: true },
+    { id: 'wheel', name: '130 mm wheel (PETG rim, TPU chevron tread)', count: 6, spare: 1, massKg: 0.095, heatW: 0, size: [0.13, 0.05, 0.13], pos: [0, 0.065, 0], estimate: true, onVehicle: true },
+    { id: 'module', name: 'Swerve module (fork, slewing bearing, ring gear, 6-wire slip ring, AS5600)', count: 6, spare: 0, massKg: 0.085, heatW: 0, size: [0.10, 0.09, 0.09], pos: [0, 0.145, 0], estimate: true, onVehicle: true },
+    { id: 'shock', name: 'Coil-over strut', count: 6, spare: 2, massKg: 0.030, heatW: 0, size: [0.044, 0.030, 0.044], pos: [0, 0.160, 0], onVehicle: true },
+    { id: 'motor', name: 'Greartisan 12V 37 mm gearmotor (in-hub drive)', count: 6, spare: 0, massKg: 0.200, heatW: 0, size: [0.074, 0.037, 0.037], pos: [0, 0.065, 0], onVehicle: true },
+    { id: 'steer', name: 'goBILDA 2000-0025-0002 dual-mode servo (continuous, steering)', count: 6, spare: 1, massKg: 0.062, heatW: 0.6, size: [0.040, 0.038, 0.020], pos: [0, 0.244, 0], onVehicle: true },
+    { id: 'battery', name: '12.8V 5Ah LiFePO4 pack (hot-swap)', count: 1, spare: 1, massKg: 0.80, heatW: 0.45, size: [0.107, 0.070, 0.090], pos: [0.02, 0.122, 0], onVehicle: true, wh: 64, dimsMm: [107, 90, 70] },
+    { id: 'imu', name: 'IMU tip sensor (BNO085)', count: 1, spare: 0, massKg: 0.003, heatW: 0.05, size: [0.025, 0.004, 0.020], pos: [0.0, 0.17, 0.0], onVehicle: true },
+    { id: 'pi5', name: 'Raspberry Pi 5 (4 GB) + active cooler', count: 1, spare: 0, massKg: 0.060, heatW: 7.0, size: [0.085, 0.020, 0.056], piBoardSize: [0.085, 0.006, 0.056], pos: [0.165, 0.155, 0.07], onVehicle: true, dimsMm: [85, 56, 20] },
+    { id: 'uno', name: 'Arduino Mega 2560 (12 motor channels)', count: 1, spare: 0, massKg: 0.037, heatW: 0.5, size: [0.101, 0.015, 0.053], pos: [0.165, 0.155, -0.07], onVehicle: true },
+    { id: 'pwm', name: 'PCA9685 16-ch servo driver', count: 1, spare: 0, massKg: 0.009, heatW: 0.1, size: [0.062, 0.010, 0.025], pos: [0.11, 0.15, -0.105], onVehicle: true },
+    { id: 'buck', name: 'YRDZXG 12V to 5V 5A buck', count: 1, spare: 0, massKg: 0.055, heatW: 1.5, size: [0.066, 0.018, 0.036], pos: [0.11, 0.15, 0.105], onVehicle: true },
+    { id: 'driver', name: 'Cytron MDD10A dual 10 A driver', count: 3, spare: 0, massKg: 0.050, heatW: 3.0, size: [0.095, 0.022, 0.065], pos: [0.205, 0.095, 0.0], onVehicle: true },
+    { id: 'fan', name: '30 mm 3007 fan', count: 2, spare: 2, massKg: 0.008, heatW: 0.15, size: [0.030, 0.030, 0.007], pos: [0.10, 0.13, 0], onVehicle: true },
+    { id: 'camera', name: 'Arducam OV5647', count: 2, spare: 0, massKg: 0.004, heatW: 0.25, size: [0.025, 0.024, 0.017], pos: [0.26, 0.483, -0.205], onVehicle: true },
+    { id: 'lidar', name: 'YDLIDAR X2L (Φ60 x 96 mm)', count: 1, spare: 0, massKg: 0.19, heatW: 2.0, size: [0.0605, 0.050, 0.0605], pos: [0.235, 0.540, -0.205], onVehicle: true },
+    { id: 'mast', name: 'Mast tube + stereo bar', count: 1, spare: 0, massKg: 0.090, heatW: 0, size: [0.03, 0.26, 0.09], pos: [0.235, 0.37, -0.205], estimate: true, onVehicle: true },
+    { id: 'arm', name: '2-link arm + gripper (3 servos), stowed', count: 1, spare: 0, massKg: 0.46, heatW: 0, size: [0.28, 0.30, 0.06], pos: [0.13, 0.42, 0.18], estimate: true, onVehicle: true },
+    { id: 'cradle', name: 'Canister cradles (V-saddles, trunnion latches)', count: 1, spare: 0, massKg: 0.20, heatW: 0, size: [0.30, 0.10, 0.30], pos: [-0.135, 0.255, 0], estimate: true, onVehicle: true },
+    { id: 'avionics', name: 'Avionics pod + dock charge pad', count: 1, spare: 0, massKg: 0.14, heatW: 0, size: [0.155, 0.060, 0.20], pos: [0.19, 0.26, 0], estimate: true, onVehicle: true },
+    { id: 'harness', name: 'Fasteners and wire', count: 1, spare: 0, massKg: 0.20, heatW: 0, size: [0.10, 0.02, 0.05], pos: [0.05, 0.15, 0], estimate: true, onVehicle: true },
     { id: 'solar', name: 'HQST 100W 12V panel', count: 1, spare: 0, massKg: 6.5, heatW: 0, size: [0.808, 0.030, 0.698], pos: null, onVehicle: false, powerW: 100 },
     { id: 'petg_spool', name: 'Polymaker PETG spool', count: 1, spare: 0, massKg: 1.0, heatW: 0, size: [0.20, 0.07, 0.20], pos: null, onVehicle: false, estimate: true }
   ];
@@ -109,7 +118,7 @@
 
   /** Bogie axle X (m): front, mid, rear — matches fusion_rover axle tubes. */
   function axleXM() {
-    return [dX(0.38), 0, dX(-0.38)];
+    return [0.215, 0, -0.215];          // swerve module rows (fusion_rover GEOM.modX)
   }
 
   /**
@@ -120,7 +129,7 @@
     opts = opts || {};
     var grav = opts.g != null ? opts.g : G_LUNAR;
     var cargoKg = Math.max(0, opts.cargoKg || 0);
-    var cargoX = opts.cargoX != null ? opts.cargoX : dX(-0.24);
+    var cargoX = opts.cargoX != null ? opts.cargoX : -0.134;      // midway between the two canister cradles
     var m0 = curbKg();
     var c0 = com();
     var massKg = m0 + cargoKg;
@@ -639,11 +648,12 @@
     solar: byId('solar'),
     pod: {
       scale: 4,
-      fullFt: [4, 2],
-      lengthM: 1.2192 / 4,
-      widthM: 0.6096 / 4,
-      heightM: 0.6096 / 4,
-      note: 'Astrobotic 4 ft × 2 ft pod at 1:4'
+      fullM: [1.04, 0.60, 0.60],
+      lengthM: 0.26,
+      widthM: 0.15,
+      heightM: 0.15,
+      shape: 'canister',
+      note: 'Cargo canister (1.04 m x 0.60 m dia flight article) at 1:4: domed ends, top grapple knob, side trunnions'
     },
     airlock: {
       fullOpeningM: 1.5,

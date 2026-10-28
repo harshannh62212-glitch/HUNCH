@@ -23,7 +23,14 @@ class Obj{
   return [R[0]*s.x,R[1]*s.y,R[2]*s.z,p.x, R[3]*s.x,R[4]*s.y,R[5]*s.z,p.y, R[6]*s.x,R[7]*s.y,R[8]*s.z,p.z, 0,0,0,1];}
 }
 class Mesh extends Obj{constructor(g,m){super();this.geometry=g;this.material=m||{};this.castShadow=false;this.receiveShadow=false}}
-class Geo{constructor(t,p){this.t=t;this.p=p}}
+class Geo{constructor(t,p){this.t=t;this.p=p;this.ops=[]}
+ translate(x,y,z){this.ops.push(['t',x,y,z]);return this} rotateX(a){this.ops.push(['x',a]);return this} rotateY(a){this.ops.push(['y',a]);return this} rotateZ(a){this.ops.push(['z',a]);return this}
+ computeVertexNormals(){return this} scale(x,y,z){this.ops.push(['s',x,y,z]);return this}}
+// 2D shapes for ExtrudeGeometry (outline sampled; curves sampled at 6 points)
+class Shape{constructor(){this.pts=[];this.holes=[];this.c=[0,0]}
+ moveTo(x,y){this.c=[x,y];this.pts.push([x,y]);return this} lineTo(x,y){this.c=[x,y];this.pts.push([x,y]);return this}
+ quadraticCurveTo(cx,cy,x,y){const [x0,y0]=this.c;for(let i=1;i<=6;i++){const t=i/6,a=(1-t)*(1-t),b=2*(1-t)*t,d=t*t;this.pts.push([a*x0+b*cx+d*x,a*y0+b*cy+d*y])}this.c=[x,y];return this}
+ absarc(x,y,r,a0,a1){for(let i=0;i<=16;i++){const a=a0+(a1-a0)*i/16;this.pts.push([x+r*Math.cos(a),y+r*Math.sin(a)])}return this}}
 function Mat(o){o=Object.assign({},o||{});const ev=o.emissive||0;o.emissive={v:ev,setHex(h){this.v=h}};const cv=o.color==null?0x888888:o.color;o.color={v:cv,setHex(h){this.v=h},set(h){this.v=h}};return Object.assign({color:0x888888,emissive:0,emissiveIntensity:1,metalness:0,roughness:0.5,opacity:1,transparent:false},o||{})}
 function Any(){const f=function(){};const p=new Proxy(f,{get:(t,k)=>k==='then'?undefined:(k===Symbol.toPrimitive?()=>0:p),apply:()=>p,construct:()=>p,set:()=>true});return p}
 const THREE=new Proxy({},{get(t,k){
@@ -36,7 +43,7 @@ const THREE=new Proxy({},{get(t,k){
 THREE.Group=Obj;THREE.Scene=class extends Obj{constructor(){super();global.__scene=this;this.background=null;this.fog=null}};THREE.Object3D=Obj;THREE.Mesh=Mesh;THREE.Vector3=V3;THREE.PerspectiveCamera=class extends Obj{constructor(){super()}};
 THREE.CanvasTexture=function(){return Any()};THREE.Color=function(c){return {r:0,g:0,b:0,setHex(){}}};
 THREE.SpotLight=class extends Obj{constructor(){super();this.target=new Obj()}};THREE.PointLight=class extends Obj{};THREE.Light=Obj;
-THREE.RepeatWrapping=1000;THREE.DoubleSide=2;
+THREE.RepeatWrapping=1000;THREE.DoubleSide=2;THREE.Shape=Shape;THREE.Path=Shape;THREE.Vector2=function(x,y){return {x:x||0,y:y||0}};
 global.THREE=THREE;global.window=global;
 const ctx=new Proxy({},{get:(t,k)=>k==='createLinearGradient'||k==='createRadialGradient'?()=>({addColorStop(){}}):()=>{},set:()=>true});
 global.document={createElement:()=>({getContext:()=>ctx,width:0,height:0,style:{}}),getElementById:()=>null,body:{}};
@@ -64,7 +71,20 @@ function tris(g){
  } else if(g.t==='SphereGeometry'){const r=P[0],ws=P[1]||12,hs=P[2]||8;
   const pt=(i,j)=>{const u=i/ws*2*Math.PI,v=j/hs*Math.PI;return [r*Math.cos(u)*Math.sin(v),r*Math.cos(v),r*Math.sin(u)*Math.sin(v)]};
   for(let i=0;i<ws;i++)for(let j=0;j<hs;j++){const a=pt(i,j),b=pt(i+1,j),c=pt(i+1,j+1),d=pt(i,j+1);T.push([a,b,c],[a,c,d])}
+ } else if(g.t==='ExtrudeGeometry'){const sh=P[0],o=P[1]||{},dep=o.depth||0,bev=o.bevelEnabled?(o.bevelSize||0):0,bt=o.bevelEnabled?(o.bevelThickness||0):0;
+  const pts=sh.pts;let cx=0,cy=0;pts.forEach(p=>{cx+=p[0];cy+=p[1]});cx/=pts.length;cy/=pts.length;
+  const out=pts.map(p=>{const dx=p[0]-cx,dy=p[1]-cy,l=Math.hypot(dx,dy)||1;return [p[0]+dx/l*bev,p[1]+dy/l*bev]});
+  const z0=-bt,z1=dep+bt;
+  for(let i=0;i<out.length;i++){const a=out[i],b=out[(i+1)%out.length];T.push([[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1]],[[a[0],a[1],z0],[b[0],b[1],z1],[a[0],a[1],z1]]);
+   T.push([[cx,cy,z0],a.concat([z0]),b.concat([z0])],[[cx,cy,z1],a.concat([z1]),b.concat([z1])])}
+ } else if(g.t==='LatheGeometry'){const pts=P[0],n=Math.min(24,P[1]||12);
+  for(let i=0;i<n;i++){const a0=i/n*2*Math.PI,a1=(i+1)/n*2*Math.PI;for(let j=0;j<pts.length-1;j++){const p=pts[j],q=pts[j+1];
+   const A=[p.x*Math.sin(a0),p.y,p.x*Math.cos(a0)],B=[p.x*Math.sin(a1),p.y,p.x*Math.cos(a1)],C=[q.x*Math.sin(a1),q.y,q.x*Math.cos(a1)],D=[q.x*Math.sin(a0),q.y,q.x*Math.cos(a0)];T.push([A,B,C],[A,C,D])}}
  } else if(g.t==='CapsuleGeometry'||g.t==='ConeGeometry'){ }
+ if(g.ops&&g.ops.length){for(const t of T)for(let k=0;k<3;k++){let [x,y,z]=t[k];for(const op of g.ops){
+   if(op[0]==='t'){x+=op[1];y+=op[2];z+=op[3]}else if(op[0]==='s'){x*=op[1];y*=op[2];z*=op[3]}
+   else{const c=Math.cos(op[1]),sn=Math.sin(op[1]);if(op[0]==='x'){[y,z]=[y*c-z*sn,y*sn+z*c]}else if(op[0]==='y'){[x,z]=[x*c+z*sn,-x*sn+z*c]}else{[x,y]=[x*c-y*sn,x*sn+y*c]}}}
+   t[k]=[x,y,z]}}
  return T;}
 function walk(o,M,out){
  if(o.visible===false)return;

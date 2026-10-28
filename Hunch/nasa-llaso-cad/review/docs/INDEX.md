@@ -13,6 +13,7 @@ Judge-facing design, test and analysis documents for the LLASO Project 2 package
 - [FMEA Closure Log (Engineering Notebook Extract)](fmea-closure.md): failure modes and how each was closed
 - [Install & Demo Instructions (Judges / Mentors)](install-and-demo.md): how to install and run the demo
 - [Mission coverage](mission-coverage.md): status of missions 1 to 12
+- [Rover v4 design](rover-v4-design.md): swerve drive in a 24 in cube, BOM masses and sources, balance, physics, dock fit
 - [NASA HUNCH Research Brief — LLASO Surface Logistics Rover](research-brief.md): background research for the rover concept
 - [Rover Runtime, Dock Charge & Cargo-Run Analysis (5 Ah packs)](runtime-energy-analysis.md): energy and runtime analysis
 - [Test Plan — Simulation, Bench, and Review Demos](test-plan.md): what is tested and how

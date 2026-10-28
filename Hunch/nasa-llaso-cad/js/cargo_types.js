@@ -14,9 +14,9 @@
   // Full-scale references and the scale used for the prototype.
   var TYPES = {
     pod: {
-      id: 'pod', label: 'Astrobotic-class pod', shape: 'box',
-      fullM: [1.2192, 0.6096, 0.6096], scale: 4, massKg: 5 * LB,
-      note: '4 ft x 2 ft pod at 1:4'
+      id: 'pod', label: 'Cargo canister', shape: 'canister',
+      fullM: [1.04, 0.60, 0.60], scale: 4, massKg: 5 * LB,
+      note: 'Pressure-vessel canister (1.04 m x 0.60 m dia, domed ends, top grapple knob, side trunnions) at 1:4'
     },
     cylinder: {
       id: 'cylinder', label: 'Cylindrical cargo module', shape: 'cylinder',
@@ -54,7 +54,7 @@
     return {
       type: id,
       clampSpanM: +span.toFixed(3),
-      saddle: t.shape === 'cylinder' ? 'vee' : 'flat',
+      saddle: (t.shape === 'cylinder' || t.shape === 'canister') ? 'vee' : 'flat',
       reachable: span >= BAY.clampMinM && span <= BAY.clampMaxM
     };
   }

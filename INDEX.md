@@ -19,6 +19,7 @@ Read this first. Open only the note you need; do not scan the tree. This folder 
 - [CAD and sim README](Hunch/nasa-llaso-cad/README.md)
 - [Review package index](Hunch/nasa-llaso-cad/review/INDEX.md)
 - [Review docs index](Hunch/nasa-llaso-cad/review/docs/INDEX.md): dock design, terrain and soil, runtime energy, FMEA, test plan
+- [Rover v4 design](Hunch/nasa-llaso-cad/review/docs/rover-v4-design.md): 24 in cube swerve rover, parts and masses, physics
 - [Engineering validation runbook](Hunch/nasa-llaso-cad/engineering_validation_runbook.md)
 - [Scenarios](Hunch/nasa-llaso-cad/scenarios.md)
 

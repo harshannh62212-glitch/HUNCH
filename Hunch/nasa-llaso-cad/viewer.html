@@ -792,13 +792,24 @@ scene.add(new THREE.AmbientLight(0x2d3748, 0.72));
 var sun = new THREE.DirectionalLight(0xfffaee, 4.2);
 sun.position.set(38, 22, -32);
 sun.castShadow = true;
-sun.shadow.mapSize.width = 2048;
-sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.left = -65; sun.shadow.camera.right = 65;
-sun.shadow.camera.top = 65; sun.shadow.camera.bottom = -65;
-sun.shadow.bias = -0.0002;
-sun.shadow.normalBias = 0.035;
+// High-resolution shadow frustum that follows the rover (±16 m, 4096^2 = ~8 mm texels). One map stretched over
+// the whole 130 m site gave 6 cm texels, which read as a blocky, pixelated ground.
+var SUN_DIR = new THREE.Vector3(38, 22, -32).normalize();
+sun.shadow.mapSize.width = 4096;
+sun.shadow.mapSize.height = 4096;
+sun.shadow.camera.left = -16; sun.shadow.camera.right = 16;
+sun.shadow.camera.top = 16; sun.shadow.camera.bottom = -16;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 140;
+sun.shadow.bias = -0.00025;
+sun.shadow.normalBias = 0.012;
+sun.shadow.radius = 2.5;
 scene.add(sun);
+scene.add(sun.target);
+function followSunShadow(focus) {
+  sun.target.position.copy(focus);
+  sun.position.copy(focus).addScaledVector(SUN_DIR, 60);
+  sun.target.updateMatrixWorld();
+}
 
 var earthLight = new THREE.DirectionalLight(0x60a5fa, 0.65);
 earthLight.position.set(-50, 60, -70);
@@ -832,10 +843,12 @@ earthGroup.add(earthClouds);
 // =========================================================================
 // TERRAIN & CRATERS (C1-CONTINUOUS LUNAR TOPOGRAPHY)
 // =========================================================================
-var _regTex = NASA_Terrain.regolithTextures(1024);
+var _regTex = NASA_Terrain.regolithTextures(2048);
 var dirtTex = new THREE.CanvasTexture(_regTex.color);
 var dirtBump = new THREE.CanvasTexture(_regTex.bump);
-[dirtTex, dirtBump].forEach(function (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(40, 40); t.anisotropy = 8; });
+var dirtNormal = new THREE.CanvasTexture(_regTex.normal);
+var _maxAniso = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 8;
+[dirtTex, dirtBump, dirtNormal].forEach(function (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(48, 48); t.anisotropy = _maxAniso; });
 // Terrain, craters and soil come from js/terrain.js: one height grid for the render mesh and the physics,
 // so the wheels, the lidar rays and the planner see exactly the surface the camera shows.
 var craters = NASA_Terrain.craters;
@@ -868,12 +881,12 @@ terrainGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
 terrainGeo.computeVertexNormals();
 var terrain = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({
   map: dirtTex,
-  bumpMap: dirtBump,
-  bumpScale: 0.17,
+  normalMap: dirtNormal,                      // smooth filtered micro-relief (the old bump map aliased into blocks)
+  normalScale: new THREE.Vector2(1.0, 1.0),
   vertexColors: true,
-  roughness: 0.96,
-  metalness: 0.04,
-  color: 0x7f7a72
+  roughness: 0.97,
+  metalness: 0.02,
+  color: 0x8a857c
 }));
 terrain.receiveShadow = true;
 scene.add(terrain);
@@ -1094,7 +1107,7 @@ for (var ci = 0; ci < 5; ci++) {
 
 // Rear Spring-Loaded Docking Bumper Chocks & Optical Target
 var rearBumperBeam = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 1.4), matHazard);
-rearBumperBeam.position.set(-1.903, 0.18, 0);   // hard-stop face at x=-1.833; parked rover (centre -1.18) reaches -1.828, 5 mm gap
+rearBumperBeam.position.set(-1.903, 0.18, 0);   // hard-stop face at x=-1.833; parked rover v4 (centre -1.538, nose 0.290) reaches -1.828, 5 mm gap
 dockGroup.add(rearBumperBeam);
 
 // 2. Corrugated Insulated Side Walls, Structural I-Beam Portal Ribs & Back Bulkhead
@@ -1266,7 +1279,7 @@ function dockFrame(pos) {
   return { along: nx * a.x + nz * a.z, lat: nx * a.z - nz * a.x, axis: a };
 }
 var DOCK_STAGE_ALONG = 8.4;
-var DOCK_PARK_ALONG = -1.18;
+var DOCK_PARK_ALONG = NASA_Dock.C.PARK_ALONG;
 var DOCK_EXIT_ALONG = 6.85;
 var pendingMissionAfterUndock = null;
 
@@ -2122,6 +2135,20 @@ window.fusionRoverLoad = (typeof NASA_FusionRover !== 'undefined')
         cargoBayGroup: cargoBayGroup,
         armBase: armBase,
         mastGroup: mastGroup,
+      }).then(function (r) {
+        var G = window.ROVER_GEOM;
+        if (G) chargePadGroup.position.set(G.pad.x, G.pad.y, G.pad.z);   // dock coupler lands here
+        // the placeholder rover's headlight housings sat inside the old 4 ft body; hide them and move the
+        // spotlights (and their aim targets) to the v4 headlight lenses on the tub nose
+        roverGroup.children.forEach(function (c) {
+          if (c.isMesh) c.visible = false;
+          if (c.isSpotLight && G) {
+            var sz = c.position.z > 0 ? 0.10 : -0.10;
+            c.position.set(0.258, 0.150, sz);
+            if (c.target) c.target.position.set(5, -0.5, sz);
+          }
+        });
+        return r;
       });
     })
   : Promise.resolve();
@@ -2654,6 +2681,7 @@ document.getElementById('btn-retry').onclick = function() {
   isCrashed = false; isStuck = false; timeStuck = 0; vel = 0; turnVel = 0; roverYaw = 0;
   smoothPitch = 0; smoothRoll = 0; smoothY = 0; firstFrame = true; lunarSink = 0.0125; sinkVel = 0;
   roverGroup.position.set(0, 1, 5); roverGroup.rotation.set(0, 0, 0); roverGroup.quaternion.identity();
+  resetRoverV4Dynamics();
   document.getElementById('crash-screen').style.display = 'none';
   roverWh = MAXWH * 0.80; if (window.NASA_Dock) NASA_Dock.resetSpares();
   globalGoal = null; waypoint = null; navStartPos = null;
@@ -5411,12 +5439,143 @@ addEventListener('keyup', function(e) {
 });
 function kd(k) { return keys[k] === true; }
 
+// =========================================================================
+// ROVER v4 PHYSICS: swerve steering, per-wheel grip, load transfer, active ballast, tip-over
+// =========================================================================
+function RG() { return window.ROVER_GEOM || { wheelR: 0.10, axleY: 0.09, collR: 0.48, modX: 0.38, modZ: 0.34, halfLen: 0.6, halfWid: 0.4 }; }
+var STEER_RATE = 1.75;       // rad/s at the module: goBILDA 25-2 servo (~50 rpm at 6 V) through a 12:36 pinion / ring gear
+var swerve = { ang: [0, 0, 0, 0, 0, 0], tgt: [0, 0, 0, 0, 0, 0], align: [1, 1, 1, 1, 1, 1], alignMean: 1, latVel: 0 };
+window.swerveState = swerve;
+/* Module i at chassis (x, z): contact-point velocity for chassis speed v, lateral speed u and yaw rate w is
+   (v + w z, u - w x). Each module steers its wheel along that vector. Angles are unlimited (slip ring), and a
+   module takes the shorter way: if the new heading is more than 90 deg away it turns the other way and the
+   drive motor reverses. alignment = cos(heading error) is how much of the wheel's grip can push the rover. */
+function swerveStep(dt, vCmd, wCmd, uCmd) {
+  var n = wheelGroups.length, sum = 0;
+  for (var i = 0; i < n; i++) {
+    var g = wheelGroups[i]; if (!g || !g.localPos) continue;
+    var vx = vCmd + wCmd * g.localPos.z, vz = (uCmd || 0) - wCmd * g.localPos.x;
+    var sp = Math.hypot(vx, vz);
+    if (sp > 0.012) {
+      var want = Math.atan2(-vz, vx), cur = swerve.ang[i];
+      var d = want - cur; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+      if (d > Math.PI / 2) d -= Math.PI; else if (d < -Math.PI / 2) d += Math.PI;   // flip and reverse the drive
+      swerve.tgt[i] = cur + d;
+    }
+    var e = swerve.tgt[i] - swerve.ang[i];
+    swerve.ang[i] += Math.max(-STEER_RATE * dt, Math.min(STEER_RATE * dt, e));
+    var err = swerve.tgt[i] - swerve.ang[i];
+    swerve.align[i] = Math.max(0, Math.cos(err));
+    sum += swerve.align[i];
+    if (g.steer) g.steer.rotation.y = swerve.ang[i];
+  }
+  swerve.alignMean = n ? sum / n : 1;
+  return swerve.alignMean;
+}
+
+/* Rigid-body tip-over about the outer wheel line. phi > 0 rolls the rover onto its +z wheels, theta > 0
+   pitches it onto the front wheels. Overturning = f * (h cos a + d sin a), restoring = gN * (d cos a - h sin a),
+   where f is the horizontal specific force at the CoM (gravity along the slope + inertia + centripetal), h the
+   CoM height above the contact plane and d its distance in from the pivot edge. Past atan(d / h) gravity helps
+   the fall; past ~80 deg the rover is on its side. */
+var tip = { phi: 0, phiV: 0, th: 0, thV: 0, over: false, fallT: 0 };
+window.tipState = tip;
+function tipAxis(ang, angV, f, gN, h, dPos, dNeg, dt) {
+  var s = ang > 1e-6 ? 1 : (ang < -1e-6 ? -1 : (f > 0 ? 1 : -1));
+  var d = s > 0 ? dPos : dNeg, a = Math.abs(ang), fs = f * s;
+  var M = fs * (h * Math.cos(a) + d * Math.sin(a)) - gN * (d * Math.cos(a) - h * Math.sin(a));
+  var I = 1.25 * (d * d + h * h);                    // about the edge, per unit mass (body inertia folded in)
+  if (a < 1e-6 && M <= 0) return [0, 0];             // all wheels down and stable
+  angV += s * (M / I) * dt;
+  ang += angV * dt;
+  if (ang * s < 0) { ang = 0; angV = -angV * 0.15; if (Math.abs(angV) < 0.05) angV = 0; }   // lands back on the wheels
+  return [ang, angV];
+}
+function tipStep(dt, dyn, latAcc, longAcc) {
+  var G = RG(), com = dyn.com || { x: 0, z: 0, h: 0.16 };
+  var gN = dyn.totalN / Math.max(0.1, dyn.massKg);
+  var fz = (-1.622 * Math.sin(smoothRoll)) + latAcc;        // +z specific force at the CoM
+  var fx = (-1.622 * Math.sin(smoothPitch)) - longAcc;      // +x (forward) specific force: braking pushes forward
+  var halfT = G.modZ, halfB = G.modX;
+  var rr = tipAxis(tip.phi, tip.phiV, fz, gN, com.h, halfT - com.z, halfT + com.z, dt); tip.phi = rr[0]; tip.phiV = rr[1];
+  var pr = tipAxis(tip.th, tip.thV, fx, gN, com.h, halfB - com.x, halfB + com.x, dt); tip.th = pr[0]; tip.thV = pr[1];
+  window.tipMargins = { roll: dyn.tipMarginRoll, pitch: dyn.tipMarginPitch, fz: fz, fx: fx };
+  if (!tip.over && (Math.abs(tip.phi) > 1.40 || Math.abs(tip.th) > 1.40)) {
+    tip.over = true;
+    var how = Math.abs(tip.phi) > Math.abs(tip.th) ? 'rolled onto its ' + (tip.phi > 0 ? 'port' : 'starboard') + ' side' : 'went over its ' + (tip.th > 0 ? 'nose' : 'tail');
+    window.enduranceFail = { cause: 'TIPPED OVER: the rover ' + how + '. CoM height ' + (com.h * 100).toFixed(0) + ' cm, track ' + (halfT * 200).toFixed(0) + ' cm, side force ' + Math.abs(fz).toFixed(2) + ' m/s², fore-aft ' + Math.abs(fx).toFixed(2) + ' m/s², payload ' + ((dyn.cargoKg || 0)).toFixed(1) + ' kg.' };
+    isCrashed = true; vel = 0; turnVel = 0;
+    var cs = document.getElementById('crash-screen'); if (cs) cs.style.display = 'flex';
+    if (typeof llog === 'function') llog('<span class="text-rose-400 font-bold">[DYNAMICS] ' + window.enduranceFail.cause + '</span>');
+  }
+}
+
+/* Body pose on the suspension (load transfer) and the tip rotation, applied to the CAD assembly root so the
+   simulator's nav frame (roverGroup) stays on the terrain. Each corner sags (N_i - N_static_i) / k with
+   k = static load / 8 mm; a plane through the six sags gives heave, pitch and roll. Wheels are moved back down
+   by the same amount so they stay on the ground (the springs compress / extend visibly). */
+var bodyPose = { heave: 0, pz: 0, rx: 0, vh: 0, vp: 0, vr: 0 };
+window.bodyPose = bodyPose;
+function bodyPoseStep(dt, dyn) {
+  var root = roverGroup.getObjectByName ? roverGroup.getObjectByName('aegisRoverAssembly') : null;
+  if (!root || !dyn || !dyn.loads) return;
+  var sx = 0, sz = 0, sxx = 0, szz = 0, sxz = 0, sc = 0, sxc = 0, szc = 0, n = 0;
+  for (var i = 0; i < wheelGroups.length; i++) {
+    var g = wheelGroups[i]; if (!g || !g.localPos) continue;
+    var Ns = Math.max(0.05, dyn.staticLoads[i]), k = Ns / 0.008;
+    var c = Math.max(-0.012, Math.min(0.02, (dyn.loads[i] - Ns) / k));
+    var x = g.localPos.x, z = g.localPos.z;
+    sx += x; sz += z; sxx += x * x; szz += z * z; sxz += x * z; sc += c; sxc += x * c; szc += z * c; n++;
+  }
+  if (n < 3) return;
+  var bx = sxx > 1e-6 ? sxc / sxx : 0, bz = szz > 1e-6 ? szc / szz : 0, a0 = sc / n;   // symmetric layout: decoupled fit
+  // sprung body: heave / pitch / roll settle as a damped spring (about 2.5 Hz, zeta 0.7), so picking up or
+  // setting down a 2.3 kg canister makes the rover squat smoothly instead of jumping to the new sag
+  var w0 = 2 * Math.PI * 2.5, z0 = 0.7, nS = Math.max(1, Math.ceil(dt / 0.008)), hS = dt / nS;
+  for (var k2 = 0; k2 < nS; k2++) {
+    bodyPose.vh += (w0 * w0 * (a0 - bodyPose.heave) - 2 * z0 * w0 * bodyPose.vh) * hS; bodyPose.heave += bodyPose.vh * hS;
+    bodyPose.vp += (w0 * w0 * (-bx - bodyPose.pz) - 2 * z0 * w0 * bodyPose.vp) * hS; bodyPose.pz += bodyPose.vp * hS;     // more sag at the front -> nose down
+    bodyPose.vr += (w0 * w0 * (bz - bodyPose.rx) - 2 * z0 * w0 * bodyPose.vr) * hS; bodyPose.rx += bodyPose.vr * hS;     // more sag on +z -> +z side down
+  }
+  var G = RG();
+  // tip: rotate about the pivot wheel line (or corner) at ground level
+  var qL = new THREE.Quaternion().setFromEuler(new THREE.Euler(bodyPose.rx, 0, bodyPose.pz, 'XYZ'));
+  var qT = new THREE.Quaternion().setFromEuler(new THREE.Euler(tip.phi, 0, -tip.th, 'XYZ'));
+  var pivot = new THREE.Vector3(tip.th > 0 ? G.modX : (tip.th < 0 ? -G.modX : 0), 0, tip.phi > 0 ? G.modZ : (tip.phi < 0 ? -G.modZ : 0));
+  root.quaternion.copy(qT).multiply(qL);
+  var off = pivot.clone().sub(pivot.clone().applyQuaternion(qT));
+  root.position.set(off.x, off.y - bodyPose.heave, off.z);
+}
+function bodyPoseWheelOffset(lx, lz) {
+  // vertical shift the body pose gives a wheel mount at (lx, lz); the wheel is moved back down by this much
+  return lx * Math.sin(bodyPose.pz) - lz * Math.sin(bodyPose.rx) - bodyPose.heave;
+}
+function resetRoverV4Dynamics() {
+  tip.phi = tip.phiV = tip.th = tip.thV = 0; tip.over = false;
+  bodyPose.heave = bodyPose.pz = bodyPose.rx = bodyPose.vh = bodyPose.vp = bodyPose.vr = 0;
+  var root = roverGroup.getObjectByName ? roverGroup.getObjectByName('aegisRoverAssembly') : null;
+  if (root) { root.quaternion.identity(); root.position.set(0, 0, 0); }
+}
+
+/* Active ballast: the battery sled (0.8 kg) rides a lead screw +/-50 mm. When the rover accelerates forward the
+   load moves to the rear wheels, so the sled moves forward to put it back (and aft when braking or descending),
+   keeping the front wheels loaded and steering. Target = -f_x * h / g_n * (m / m_battery), clamped and rate-limited. */
+var ballast = { dx: 0, kg: 0.8 };
+window.ballastState = ballast;
+function ballastStep(dt, dyn, fx) {
+  var h = (dyn.com && dyn.com.h) || 0.16, gN = dyn.totalN / Math.max(0.1, dyn.massKg);
+  var want = -(fx * h / Math.max(0.5, gN)) * (dyn.massKg / ballast.kg) * 0.5;
+  want = Math.max(-0.05, Math.min(0.05, want));
+  ballast.dx += Math.max(-0.08 * dt, Math.min(0.08 * dt, want - ballast.dx));   // 80 mm/s lead screw
+  if (window.batteryBay) window.batteryBay.ballast = ballast.dx;
+}
+
 function updatePhysics(dt) {
   if (window.NASA_Logistics && NASA_Logistics.tick) NASA_Logistics.tick(dt);
   if (isCrashed) return;
 
   var rpmInput = roverTargetRPM;
-  activeMotor.maxSpeed = (rpmInput * 2 * Math.PI * 0.09) / 60;
+  activeMotor.maxSpeed = (rpmInput * 2 * Math.PI * RG().wheelR) / 60;   // wheel surface speed at the set RPM
 
   // Earth-air cooling. Two 1 CFM intakes set the flow. Lunar vacuum would not convect.
   var dpSim = window._drivePhysics || {};
@@ -5502,7 +5661,7 @@ function updatePhysics(dt) {
   for (var ri = 0; ri < rockData.length; ri++) {
     var rkc = rockData[ri];
     var cdx = roverGroup.position.x - rkc.x, cdz = roverGroup.position.z - rkc.z;
-    var cDist = Math.sqrt(cdx * cdx + cdz * cdz), cMin = rkc.r + 0.48;
+    var cDist = Math.sqrt(cdx * cdx + cdz * cdz), cMin = rkc.r + RG().collR;
     if (cDist < cMin) {
       var nxc = cdx / (cDist || 1), nzc = cdz / (cDist || 1);
       var closing = -(Math.cos(roverYaw) * nxc - Math.sin(roverYaw) * nzc) * vel;
@@ -5647,9 +5806,11 @@ function updatePhysics(dt) {
   } else {
     turnVel += (autoTurnTarget - turnVel) * 10.0 * dt * roverMassScale();
   }
+  // Swerve modules steer toward the commanded motion first; the chassis only turns / drives as far as they line up.
+  var swAlign = swerveStep(dt, wF ? Math.max(0.12, Math.abs(vel)) : (wB ? -Math.max(0.1, Math.abs(vel)) : vel), autoTurnTarget, swerve.latVel);
   // Kill residual drift only when no turn is being asked for; a deliberate slow turn (fine alignment) must still spin up.
   if (Math.abs(turnVel) < 0.018 && Math.abs(autoTurnTarget) < 0.018) turnVel = 0;
-  roverYaw += turnVel * dt;
+  roverYaw += turnVel * dt * (0.25 + 0.75 * swAlign);
 
   camHousing.rotation.y += (0 - camHousing.rotation.y) * 3 * dt;
 
@@ -5665,11 +5826,12 @@ function updatePhysics(dt) {
   var cosSlope = Math.max(0.35, Math.cos(slopeAngle));
   // Rigid-body wheel loads (15 lb rover + cargo, lunar g) set the grip. Cargo moves the CoM, a climb
   // unloads the front wheels, braking loads them, a turn shifts weight to the outside.
-  var wheelContactY = ((wheelGroups[0] && wheelGroups[0].localPos) ? wheelGroups[0].localPos.y : 0.09) - 0.10;
+  var wheelContactY = ((wheelGroups[0] && wheelGroups[0].localPos) ? wheelGroups[0].localPos.y : 0.09) - RG().wheelR;
   var dyn = NASA_Dynamics.step({
     dt: dt, wheels: dynWheelsXZ(), pitch: smoothPitch, roll: smoothRoll,
     vel: vel, accel: _chassisAccel, yawRate: turnVel, contactY: wheelContactY,
-    muBase: MU * _soilMu, sinkFactor: loaded ? Math.max(0.75, Math.min(1, 1 / sinkRatio)) : 1
+    muBase: MU * _soilMu, sinkFactor: loaded ? Math.max(0.75, Math.min(1, 1 / sinkRatio)) : 1,
+    ballast: { kg: ballast.kg, dx: ballast.dx }
   });
   window._dynNow = dyn;
   var maxTraction = dyn.gripAccel;
@@ -5685,20 +5847,36 @@ function updatePhysics(dt) {
     var rawTgt = ms * (continuousThrottle >= 0 ? Math.abs(continuousThrottle) : 1.0);
     var speedErr = rawTgt - vel;
     var accelGain = 2.2;
-    ta = Math.max(-af, Math.min(af, speedErr * accelGain));
+    // closed-loop wheel speed control (encoders): the controller adds torque to hold speed on a grade (gravity
+    // feed-forward), within the motors' force and, below, each wheel's grip
+    ta = Math.max(-af, Math.min(af, speedErr * accelGain - gAlong));
   } else if (wB) {
     var revThrottleFactor = (continuousThrottle !== -1) ? Math.abs(continuousThrottle) : 0.6;
     var tgtRev = -ms * 0.4 * revThrottleFactor;
     var speedErr = tgtRev - vel;
-    ta = Math.max(-af, Math.min(af, speedErr * 1.5));
+    ta = Math.max(-af, Math.min(af, speedErr * 1.5 - gAlong));
   } else {
     if (vel > 0.01) ta = -0.6 * (loaded ? roverMassScale() : 1); else if (vel < -0.01) ta = 0.6 * (loaded ? roverMassScale() : 1); else if (Math.abs(gAlong) <= maxTraction) { vel = 0; _hold = true; } else ta = -Math.sign(gAlong) * maxTraction * 0.8;
   }
   if (Math.abs(vel) > 0.02) ta -= Math.sign(vel) * rollResist;
 
+  // Per-wheel grip: the drive torque is split equally over six motors; each wheel delivers at most its own
+  // mu * N_i (from the load solve) times how well its module is lined up. Traction control hands 80 % of what a
+  // slipping wheel cannot deliver to the wheels that still have grip. Lifted wheels (N = 0) deliver nothing.
   var taReq = ta;
-  var slip = Math.abs(ta) > maxTraction;
-  if (slip) ta = Math.sign(ta) * maxTraction;
+  var mTot = roverTotalKg(), demandN = Math.abs(taReq) * mTot / 6, delivered = 0, spareN = 0;
+  var wSlip = window._wheelSlip || (window._wheelSlip = [0, 0, 0, 0, 0, 0]);
+  for (var gw = 0; gw < 6; gw++) {
+    var gripW = (dyn.wheelGrip[gw] || 0) * (swerve.align[gw] != null ? swerve.align[gw] : 1);
+    var dW = Math.min(demandN, gripW);
+    delivered += dW; spareN += Math.max(0, gripW - dW);
+    wSlip[gw] = gripW > 1e-6 ? Math.max(0, Math.min(2, demandN / gripW - 1)) : (demandN > 0.01 ? 2 : 0);
+  }
+  delivered += Math.min(Math.max(0, demandN * 6 - delivered), spareN) * 0.8;
+  var taGrip = delivered / Math.max(0.1, mTot);
+  var slip = Math.abs(taReq) > taGrip + 1e-6;
+  if (slip) ta = Math.sign(taReq) * taGrip;
+  if (swAlign < 0.98) vel *= Math.max(0, 1 - (1 - swAlign) * 3 * dt);   // misaligned modules scrub
   var turnRadius =
     Math.abs(turnVel) > 0.04 && Math.abs(vel) > 0.02 ? Math.abs(vel) / Math.abs(turnVel) : -1;
   var pitClear = nearestPitClearance(roverGroup.position.x, roverGroup.position.z);
@@ -5903,13 +6081,13 @@ function updatePhysics(dt) {
     var rotatedLocal = new THREE.Vector3(wo.x, wo.y, wo.z).applyQuaternion(roverGroup.quaternion);
     // Tire radius is 0.10m. Tire bottom should be >= ground height
     var onPlate = dockFloorBump(roverGroup.position.x + rotatedLocal.x, roverGroup.position.z + rotatedLocal.z) > 0;
-    var yReq = wo.h + 0.10 - (onPlate ? 0 : wheelSinkAt(roverGroup.position.x + rotatedLocal.x, roverGroup.position.z + rotatedLocal.z)) - rotatedLocal.y;   // no regolith sinkage on the steel dock floor / ramp
+    var yReq = wo.h + RG().wheelR - (onPlate ? 0 : wheelSinkAt(roverGroup.position.x + rotatedLocal.x, roverGroup.position.z + rotatedLocal.z)) - rotatedLocal.y;   // no regolith sinkage on the steel dock floor / ramp
     if (yReq > maxYReq) maxYReq = yReq;
     sumYReq += yReq;
   }
 
   // Underbelly ground clearance check (center of chassis tub at local y = 0.04m)
-  var bellyRotated = new THREE.Vector3(0, 0.04, 0).applyQuaternion(roverGroup.quaternion);
+  var bellyRotated = new THREE.Vector3(0, 0.06, 0).applyQuaternion(roverGroup.quaternion);
   var hBelly = getH(p.x + bellyRotated.x, p.z + bellyRotated.z);
   var yReqBelly = hBelly - bellyRotated.y;
   if (yReqBelly > maxYReq) maxYReq = yReqBelly;
@@ -5926,6 +6104,12 @@ function updatePhysics(dt) {
     if (smoothY < maxYReq) smoothY = maxYReq;
   }
   roverGroup.position.y = smoothY;
+  // load transfer, active ballast and tip-over on top of the terrain pose
+  if (window._dynNow) {
+    ballastStep(dt, _dynNow, -1.622 * Math.sin(smoothPitch) - _chassisAccel);
+    tipStep(dt, _dynNow, vel * turnVel, _chassisAccel);
+    bodyPoseStep(dt, _dynNow);
+  }
 
   // Rocker-Bogie wheel suspension articulation: each wheel hugs the local surface
   if (typeof wheelGroups !== 'undefined' && wheelGroups.length > 0) {
@@ -5937,22 +6121,23 @@ function updatePhysics(dt) {
       var gh = getH(wX, wZ);
       var actualCenterY = roverGroup.position.y + wRot.y;
       var rutDepth = dockFloorBump(wX, wZ) > 0 ? 0 : wheelSinkAt(wX, wZ);
-      var desiredCenterY = gh + 0.10 - rutDepth;
+      var desiredCenterY = gh + RG().wheelR - rutDepth;
       NASA_SoilTracks.wheel(gi, wX, wZ, roverYaw, rutDepth, wheelSlipNow());
       var vertDiff = desiredCenterY - actualCenterY;
-      var suspTravel = Math.max(-0.045, Math.min(0.045, vertDiff));
+      var suspTravel = Math.max(-0.02, Math.min(0.02, vertDiff));   // coil-over stroke ±20 mm
       // Spring-damper wheel travel (about 9 Hz, zeta 0.55): the wheel follows the ground with a little settle
       // after a bump instead of an exponential ease; the bump stops at +/-45 mm push back.
       if (wgData.suspV === undefined) wgData.suspV = 0;
-      var sw = 2 * Math.PI * 9, sx = wgData.group.position.y - 0.09;
+      var axY = wgData.localPos.y, bodyOff = bodyPoseWheelOffset(wgData.localPos.x, wgData.localPos.z);
+      var sw = 2 * Math.PI * 9, sx = wgData.group.position.y - axY + bodyOff;
       var sSub = Math.max(1, Math.ceil(dt / 0.006)), sh = dt / sSub;
       for (var ss = 0; ss < sSub; ss++) {
         wgData.suspV += (sw * sw * (suspTravel - sx) - 2 * 0.55 * sw * wgData.suspV) * sh;
         sx += wgData.suspV * sh;
-        if (sx > 0.048) { sx = 0.048; if (wgData.suspV > 0) wgData.suspV *= -0.3; }
-        if (sx < -0.048) { sx = -0.048; if (wgData.suspV < 0) wgData.suspV *= -0.3; }
+        if (sx > 0.022) { sx = 0.022; if (wgData.suspV > 0) wgData.suspV *= -0.3; }
+        if (sx < -0.022) { sx = -0.022; if (wgData.suspV < 0) wgData.suspV *= -0.3; }
       }
-      wgData.group.position.y = 0.09 + sx;
+      wgData.group.position.y = axY + sx - bodyOff;   // the wheel stays on the ground while the body squats / rolls
     }
     NASA_SoilTracks.frame();
   }
@@ -6016,15 +6201,15 @@ function updatePhysics(dt) {
   // Contact-patch speed of a wheel at chassis offset z is vel + yawRate * z (inner side slower, a pivot
   // counter-rotates the two sides). When the drive is traction-limited the wheels spin faster than the
   // ground moves; on a hard brake they slow before the chassis does.
-  var WR = 0.10;                                  // rolling radius (tyre + lugs)
-  var dp = window._drivePhysics || {};
-  var slipExtra = dp.slip ? Math.sign(_lastDrive || vel || 1) * Math.min(0.9, 0.55 * Math.max(0, (dp.slipRatio || 1) - 1) + 0.12) : 0;
+  var WR = RG().wheelR;
   if (!window._wheelOmega) window._wheelOmega = [0, 0, 0, 0, 0, 0];
+  var wSl = window._wheelSlip || [0, 0, 0, 0, 0, 0];
   for (var wsi = 0; wsi < wheels.length; wsi++) {
-    var wz = (wheelGroups[wsi] && wheelGroups[wsi].localPos) ? wheelGroups[wsi].localPos.z : (wsi < 3 ? 0.34 : -0.34);
-    var surf = vel + turnVel * wz + slipExtra;
-    var wTgt = surf / WR;
-    _wheelOmega[wsi] += (wTgt - _wheelOmega[wsi]) * Math.min(1, 14 * dt);   // gearmotor + wheel inertia
+    var lp = (wheelGroups[wsi] && wheelGroups[wsi].localPos) || { x: 0, z: wsi < 3 ? 0.3 : -0.3 };
+    var cvx = vel + turnVel * lp.z, cvz = -turnVel * lp.x, th = swerve.ang[wsi] || 0;
+    var rollV = cvx * Math.cos(th) - cvz * Math.sin(th);                     // contact speed along the wheel heading
+    var spinV = rollV + (wSl[wsi] > 0 ? Math.sign(_lastDrive || rollV || 1) * Math.min(0.9, 0.5 * wSl[wsi] + 0.08) : 0);
+    _wheelOmega[wsi] += (spinV / WR - _wheelOmega[wsi]) * Math.min(1, 14 * dt);   // gearmotor + wheel inertia
     wheels[wsi].rotation.y -= _wheelOmega[wsi] * dt;
   }
 
@@ -6421,6 +6606,7 @@ function animate() {
     drawMap();
   }
   if (window.NASA_Intro && NASA_Intro.active) NASA_Intro.tick(dt); else updatePhysics(dt);
+  followSunShadow(roverGroup.position);   // keep the sharp shadow frustum centred on the rover
   updateGoalBeacon(now);
   if (enduranceRunning) noteEnduranceFrame(dt);
 

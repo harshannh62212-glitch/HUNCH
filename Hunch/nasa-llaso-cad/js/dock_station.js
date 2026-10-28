@@ -24,10 +24,10 @@
 
   var C = {
     GATE_ALONG: 3.8,        // stand-off point outside the door where the rover squares up
-    PARK_ALONG: -1.18,      // rover centre when parked (coupler sits over the top-deck pad)
-    PAD_OFFSET: 0.22,       // pad is 0.22 m behind rover centre (rover local x = -0.22)
-    PRECAP_ALONG: -0.78,    // pre-capture check plane
-    PRECAP_LAT: 0.012,      // m   — must be inside before the clamp arms may close (wheel-to-jaw slop is ~27 mm per side)
+    PARK_ALONG: -1.538,     // rover v4 centre when parked: nose (0.290 ahead of centre) 5 mm off the hard stop at -1.833
+    PAD_OFFSET: -0.19,      // charge pad on the avionics pod, 0.19 m ahead of rover centre (rover local x = +0.19)
+    PRECAP_ALONG: -1.138,   // pre-capture check plane (0.40 m before park)
+    PRECAP_LAT: 0.012,      // m   — must be inside before the clamp arms may close (jaw closes to 8 mm off the wheel modules)
     PRECAP_PSI: 0.0175,     // rad (1 deg; at 3 deg the corner wheel swings out 24 mm)
     STATE_TIMEOUT_S: 20,    // watchdog: any docking sub-state stuck this long retries
     STALE_S: 0.5,           // sensor estimate older than this is not trusted
@@ -381,16 +381,17 @@
     /* clamp / guide arms (parallel-jaw, lead-screw driven; bar stays parallel to the bay axis).
        Each jaw rides two guide actuators: a fixed barrel on the wall and a rod that slides out of it. */
     H.arms = [];
-    var BARREL_L = 0.42, ROD_L = 0.74;
+    var BARREL_L = 0.42, ROD_L = 0.80;
+    var JAW_CLOSED = 0.31, BAR_L = 0.50, ACT_X = 0.18;    // v4 rover: 0.604 m swept width, 0.584 m long
     [-1, 1].forEach(function (s) {
       var grp = new THREE.Group(); G.add(grp);
-      var bar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.13, 0.035), m.bayTrim);
-      var padM = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.10, 0.012), rubber);
+      var bar = new THREE.Mesh(new THREE.BoxGeometry(BAR_L, 0.13, 0.035), m.bayTrim);
+      var padM = new THREE.Mesh(new THREE.BoxGeometry(BAR_L - 0.04, 0.10, 0.012), rubber);
       var lead = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.13, 0.035), m.hazard);
       bar.castShadow = true; lead.castShadow = true;
       grp.add(bar, padM, lead);
       var acts = [];
-      [-0.45, 0.45].forEach(function (ax) {
+      [-ACT_X, ACT_X].forEach(function (ax) {
         var cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, BARREL_L, 14), m.bayDark);
         cyl.rotation.x = Math.PI / 2; cyl.position.set(C.PARK_ALONG + ax, 0.20, s * (1.52 - BARREL_L / 2)); cyl.castShadow = true; grp.add(cyl);
         var cap = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.03, 14), m.bayTrim);
@@ -406,7 +407,7 @@
       var motor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.10, 16), m.bayDark);
       motor.rotation.x = Math.PI / 2; motor.position.set(C.PARK_ALONG, 0.28, s * 1.47); grp.add(motor);
       var mbrk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.11), m.bayDark); mbrk.position.set(C.PARK_ALONG, 0.28, s * 1.565); grp.add(mbrk);   // motor mount to the wall
-      var screw = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.0, 8), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.7, roughness: 0.35 }));
+      var screw = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.12, 8), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.7, roughness: 0.35 }));
       screw.rotation.x = Math.PI / 2; grp.add(screw);
       var nut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.04), m.copper); grp.add(nut);
       H.arms.push({ s: s, grp: grp, bar: bar, pad: padM, lead: lead, acts: acts, screw: screw, nut: nut, rodL: ROD_L });
@@ -859,18 +860,18 @@
     var squash = H.armBounce ? H.armBounce.x : 0, seatDip = H.seat ? H.seat.x : 0;
 
     H.arms.forEach(function (a) {
-      var zi = 0.425 + C.ARM_OPEN_GAP * S.arm + squash * 0.25;   // jaw inner face, m from centreline
+      var zi = 0.31 + C.ARM_OPEN_GAP * S.arm + squash * 0.25;    // jaw inner face, m from centreline (v4 rover)
       var zc = a.s * (zi + 0.0175);
       a.bar.position.set(C.PARK_ALONG, 0.20, zc);
       a.pad.position.set(C.PARK_ALONG, 0.20, a.s * (zi - 0.003));
       a.pad.scale.z = 1 + Math.max(0, -squash) * 18;                         // visible pad squash on contact
-      a.lead.position.set(C.PARK_ALONG + 0.96, 0.20, zc + a.s * 0.12); a.lead.rotation.y = -a.s * 0.55;
+      a.lead.position.set(C.PARK_ALONG + 0.40, 0.20, zc + a.s * 0.12); a.lead.rotation.y = -a.s * 0.55;
       var barBack = zc + a.s * 0.0175;                                          // wall-side face of the jaw bar
       a.acts.forEach(function (ac) {
         ac.rod.position.set(C.PARK_ALONG + ac.ax, 0.20, barBack + a.s * a.rodL / 2);   // rod slides; its far end hides in the barrel
         ac.clev.position.set(C.PARK_ALONG + ac.ax, 0.20, barBack + a.s * 0.015);
       });
-      a.screw.position.set(C.PARK_ALONG, 0.28, a.s * 0.93);          // fixed 1.0 m screw, wall → just inside the closed jaw
+      a.screw.position.set(C.PARK_ALONG, 0.28, a.s * 0.89);          // fixed 1.12 m screw, wall → just inside the closed jaw
       a.nut.position.set(C.PARK_ALONG, 0.28, barBack + a.s * 0.03);    // the nut rides the screw with the jaw
       a.screw.rotation.y += (H.armAct ? H.armAct.vel : 0) * 22 * dt;    // screw spin follows jaw speed
     });

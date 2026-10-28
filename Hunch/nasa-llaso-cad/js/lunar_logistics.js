@@ -91,9 +91,9 @@
   var haulerGroup = null;
   var groundY = 0;
   var landedCenterY = 0;
-  // Rover footprint for contact checks: nose reaches 0.67 m ahead of the origin, wheels 0.47 m to each side.
-  var ROVER_HL = 0.67;
-  var ROVER_HW = 0.47;
+  // Rover v4 footprint for contact checks: the swerve modules sweep 0.30 m ahead / 0.305 m to each side of the origin.
+  var ROVER_HL = 0.30;
+  var ROVER_HW = 0.305;
   var CLEAR_MARGIN = 0.03;                       // hard stand-off, m
   var PICK_FACE_Z = RACK.z + 0.10;               // outermost point of the pickup bay (shutter slats, sill)
   var DROP_FACE_X = -20.10;                      // outermost point of the airlock wall / intake table
@@ -656,14 +656,30 @@
     root.userData.h = h;
 
     var shellGeo;
-    if (!isPod && ctype === 'cylinder') {
+    if (isPod) {
+      // Cargo canister: pressure-vessel body with 2:1 elliptical domed ends, axis along local X (lathed about Y, turned over)
+      var Rc = h / 2, dome = Rc * 0.5, half = L / 2, prof = [];
+      prof.push(new THREE.Vector2(0.0001, -half));
+      for (var di = 1; di <= 10; di++) {                           // aft dome
+        var t = di / 10 * Math.PI / 2;
+        prof.push(new THREE.Vector2(Rc * Math.sin(t), -half + dome * (1 - Math.cos(t))));
+      }
+      for (var dj = 9; dj >= 0; dj--) {                            // fore dome
+        var t2 = dj / 10 * Math.PI / 2;
+        prof.push(new THREE.Vector2(Rc * Math.sin(t2), half - dome * (1 - Math.cos(t2))));
+      }
+      prof[prof.length - 1].x = 0.0001;
+      shellGeo = new THREE.LatheGeometry(prof, 48);
+      shellGeo.rotateZ(-Math.PI / 2);
+    } else if (ctype === 'cylinder') {
       shellGeo = new THREE.CylinderGeometry(h / 2, h / 2, L, 28);
       shellGeo.rotateZ(Math.PI / 2);   // axis along the rover's length, lying in a vee saddle
     } else {
       shellGeo = THREE.RoundedBoxGeometry ? new THREE.RoundedBoxGeometry(L, h, W, 3, 0.012) : new THREE.BoxGeometry(L, h, W);
     }
-    var shellCol = isPod ? 0xe2e8f0 : (ctype === 'cylinder' ? 0xd6d3d1 : 0xc2410c);
-    var shell = new THREE.Mesh(shellGeo, mat(shellCol, 0.5, isPod ? 0.22 : 0.45));
+    var shell = new THREE.Mesh(shellGeo, isPod
+      ? new THREE.MeshPhysicalMaterial({ color: 0xeef1f4, roughness: 0.34, metalness: 0.15, clearcoat: 0.8, clearcoatRoughness: 0.12 })
+      : mat(ctype === 'cylinder' ? 0xd6d3d1 : 0xc2410c, 0.5, 0.45));
     shell.castShadow = true;
     shell.receiveShadow = true;
     root.add(shell);
@@ -684,57 +700,55 @@
       });
     }
 
-    if (isPod) {
-    var mli = new THREE.Mesh(new THREE.BoxGeometry(L * 0.9, 0.004, W * 0.9), mat(0xc9a14a, 0.32, 0.85));
-    mli.position.y = h * 0.5 + 0.002;
-    root.add(mli);
-
-    var dust = new THREE.Mesh(new THREE.BoxGeometry(L * 1.01, 0.01, W * 1.01), mat(0x6b645c, 0.98, 0.02));
-    dust.position.y = -h * 0.5 - 0.001;
-    root.add(dust);
-
-    var bandMat = mat(0x1d4ed8, 0.5, 0.3);
-    [-1, 1].forEach(function (sz) {
-      var band = new THREE.Mesh(new THREE.BoxGeometry(L * 0.96, h * 0.12, 0.003), bandMat);
-      band.position.set(0, -h * 0.3, sz * (W * 0.5 + 0.0015));
-      root.add(band);
-    });
-
-    var tex = podLabelTex(rec);
-    [1, -1].forEach(function (sz) {
-      var lab = new THREE.Mesh(
-        new THREE.PlaneGeometry(L * 0.66, h * 0.62),
-        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.05 })
-      );
-      lab.position.set(0, h * 0.06, sz * (W * 0.5 + 0.004));
-      if (sz < 0) lab.rotation.y = Math.PI;
-      root.add(lab);
-    });
-
-    var capMat = mat(0x334155, 0.4, 0.8);
-    [-1, 1].forEach(function (sx) {
-      var cap = new THREE.Mesh(new THREE.BoxGeometry(0.004, h * 0.9, W * 0.9), capMat);
-      cap.position.set(sx * (L * 0.5 + 0.002), 0, 0);
-      root.add(cap);
-    });
-    }
-    var led = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 10, 8), mat(0x22c55e, 0.3, 0.2, 0x16a34a));
-    led.position.set(L * 0.5 + 0.006, h * 0.22, 0);
-    root.add(led);
-
     var postMat = mat(0x1f2937, 0.45, 0.4);
-    [-0.06, 0.06].forEach(function (x) {
-      var post = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.04, 8), postMat);
-      post.position.set(x, h * 0.5 + 0.02, 0);
-      root.add(post);
-    });
-    var bail = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.14, 10), postMat);
-    bail.rotation.z = Math.PI / 2;
-    bail.position.set(0, h * 0.5 + 0.045, 0);
-    root.add(bail);
+    if (isPod) {
+      var Rp = h / 2, straight = L - Rp;                            // straight barrel between the dome tangents
+      var alu = mat(0xb8c2cc, 0.3, 0.85), gold = mat(0xc9a14a, 0.3, 0.85);
+      // gold MLI belt and two machined girth rings at the dome tangents
+      var belt = new THREE.Mesh(new THREE.CylinderGeometry(Rp + 0.0015, Rp + 0.0015, straight * 0.42, 48, 1, true), gold);
+      belt.rotation.z = Math.PI / 2; root.add(belt);
+      [-1, 1].forEach(function (sx) {
+        var gr = new THREE.Mesh(new THREE.TorusGeometry(Rp + 0.001, 0.0035, 10, 48), alu);
+        gr.rotation.y = Math.PI / 2; gr.position.x = sx * straight / 2; root.add(gr);
+        // trunnion pin on each dome: the cradle's rotary hooks close over these
+        var tr = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.022, 14), alu);
+        tr.rotation.z = Math.PI / 2; tr.position.x = sx * (L / 2 + 0.008); root.add(tr);
+        var trCap = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.004, 16), postMat);
+        trCap.rotation.z = Math.PI / 2; trCap.position.x = sx * (L / 2 + 0.019); root.add(trCap);
+      });
+      // wrap-around label on both flanks
+      var tex = podLabelTex(rec);
+      [0, Math.PI].forEach(function (rot) {
+        var lab = new THREE.Mesh(new THREE.CylinderGeometry(Rp + 0.002, Rp + 0.002, straight * 0.62, 32, 1, true, rot - 0.75, 1.5),
+          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05, transparent: true }));
+        lab.rotation.z = Math.PI / 2; root.add(lab);
+      });
+      // regolith dust patina on the underside where it rested
+      var dust = new THREE.Mesh(new THREE.CylinderGeometry(Rp + 0.0008, Rp + 0.0008, straight * 0.9, 32, 1, true, Math.PI * 0.75, Math.PI * 0.5),
+        new THREE.MeshStandardMaterial({ color: 0x6b645c, roughness: 0.98, metalness: 0.02, transparent: true, opacity: 0.55 }));
+      dust.rotation.z = Math.PI / 2; root.add(dust);
+      // mushroom grapple fixture on top (the arm grips its neck): base flange, neck, knob
+      var flange = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.006, 24), alu); flange.position.y = Rp + 0.002; root.add(flange);
+      var neck = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.040, 16), postMat); neck.position.y = Rp + 0.024; root.add(neck);
+      var knob = new THREE.Mesh(new THREE.SphereGeometry(0.019, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), alu); knob.position.y = Rp + 0.050; root.add(knob);
+      var knobRim = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.006, 20), alu); knobRim.position.y = Rp + 0.047; root.add(knobRim);
+      var led = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 10, 8), mat(0x22c55e, 0.3, 0.2, 0x16a34a));
+      led.position.set(L / 2 - Rp * 0.25, Rp * 0.55, 0);
+      root.add(led);
+    } else {
+      [-0.06, 0.06].forEach(function (x) {
+        var post = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.04, 8), postMat);
+        post.position.set(x, h * 0.5 + 0.02, 0);
+        root.add(post);
+      });
+      var bail = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.14, 10), postMat);
+      bail.rotation.z = Math.PI / 2;
+      bail.position.set(0, h * 0.5 + 0.045, 0);
+      root.add(bail);
+    }
 
     var grasp = new THREE.Object3D();
-    grasp.position.set(0, h * 0.5 + 0.045, 0);
+    grasp.position.set(0, h * 0.5 + 0.045, 0);                    // knob neck: same grasp height for every cargo type
     root.add(grasp);
     root.userData.grasp = grasp;
     return root;
@@ -983,9 +997,10 @@
       var nextEl = el;
       var nextGrip = w.grip != null ? w.grip : grip;
       if (w.stow) {
-        nextYaw = 0.0;
-        nextSh = 1.15;
-        nextEl = -2.45;
+        var stw = armStow();
+        nextYaw = yaw + wrap(stw.yaw - yaw);
+        nextSh = stw.sh;
+        nextEl = stw.el;
       } else if (w.local) {
         var ik;
         if (w.tipIk !== false) {
@@ -1734,16 +1749,22 @@
     }
   }
 
+  // stow pose published by the rover model (v4 folds the arm back over the deck to stay inside the 24 in cube)
+  function armStow() {
+    var a = window.roverArm;
+    return (a && a.stow) ? a.stow : { yaw: 0, sh: 1.15, el: -2.45 };
+  }
+
   function stowIfIdle(dt) {
     if (traj || armMode) return;
     var arm = window.roverArm;
     if (!arm) return;
-    var yaw = arm.base.rotation.y;
-    var targetYaw = yaw + wrap(0 - yaw);
+    var yaw = arm.base.rotation.y, stw = armStow();
+    var targetYaw = yaw + wrap(stw.yaw - yaw);
     setJoints(
       yaw + wrap(targetYaw - yaw) * Math.min(1, 2.2 * dt),
-      arm.shoulder.rotation.z + (1.15 - arm.shoulder.rotation.z) * Math.min(1, 2.2 * dt),
-      arm.elbow.rotation.z + (-2.45 - arm.elbow.rotation.z) * Math.min(1, 2.2 * dt),
+      arm.shoulder.rotation.z + (stw.sh - arm.shoulder.rotation.z) * Math.min(1, 2.2 * dt),
+      arm.elbow.rotation.z + (stw.el - arm.elbow.rotation.z) * Math.min(1, 2.2 * dt),
       gripGap() + (GRIP_OPEN - gripGap()) * Math.min(1, 3 * dt)
     );
   }

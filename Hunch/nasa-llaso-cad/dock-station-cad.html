@@ -288,8 +288,9 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
   var wheelGroups = [], wheels = [];
   NASA_FusionRover.init({ roverGroup: rover, wheelGroups: wheelGroups, wheels: wheels });
   var rig = window.roverRig;
-  var pad = new THREE.Group(); pad.position.set(-0.22, 0.338, 0); rover.add(pad);   // coupler target (matches the pad on the rover)
-  var WB = 0.5387;                                                                    // front/rear axle offset from rover centre (m)
+  var RGm = window.ROVER_GEOM || { pad: { x: 0.19, y: 0.277, z: 0 }, modX: 0.215 };
+  var pad = new THREE.Group(); pad.position.set(RGm.pad.x, RGm.pad.y, RGm.pad.z); rover.add(pad);   // coupler target (matches the pad on the rover)
+  var WB = RGm.modX;                                                                    // front/rear axle offset from rover centre (m)
 
   // ground height under the rover track (dock frame x): floor 0.08 inside, ramp, regolith outside
   function surfaceY(x) { return x <= 2.675 ? 0.08 : (x >= 3.625 ? 0.0 : 0.08 * (3.625 - x) / 0.95); }

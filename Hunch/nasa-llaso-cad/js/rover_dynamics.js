@@ -75,7 +75,7 @@
 
   /**
    * One physics step.
-   * in: { dt, wheels:[{x,z}x6], pitch, roll, vel, accel, yawRate, contactY, muBase, sinkRatio, motorN }
+   * in: { dt, wheels:[{x,z}x6], pitch, roll, vel, accel, yawRate, contactY, muBase, sinkRatio, motorN, ballast:{kg,dx} }
    *   pitch  nose-up positive (rad), roll right-side-up positive (rad)
    *   accel  chassis longitudinal acceleration, m/s^2 (d vel / dt)
    *   contactY  rover-local y of the wheel contact points
@@ -90,6 +90,7 @@
       m += p.kg; cargo += p.kg;
       mx += p.x * p.kg; my += p.y * p.kg; mz += p.z * p.kg;
     }
+    if (inp.ballast && inp.ballast.kg) mx += inp.ballast.kg * (inp.ballast.dx || 0);   // battery sled shifted on its lead screw
     var cx = mx / m, cy = my / m, cz = mz / m;
     var contactY = inp.contactY != null ? inp.contactY : 0;
     var h = Math.max(0.05, cy - contactY);

@@ -6,9 +6,10 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 ok(C.ids().length === 3, 'three cargo types');
 ids = C.ids();
 ids.forEach(i => ok(C.fits(i).fits, i + ' fits the bay'));
-ok(Math.abs(C.get('pod').lengthM - 1.2192 / 4) < 1e-9, 'pod keeps the 1:4 Astrobotic size');
+ok(Math.abs(C.get('pod').lengthM - 0.26) < 1e-9 && Math.abs(C.get('pod').heightM - 0.15) < 1e-9, 'pod is the 1:4 canister (0.26 m long, 0.15 m dia)');
+ok(C.cradleFor('pod').saddle === 'vee', 'round canister rides a vee saddle');
 ok(C.get('pod').massKg === 5 * 0.45359237, 'pod keeps its 5 lb mass');
-ok(C.cradleFor('cylinder').saddle === 'vee' && C.cradleFor('pod').saddle === 'flat' && C.cradleFor('container').saddle === 'flat', 'cylinder gets a vee saddle');
+ok(C.cradleFor('cylinder').saddle === 'vee' && C.cradleFor('container').saddle === 'flat', 'cylinder gets a vee saddle, container a flat one');
 ok(ids.every(i => C.cradleFor(i).clampSpanM > C.get(i).widthM), 'clamp span clears each width');
 ok(ids.every(i => C.get(i).bail.spanM === C.BAIL.spanM), 'every type shares the same grapple bail');
 // A type too big for the bay is rejected with reasons.
