@@ -773,7 +773,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = isSafari ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.25;
+renderer.toneMappingExposure = 0.92;   // the sun is 4.2 and the paint is white: 1.25 clipped the rover and flattened the regolith
 renderer.setClearColor(0x010206);
 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
@@ -787,7 +787,7 @@ controls.enabled = false;
 // =========================================================================
 // LIGHTING & ASTRONOMY
 // =========================================================================
-scene.add(new THREE.AmbientLight(0x2d3748, 0.72));
+scene.add(new THREE.AmbientLight(0x2d3748, 0.5));
 
 var sun = new THREE.DirectionalLight(0xfffaee, 4.2);
 sun.position.set(38, 22, -32);
@@ -805,6 +805,33 @@ sun.shadow.normalBias = 0.012;
 sun.shadow.radius = 2.5;
 scene.add(sun);
 scene.add(sun.target);
+/* Image-based lighting for the lunar scene: black sky, a hard sun disc, warm regolith bounce from below and a faint
+   blue earthshine. Without it the rover's metal and clear-coat panels reflect nothing and look like flat plastic.
+   Built once (PMREM), so it costs nothing per frame. */
+(function buildLunarEnvironment() {
+  if (!THREE.PMREMGenerator) return;
+  var env = new THREE.Scene();
+  var g = new THREE.SphereGeometry(30, 48, 24), pos = g.attributes.position, cols = [];
+  var sky = new THREE.Color(0x020308), ground = new THREE.Color(0x8a857a), horizon = new THREE.Color(0x4a4a4d);
+  for (var i = 0; i < pos.count; i++) {
+    var y = pos.getY(i) / 30, c;
+    if (y >= 0) c = horizon.clone().lerp(sky, Math.pow(y, 0.5));
+    else c = horizon.clone().lerp(ground, Math.min(1, -y * 2.2)).multiplyScalar(1.0 + 1.6 * Math.min(1, -y * 3));   // sunlit regolith bounce
+    cols.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  env.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  function disc(r, x, y, z, k, col) {
+    var m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(k), side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); env.add(m);
+  }
+  var sd = new THREE.Vector3(38, 22, -32).normalize().multiplyScalar(26);
+  disc(2.6, sd.x, sd.y, sd.z, 28, 0xfffaee);               // the sun: small, intense, gives crisp highlights on metal
+  disc(5.0, -14, 9, 18, 0.9, 0x6aa8ff);                    // earthshine
+  var pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(env, 0.02).texture;
+  pm.dispose();
+})();
 function followSunShadow(focus) {
   sun.target.position.copy(focus);
   sun.position.copy(focus).addScaledVector(SUN_DIR, 60);
@@ -882,12 +909,26 @@ terrainGeo.computeVertexNormals();
 var terrain = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({
   map: dirtTex,
   normalMap: dirtNormal,                      // smooth filtered micro-relief (the old bump map aliased into blocks)
-  normalScale: new THREE.Vector2(1.0, 1.0),
+  normalScale: new THREE.Vector2(0.85, 0.85),
   vertexColors: true,
   roughness: 0.97,
   metalness: 0.02,
-  color: 0x8a857c
+  envMapIntensity: 0.12,                      // regolith is matte: keep it sun-lit, not sky-lit
+  color: 0x6f6a62                             // darker, warmer regolith (real albedo ~0.12): gives the light and shadow contrast
 }));
+// Break up texture tiling: a second sample of the colour map at a very different scale and a rotated frame
+// multiplies the albedo by soft large-scale patches, so the 48x repeat grid never shows as rippled bands.
+terrain.material.onBeforeCompile = function (sh) {
+  sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
+    #ifdef USE_MAP
+      vec4 sampledDiffuseColor = texture2D( map, vUv );
+      vec2 uvA = vec2( vUv.x * 0.9 - vUv.y * 0.44, vUv.x * 0.44 + vUv.y * 0.9 ) * 0.031 + vec2( 0.37, 0.11 );
+      vec2 uvB = vec2( vUv.x * 0.6 + vUv.y * 0.8, -vUv.x * 0.8 + vUv.y * 0.6 ) * 0.0113 + vec2( 0.71, 0.53 );
+      float macro = texture2D( map, uvA ).r * 0.6 + texture2D( map, uvB ).r * 0.4;
+      sampledDiffuseColor.rgb *= mix( 0.62, 1.38, smoothstep( 0.30, 0.70, macro ) );
+      diffuseColor *= sampledDiffuseColor;
+    #endif`);
+};
 terrain.receiveShadow = true;
 scene.add(terrain);
 // Tyre tracks and soil compaction (js/soil_tracks.js). Poured pads, the dock floor and its ramp take no imprint.
@@ -1522,6 +1563,17 @@ function computeDockDrive(dt) {
 // - Sensors: EC Buying YDLIDAR X2L 360° LiDAR + 2x Arducam 5MP OV5647 Cameras
 // =========================================================================
 var roverGroup = new THREE.Group(); roverGroup.position.set(0, 1, 5); scene.add(roverGroup);
+// Contact ambient occlusion: sky light cannot reach the ground under the 0.6 m body and between the wheels, and the
+// shadow map only has the sun. A soft multiply patch follows the rover (it is a child, so it tilts with the terrain).
+(function () {
+  var cv = document.createElement('canvas'); cv.width = cv.height = 256; var c = cv.getContext('2d');
+  var gr = c.createRadialGradient(128, 128, 20, 128, 128, 126);
+  gr.addColorStop(0, 'rgba(0,0,0,0.62)'); gr.addColorStop(0.45, 'rgba(0,0,0,0.30)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = gr; c.fillRect(0, 0, 256, 256);
+  var ao = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.05), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  ao.rotation.x = -Math.PI / 2; ao.position.y = 0.004; ao.renderOrder = 2; ao.name = 'contactAO';
+  roverGroup.add(ao);
+})();
 
 var petgTex = createPetgTex(true);
 var petgCleanTex = createPetgTex(false);
@@ -6615,7 +6667,7 @@ function animate() {
 
   // Dynamic Camera Views
   if (camMode === 'chase') {
-    var idealCamPos = new THREE.Vector3(-4.8, 2.6, 0).applyMatrix4(roverGroup.matrixWorld);
+    var idealCamPos = new THREE.Vector3(-2.7, 1.45, 0.35).applyMatrix4(roverGroup.matrixWorld);   // v4 rover is 0.6 m: sit close enough to see its detail
     rc.set(roverGroup.position, idealCamPos.clone().sub(roverGroup.position).normalize());
     var camHits = rc.intersectObjects(rocksGroup.children);
     if (camHits.length > 0 && camHits[0].distance < roverGroup.position.distanceTo(idealCamPos)) {
