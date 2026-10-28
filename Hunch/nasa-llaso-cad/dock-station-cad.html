@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AEGIS-V1 Dock Station</title>
-<meta name="description" content="Autonomous docking and charging garage for the AEGIS-V1 lunar cargo rover: clamp arms, scissor-lift magnetic coupler, sectional door, thermal control.">
+<meta name="description" content="Autonomous docking and charging garage for the AEGIS-V1 lunar cargo rover: clamp arms, scissor-lift magnetic coupler, interlocked airlock with dust purge, thermal control.">
 <style>
 /* macOS-style tool window: full-bleed viewport, translucent inspector on the right, segmented controls.
    Colours: neutral graphite UI, system blue for selection, green = latched, amber = power/motion. */
@@ -83,7 +83,7 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
     <div class="toolbar">
       <div class="title"><b>AEGIS-V1 Dock Station</b><span>Autonomous docking &amp; charging garage</span></div>
       <div class="seg" id="cams" role="group" aria-label="Camera">
-        <button data-cam="iso" class="on">Overview</button><button data-cam="door">Door</button><button data-cam="coupler">Coupler</button><button data-cam="top">Top</button><button data-cam="therm">Thermal</button>
+        <button data-cam="iso" class="on">Overview</button><button data-cam="lock">Airlock</button><button data-cam="coupler">Coupler</button><button data-cam="top">Top</button><button data-cam="therm">Thermal</button>
       </div>
       <div class="seg" role="group" aria-label="Cutaway"><button id="bCut" class="on" aria-pressed="true">Cutaway</button></div>
     </div>
@@ -104,11 +104,13 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
         </div>
         <ol class="steps" id="steps" style="margin-top:10px">
           <li data-s="APPROACH"><i></i>Approach on UWB + 300 mm tag</li>
-          <li data-s="ALIGN"><i></i>Square up at the gate · door opens</li>
-          <li data-s="ENTER"><i></i>Visual-servo entry on the IR tag</li>
+          <li data-s="ALIGN"><i></i>Square up at the gate · outer door opens</li>
+          <li data-s="LOCK_IN"><i></i>Roll into the airlock</li>
+          <li data-s="CYCLE_IN"><i></i>Outer seals · N₂ dust purge · pressurise</li>
+          <li data-s="ENTER"><i></i>Inner door opens · visual-servo entry</li>
           <li data-s="CAPTURE"><i></i>Clamp arms centre the rover</li>
           <li data-s="LATCH"><i></i>Scissor lift lowers the coupler</li>
-          <li data-s="DOCKED"><i></i>Latched · charging · door closes</li>
+          <li data-s="DOCKED"><i></i>Latched · charging · bay sealed</li>
         </ol>
       </div>
     </div>
@@ -122,7 +124,8 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
         <dl class="kv" id="kv">
           <dt>Clamps</dt><dd id="kClamp">—</dd>
           <dt>Coupler</dt><dd id="kCpl">—</dd>
-          <dt>Door</dt><dd id="kDoor">—</dd>
+          <dt>Doors</dt><dd id="kDoor">—</dd>
+          <dt>Airlock</dt><dd id="kLock">—</dd>
           <dt>Rover speed</dt><dd id="kSpd">—</dd>
           <dt>Charge</dt><dd id="kChg">—</dd>
           <dt>PV / load</dt><dd id="kPv">—</dd>
@@ -139,7 +142,7 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
         <li><i style="background:#cbd5e1"></i><div>Clamp arms<br><span>parallel jaws on a lead screw + two guide rods each; 0.725 m → 0.425 m from centreline</span></div></li>
         <li><i style="background:#30d158"></i><div>Magnetic coupler<br><span>3-stage scissor lift, floating head, N42SH ring magnets, 4 pogo pins, hall array</span></div></li>
         <li><i style="background:#0a84ff"></i><div>Sensors<br><span>aft 100 mm IR tag, facade 300 mm tag, UWB anchors, side ToF, bumper switch</span></div></li>
-        <li><i style="background:#ff9f0a"></i><div>Sectional door<br><span>6 hinged panels, torsion drum, chain opener with soft start/stop, motion beacon</span></div></li>
+        <li><i style="background:#9ba1a8"></i><div>Airlock<br><span>two bi-parting pressure doors on belt drives, EPDM seals, interlock (never both open), N₂ purge arches, dust grate + vacuum pump, equalisation valve</span></div></li>
         <li><i style="background:#f1f5f9"></i><div>Radiator + louvers<br><span>zenith-facing, bimetal louvers, ammonia heat pipes</span></div></li>
         <li><i style="background:#d4a017"></i><div>MLI warm box<br><span>buffer battery, charger, MCU; survival heater at −20 °C</span></div></li>
       </ul>
@@ -178,42 +181,65 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
   var ground = new THREE.Mesh(new THREE.CircleGeometry(18, 96), new THREE.MeshStandardMaterial({ color: 0x8a8b8e, map: ST.regolith([7, 7]), roughness: 1, metalness: 0, envMapIntensity: 0.25 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.002; ground.receiveShadow = true; scene.add(ground);
 
-  var hazTex = ST.hazard([1, 3.5], true), hazTex2 = ST.hazard([2, 1]);
+  var hazTex2 = ST.hazard([2, 1]);
+  // Graphite / aluminium greys throughout; colour is kept for state (status lamps, lane lights, coupler LED, warm box).
   var M = {
-    bay: new THREE.MeshStandardMaterial({ color: 0x9aa8b6, metalness: 0.55, roughness: 0.42 }),
-    bayDark: new THREE.MeshStandardMaterial({ color: 0x2c333c, metalness: 0.5, roughness: 0.45 }),
-    bayTrim: new THREE.MeshStandardMaterial({ color: 0xd5dbe2, metalness: 0.6, roughness: 0.32 }),
+    bay: new THREE.MeshStandardMaterial({ color: 0x8a9097, metalness: 0.5, roughness: 0.45 }),
+    bayDark: new THREE.MeshStandardMaterial({ color: 0x3a4047, metalness: 0.5, roughness: 0.5 }),
+    bayTrim: new THREE.MeshStandardMaterial({ color: 0xc4c9cf, metalness: 0.6, roughness: 0.34 }),
     hazard: new THREE.MeshStandardMaterial({ color: 0xffffff, map: hazTex2, roughness: 0.55 }),
     copper: new THREE.MeshStandardMaterial({ color: 0xd08a3a, metalness: 0.85, roughness: 0.3 }),
-    floor: new THREE.MeshStandardMaterial({ color: 0x6b7480, metalness: 0.45, roughness: 0.55 }),
-    wall: new THREE.MeshPhysicalMaterial({ color: 0xbfd2e6, metalness: 0.0, roughness: 0.12, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
-    pv: new THREE.MeshStandardMaterial({ color: 0x14306a, metalness: 0.6, roughness: 0.18 })
+    floor: new THREE.MeshStandardMaterial({ color: 0x484c52, metalness: 0.3, roughness: 0.7, envMapIntensity: 0.45 }),
+    panel: new THREE.MeshStandardMaterial({ color: 0x7a8087, metalness: 0.35, roughness: 0.6, envMapIntensity: 0.5 }),
+    panelMid: new THREE.MeshStandardMaterial({ color: 0x5a6067, metalness: 0.4, roughness: 0.5, envMapIntensity: 0.55 }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x969ca3, metalness: 0.5, roughness: 0.4, envMapIntensity: 0.8 }),
+    seal: new THREE.MeshStandardMaterial({ color: 0x1c1f23, roughness: 0.85 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0xa9c7dc, metalness: 0.0, roughness: 0.08, transparent: true, opacity: 0.4, depthWrite: false }),
+    strip: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xdfe9f5, emissiveIntensity: 0.55 })
   };
-  var mRoof = new THREE.MeshStandardMaterial({ color: 0xe9edf2, metalness: 0.25, roughness: 0.45, transparent: true, opacity: 1 });
-  var mRamp = new THREE.MeshStandardMaterial({ color: 0xffffff, map: hazTex, roughness: 0.6 });
+  // parts that ghost in cutaway: roof, PV array and the near (+z) wall
+  var mRoof = new THREE.MeshStandardMaterial({ color: 0x8d9399, metalness: 0.3, roughness: 0.5, transparent: true, opacity: 1 });
+  var mNear = M.panel.clone(); mNear.transparent = true;
+  var mNearRib = M.panelMid.clone(); mNearRib.transparent = true;
 
   var dock = new THREE.Group(); scene.add(dock);
   function box(w, h, d, m, x, y, z, parent) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; (parent || dock).add(o); return o; }
+  function cyl(r, h, m, x, y, z, parent, seg) { var o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg || 16), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; (parent || dock).add(o); return o; }
   box(5.4, 0.08, 3.5, M.floor, 0, 0.04, 0);
   [-0.54, 0.54].forEach(function (z) { box(4.4, 0.006, 0.05, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x4ea8ff, emissiveIntensity: 0.0 }), -0.1, 0.083, z); });   // lane lights (lit while docking)
   var laneMats = []; dock.children.slice(-2).forEach(function (o) { laneMats.push(o.material); });
-  var ramp = box(0.95, 0.04, 3.3, mRamp, 3.15, 0.02, 0); ramp.rotation.z = -Math.atan(0.08 / 0.95); ramp.position.y = 0.035;   // floor top 0.08 at the door → ground at x = 3.625
-  var walls = new THREE.Group(); dock.add(walls);
-  [-1.62, 1.62].forEach(function (z) { box(4.8, 1.42, 0.03, M.wall, -0.25, 0.78, z, walls).castShadow = false; });
-  box(0.03, 1.42, 3.34, M.wall, -2.55, 0.78, 0, walls).castShadow = false;
+  // ribbed grey approach ramp: floor top 0.08 at the door → ground at x = 3.625
+  var ramp = box(0.95, 0.04, 3.3, M.panelMid, 3.15, 0.035, 0); ramp.rotation.z = -Math.atan(0.08 / 0.95);
+  for (var ri = -0.36; ri <= 0.37; ri += 0.12) box(0.025, 0.012, 3.1, M.bayDark, ri, 0.024, 0, ramp);   // traction ribs
+  [-1, 1].forEach(function (s) { box(0.95, 0.01, 0.03, M.bayTrim, 0, 0.022, s * 1.6, ramp); });
+
+  /* ---------- walls: grey sandwich panels with standing stiffeners ---------- */
+  var WH = 1.40, WY = 0.78;
+  box(4.8, WH, 0.04, M.panel, -0.25, WY, -1.62);                                              // far wall
+  box(0.04, WH, 3.28, M.panel, -2.57, WY, 0);                                                 // back wall (inner face clears the aft tag)
+  var nearWall = new THREE.Group(); dock.add(nearWall);
+  box(4.8, WH, 0.04, mNear, -0.25, WY, 1.62, nearWall);                                       // near wall (ghosts in cutaway)
+  for (var wx = -2.35; wx < 2.1; wx += 0.6) {
+    box(0.05, WH, 0.03, M.panelMid, wx, WY, -1.655); box(0.04, WH, 0.025, M.panelMid, wx, WY, -1.588);
+    box(0.05, WH, 0.03, mNearRib, wx, WY, 1.655);
+  }
+  [-1.1, -0.35, 0.4, 1.15].forEach(function (z) { box(0.03, WH, 0.05, M.panelMid, -2.605, WY, z); });
+  box(4.6, 0.02, 0.02, M.strip, -0.3, 1.34, -1.595);                                          // soft wall light strips
+  box(0.02, 0.02, 3.0, M.strip, -2.545, 1.34, 0);
+
   var roofG = new THREE.Group(); dock.add(roofG);
   var roof = box(5.0, 0.08, 3.46, mRoof, -0.2, 1.49, 0, roofG);
+  for (var rx = -2.45; rx < 2.3; rx += 0.7) box(0.04, 0.025, 3.46, mRoof, rx, 1.542, 0, roofG);   // standing seams
   // PV array: 4 panels on a tilted frame (C.PV_PANELS), each with a cell grid texture
   var cellTex = ST.canvasTex(256, 256, function (c, w, h) {
-    c.fillStyle = '#0d2350'; c.fillRect(0, 0, w, h); c.strokeStyle = 'rgba(190,210,255,.35)'; c.lineWidth = 2;
+    c.fillStyle = '#16233a'; c.fillRect(0, 0, w, h); c.strokeStyle = 'rgba(200,210,225,.32)'; c.lineWidth = 2;
     for (var i = 0; i <= 6; i++) { c.beginPath(); c.moveTo(i * w / 6, 0); c.lineTo(i * w / 6, h); c.stroke(); c.beginPath(); c.moveTo(0, i * h / 6); c.lineTo(w, i * h / 6); c.stroke(); }
   });
   var mCells = new THREE.MeshStandardMaterial({ color: 0xffffff, map: cellTex, metalness: 0.55, roughness: 0.16, transparent: true, opacity: 1 });
   // PV frame + struts get their own fading materials so cutaway ghosts the whole array (not just the cells)
   var mPvFrame = M.bayTrim.clone(); mPvFrame.transparent = true;
   var mPvStrut = M.bayDark.clone(); mPvStrut.transparent = true;
-  // Tilt 0.12 rad. The pivot is set so the low end of the frame clears the roof slab (top at y 1.53) by 0.12 m;
-  // the old 0.20 rad tilt at y 1.62 put the low end inside the roof and the high end 0.4 m above it.
+  // Tilt 0.12 rad. The pivot is set so the low end of the frame clears the roof slab (top at y 1.53) by 0.12 m.
   var PV_TILT = 0.12, ROOF_TOP = 1.53, PV_X0 = -0.2;
   var PV_Y = ROOF_TOP + 0.12 + 0.015 + 1.84 * Math.sin(PV_TILT);
   var pv = new THREE.Group(); pv.position.set(PV_X0, PV_Y, 0); pv.rotation.z = PV_TILT; roofG.add(pv);
@@ -230,12 +256,151 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
     });
   });
   [-2.4, -0.9, 0.6, 2.1].forEach(function (x) { [-1.68, 1.68].forEach(function (z) { box(0.12, 1.54, 0.12, M.bayDark, x, 0.81, z); }); });
-  var doorRig = D.buildDoor(THREE, dock, M);
+
+  /* ---------- airlock: inner + outer bi-parting pressure doors with a purge vestibule between them ----------
+     Interlocked: a door may only open when the other is shut and the vestibule pressure matches its side.
+     Outer door at the old door plane (x 2.15); inner door at x 0.10, clear of the clamp arms and coupler.
+     Vestibule 1.9 m long for the 1.29 m rover: it stops at LOCK_X with ~0.3 m clear fore and aft. */
+  var X_IN = 0.10, X_OUTER = 2.15, LOCK_X = 1.12, OPEN_Z = 0.70, LEAF_W = 0.74, LEAF_TRAVEL = 0.76, DOOR_TOP = 1.12, P_BAY = 10.0;
+  function bulkhead(X, dir, label) {               // dir: the leaves ride on the vestibule side of the bulkhead
+    var g = new THREE.Group(); dock.add(g);
+    var r = { leaves: [], X: X, open: 0, g: g };
+    var HB = 1.45 - 0.08;
+    [-1, 1].forEach(function (s) {
+      box(0.10, HB, 1.62 - OPEN_Z, M.panel, X, 0.08 + HB / 2, s * (OPEN_Z + (1.62 - OPEN_Z) / 2), g);        // pocket walls
+      box(0.12, DOOR_TOP - 0.08, 0.05, M.seal, X, 0.08 + (DOOR_TOP - 0.08) / 2, s * (OPEN_Z + 0.02), g);       // EPDM jamb seals
+      [-1, 1].forEach(function (f) { box(0.02, HB, 0.05, M.panelMid, X + f * 0.06, 0.08 + HB / 2, s * 1.22, g); });
+    });
+    box(0.10, 1.45 - DOOR_TOP, 2 * OPEN_Z, M.panel, X, (DOOR_TOP + 1.45) / 2, 0, g);                          // header
+    box(0.12, 0.05, 2 * OPEN_Z + 0.1, M.seal, X, DOOR_TOP + 0.01, 0, g);                                      // lintel seal
+    box(0.16, 0.012, 2 * OPEN_Z, M.bayTrim, X, 0.086, 0, g);                                                  // sill plate
+    var LX = X + dir * 0.075;
+    box(0.035, 0.03, 3.0, M.bayTrim, LX, DOOR_TOP + 0.075, 0, g);                                             // roller rail
+    box(0.012, 0.02, 2.9, M.seal, LX + dir * 0.022, DOOR_TOP + 0.075, 0, g);                                 // drive belt
+    box(0.10, 0.12, 0.22, M.bayDark, X + dir * 0.10, 1.31, 0, g);                                             // belt motor + gearbox
+    var pulley = cyl(0.035, 0.03, M.bayTrim, X + dir * 0.155, 1.31, 0, g); pulley.rotation.z = Math.PI / 2;
+    // status lamps + light bar on both faces of the header
+    r.lampMat = new THREE.MeshStandardMaterial({ color: 0xff453a, emissive: 0xff453a, emissiveIntensity: 1.2 });
+    r.barMat = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xff9f0a, emissiveIntensity: 0 });
+    [-1, 1].forEach(function (f) {
+      box(0.03, 0.08, 0.08, M.seal, X + f * 0.06, 1.33, -0.56, g);
+      var lens = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 10), r.lampMat); lens.position.set(X + f * 0.08, 1.33, -0.56); g.add(lens);
+      box(0.01, 0.018, 0.9, r.barMat, X + f * 0.056, 1.20, 0, g);
+    });
+    if (label) {
+      var lt = ST.canvasTex(512, 96, function (c, w, h) {
+        c.fillStyle = '#3d434b'; c.fillRect(0, 0, w, h); c.fillStyle = '#e6e9ec';
+        c.font = '600 54px -apple-system, Helvetica, Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, w / 2, h / 2 + 2);
+      });
+      var plate = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.115), new THREE.MeshStandardMaterial({ map: lt, roughness: 0.6 }));
+      plate.rotation.y = Math.PI / 2; plate.position.set(X + 0.052, 1.31, -0.18); g.add(plate);
+    }
+    [-1, 1].forEach(function (s) {
+      var L = new THREE.Group(); L.position.set(LX, 0, s * LEAF_W / 2); g.add(L);
+      box(0.045, 1.05, LEAF_W, M.leaf, 0, 0.615, 0, L);
+      box(0.051, 0.62, LEAF_W - 0.24, M.panelMid, 0, 0.46, 0, L);                                             // recessed centre panel
+      box(0.052, 0.10, LEAF_W - 0.06, M.panelMid, 0, 0.16, 0, L);                                             // kick plate
+      box(0.055, 1.05, 0.03, M.seal, 0, 0.615, -s * (LEAF_W / 2 - 0.015), L);                                  // meeting-edge seal
+      var port = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 28), M.glass); port.rotation.z = Math.PI / 2; port.position.set(0, 0.90, 0); L.add(port);
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(0.078, 0.013, 10, 28), M.bayTrim); ring.rotation.y = Math.PI / 2;
+      [-1, 1].forEach(function (f) { var rr = ring.clone(); rr.position.set(f * 0.026, 0.90, 0); L.add(rr); });
+      [-0.22, 0.22].forEach(function (tz) {                                                                    // roller trucks on the rail
+        box(0.02, 0.07, 0.05, M.bayDark, 0, 1.165, tz, L);
+        var wh = cyl(0.026, 0.03, M.bayTrim, dir * 0.0, DOOR_TOP + 0.105, tz, L, 14); wh.rotation.z = Math.PI / 2;
+      });
+      r.leaves.push({ g: L, s: s });
+    });
+    r.set = function (o) { r.open = o; r.leaves.forEach(function (lf) { lf.g.position.z = lf.s * (LEAF_W / 2 + o * LEAF_TRAVEL); }); pulley.rotation.x = o * LEAF_TRAVEL / 0.035; };
+    var ax = new MO.Axis(0, { vmax: 0.42, amax: 0.7, jerkTau: 0.12 });
+    r.drive = function (t, dt) { ax.target = Math.max(0, Math.min(1, t)) * LEAF_TRAVEL; ax.step(dt); r.set(ax.pos / LEAF_TRAVEL); r.moving = Math.abs(ax.vel) > 0.003; return r.open; };
+    r.snap = function (o) { ax.snap(o * LEAF_TRAVEL); r.set(o); };
+    r.set(0);
+    return r;
+  }
+  var outerDoor = bulkhead(X_OUTER, -1, 'AIRLOCK 01'), innerDoor = bulkhead(X_IN, 1, null);
+  // cutaway sections both bulkheads on the bay centreline (keeps z <= 0) so the vestibule and the bay read through them
+  renderer.localClippingEnabled = true;
+  var secPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 10), secMats = new Map();
+  [outerDoor, innerDoor].forEach(function (d) {
+    d.g.traverse(function (o) {
+      if (!o.isMesh) return;
+      var m = secMats.get(o.material);
+      if (!m) { m = o.material.clone(); m.clippingPlanes = [secPlane]; m.clipShadows = true; m.side = THREE.DoubleSide; secMats.set(o.material, m); }
+      o.material = m;
+    });
+    d.lampMat = secMats.get(d.lampMat); d.barMat = secMats.get(d.barMat);
+  });
+
+  // vestibule fit-out: dust grate over the vacuum plenum, two N2 purge arches, tank, pump, equalisation valve + gauge
+  var grateTex = ST.canvasTex(256, 256, function (c, w, h) {
+    c.fillStyle = '#2e3339'; c.fillRect(0, 0, w, h); c.fillStyle = '#15181c';
+    for (var gy = 6; gy < h; gy += 16) for (var gx = 8; gx < w; gx += 64) c.fillRect(gx, gy, 52, 7);
+  }, [3, 2]);
+  box(1.78, 0.006, 1.36, new THREE.MeshStandardMaterial({ color: 0xffffff, map: grateTex, metalness: 0.5, roughness: 0.6 }), LOCK_X, 0.085, 0);
+  var nozzles = [];
+  [LOCK_X - 0.42, LOCK_X + 0.42].forEach(function (ax) {
+    [-1, 1].forEach(function (s) {
+      box(0.06, 0.92, 0.06, M.bayDark, ax, 0.08 + 0.46, s * 0.64);
+      for (var ny = 0.22; ny < 0.95; ny += 0.17) {
+        var n = cyl(0.011, 0.05, M.bayTrim, ax, ny, s * 0.595, null, 8); n.rotation.x = Math.PI / 2;
+        nozzles.push({ p: new THREE.Vector3(ax, ny, s * 0.57), d: new THREE.Vector3(0, -0.15, -s).normalize() });
+      }
+    });
+    box(0.06, 0.06, 1.34, M.bayDark, ax, 1.03, 0);
+    [-0.36, -0.12, 0.12, 0.36].forEach(function (nz) {
+      cyl(0.011, 0.05, M.bayTrim, ax, 0.985, nz, null, 8);
+      nozzles.push({ p: new THREE.Vector3(ax, 0.96, nz), d: new THREE.Vector3(0, -1, 0) });
+    });
+  });
+  var tank = cyl(0.12, 0.86, M.bayTrim, LOCK_X, 0.08 + 0.43, -1.36, null, 24);                                // N2 purge tank
+  cyl(0.123, 0.05, M.panelMid, LOCK_X, 0.75, -1.36, null, 24); cyl(0.04, 0.06, M.bayDark, LOCK_X, 0.97, -1.36, null, 12);
+  box(0.38, 0.28, 0.30, M.bayDark, LOCK_X, 0.08 + 0.14, 1.34);                                                // vacuum pump (dust + gas recovery)
+  var fan = cyl(0.09, 0.012, M.panelMid, LOCK_X, 0.08 + 0.14, 1.185, null, 24); fan.rotation.x = Math.PI / 2;
+  for (var fr = -0.12; fr <= 0.121; fr += 0.06) box(0.30, 0.012, 0.02, M.panelMid, LOCK_X, 0.367, 1.34 + fr);  // cooling fins
+  box(0.05, 0.05, 0.05, M.bayTrim, LOCK_X - 0.12, 0.385, 1.22); box(0.03, 0.03, 0.30, M.seal, LOCK_X - 0.12, 0.385, 1.06);    // suction hose to the plenum
+  box(0.14, 0.02, 0.06, new THREE.MeshStandardMaterial({ color: 0x30d158, emissive: 0x30d158, emissiveIntensity: 0.6 }), LOCK_X + 0.1, 0.30, 1.188);   // run light
+  box(0.24, 0.30, 0.07, M.panelMid, LOCK_X + 0.5, 0.95, -1.565);                                              // equalisation valve box
+  var gauge = cyl(0.07, 0.012, new THREE.MeshStandardMaterial({ color: 0xeef1f4, roughness: 0.5 }), LOCK_X + 0.5, 0.97, -1.525, null, 28); gauge.rotation.x = Math.PI / 2;
+  var needle = new THREE.Group(); needle.position.set(LOCK_X + 0.5, 0.97, -1.517); dock.add(needle);
+  box(0.008, 0.055, 0.004, new THREE.MeshStandardMaterial({ color: 0xff453a }), 0, 0.026, 0, needle);
+  box(0.03, 0.42, 0.03, M.bayDark, LOCK_X + 0.5, 1.24, -1.57);                                                // vent line up to the roof stack
+  cyl(0.03, 0.24, mPvStrut, LOCK_X + 0.5, ROOF_TOP + 0.12, -1.4, roofG); cyl(0.06, 0.02, mPvStrut, LOCK_X + 0.5, ROOF_TOP + 0.25, -1.4, roofG);
+  // amber cycle beacon on the vestibule ceiling + interior lamp
+  var lockBeacon = new THREE.Group(); lockBeacon.position.set(LOCK_X, 1.40, 0); dock.add(lockBeacon);
+  box(0.10, 0.04, 0.10, M.bayDark, 0, 0.03, 0, lockBeacon);
+  var lbMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.05, transparent: true, opacity: 0.8 });
+  cyl(0.035, 0.06, lbMat, 0, -0.02, 0, lockBeacon);
+  var lockLamp = new THREE.PointLight(0xe8eef5, 0.0, 3.5, 2); lockLamp.position.set(LOCK_X, 1.2, 0); scene.add(lockLamp);
+  // purge jets: short-lived particles fired from the nozzles while the cycle runs
+  var NP = 420, pPos = new Float32Array(NP * 3), parts = [];
+  for (var q = 0; q < NP; q++) { parts.push({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }); pPos[q * 3 + 1] = -10; }
+  var pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  var jets = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0xeef2f5, size: 0.05, transparent: true, opacity: 0.8, depthWrite: false }));
+  jets.frustumCulled = false; scene.add(jets);
+  var emitAcc = 0;
+  function stepJets(dt, on) {
+    emitAcc += on ? dt * 420 : 0;
+    for (var i = 0; i < NP; i++) {
+      var P = parts[i];
+      if (P.life <= 0 && emitAcc >= 1) {
+        emitAcc -= 1; var nz = nozzles[(Math.random() * nozzles.length) | 0];
+        P.p.copy(nz.p); P.v.copy(nz.d).multiplyScalar(1.4 + Math.random() * 0.8);
+        P.v.x += (Math.random() - 0.5) * 0.5; P.v.y += (Math.random() - 0.5) * 0.4; P.v.z += (Math.random() - 0.5) * 0.4; P.life = 0.45 + Math.random() * 0.4;
+      }
+      if (P.life > 0) { P.life -= dt; P.v.multiplyScalar(1 - Math.min(1, dt * 3.5)); P.v.y -= dt * 0.6; P.p.addScaledVector(P.v, dt); if (P.p.y < 0.09) P.p.y = 0.09; }
+      pPos[i * 3] = P.p.x; pPos[i * 3 + 1] = P.life > 0 ? P.p.y : -10; pPos[i * 3 + 2] = P.p.z;
+    }
+    if (emitAcc > 1) emitAcc = 1;
+    pGeo.attributes.position.needsUpdate = true;
+  }
+
   var bump = box(0.14, 0.18, 1.4, M.hazard, -1.903, 0.17, 0);                       // hard-stop bumper (face at x = -1.833, ~5 mm nose gap when parked)
 
   D.reset();
   D.build(THREE, dock, M);
-  dock.traverse(function (o) { if (o.isMesh && o.material !== M.wall) { o.castShadow = true; o.receiveShadow = true; } });
+  dock.traverse(function (o) { if (o.isMesh && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } });
+  var fadeMeshes = []; roofG.traverse(function (o) { if (o.isMesh) fadeMeshes.push(o); }); nearWall.traverse(function (o) { if (o.isMesh) fadeMeshes.push(o); });
+  dock.traverse(function (o) { if (o.isMesh && o.material === mNearRib) fadeMeshes.push(o); });
 
   // full rover model (same module as the simulator)
   var rover = new THREE.Group(); scene.add(rover);
@@ -276,11 +441,14 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
 
   /* ---------- sequence ---------- */
   var X_OUT = 7.2, GATE = C.GATE_ALONG;
-  var st = 'DOCKED', tState = 0, door = 0, wantDoor = 0, latchT = 0, cycle = false;
-  var stepsEl = document.getElementById('steps'), order = ['APPROACH', 'ALIGN', 'ENTER', 'CAPTURE', 'LATCH', 'DOCKED'];
+  var st = 'DOCKED', tState = 0, latchT = 0, cycle = false;
+  var outer = 0, inner = 0, wantOuter = 0, wantInner = 0;
+  var lock = { ph: '', t: 0, p: P_BAY };            // vestibule cycle phase and pressure (kPa; 0 = lunar vacuum, P_BAY = bay N2)
+  var stepsEl = document.getElementById('steps'), order = ['APPROACH', 'ALIGN', 'LOCK_IN', 'CYCLE_IN', 'ENTER', 'CAPTURE', 'LATCH', 'DOCKED'];
+  var LABEL = { LOCK_IN: 'AIRLOCK', CYCLE_IN: 'CYCLING', LOCK_OUT: 'AIRLOCK', CYCLE_OUT: 'CYCLING' };
   function setState(s) {
     st = s; tState = 0;
-    document.getElementById('stateTag').textContent = s === 'APPROACH' ? 'APPROACH' : s;
+    document.getElementById('stateTag').textContent = LABEL[s] || s;
     var pill = document.getElementById('state');
     pill.className = (s === 'DOCKED') ? 'docked' : (s === 'STOWED' || s === 'DEPARTED' ? '' : 'moving');
     var k = order.indexOf(s);
@@ -290,6 +458,7 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
   function startOutside() {
     var S = D.state(); S.armTarget = 1; S.couplerTarget = 0; S.latched = false; S.contactsLive = false; S.chargeRamp = 0;
     drive.snap(X_OUT); latS.snap(0.16); pitchS.snap(0); heaveS.snap(0); lastV = 0; accF = 0;
+    if (inner < 0.01) { lock.p = 0; lock.ph = ''; }                                // vestibule left vented, ready for an entry
     setState('APPROACH'); drive.vlimit = 0.35; drive.target = GATE;
   }
   document.getElementById('bDock').onclick = function () {
@@ -307,7 +476,7 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
   bCut.onclick = function () { cut.on = !cut.on; bCut.classList.toggle('on', cut.on); bCut.setAttribute('aria-pressed', cut.on); };
 
   var cams = {
-    iso: [[5.0, 3.5, 4.9], [-0.3, 0.45, 0]], top: [[0.4, 10.5, 0.01], [-0.2, 0, 0]], door: [[8.4, 1.5, 2.6], [1.6, 0.7, 0]],
+    iso: [[5.0, 3.5, 4.9], [-0.3, 0.45, 0]], top: [[0.4, 10.5, 0.01], [-0.2, 0, 0]], door: [[8.4, 1.5, 2.6], [1.6, 0.7, 0]], lock: [[3.3, 2.5, 3.1], [1.0, 0.45, -0.2]],
     coupler: [[0.4, 1.25, 1.55], [-1.0, 0.6, 0]], therm: [[-4.4, 2.6, 3.6], [-2.2, 0.95, 0.9]]
   };
   function goCam(k) {
@@ -335,36 +504,67 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
     var S = D.state();
 
     // ----- sequence logic (drives targets only; the followers make the motion) -----
+    var purge = false;
     if (st === 'APPROACH') {
-      wantDoor = drive.pos < GATE + 1.6 ? 1 : 0;                                 // UWB range trigger opens the door
+      wantOuter = drive.pos < GATE + 1.6 ? 1 : 0;                                // UWB range trigger opens the outer door
       if (drive.arrived(0.003)) setState('ALIGN');
     }
-    if (st === 'ALIGN') { wantDoor = 1; if (tState > 0.9 && door > 0.85 && Math.abs(latS.x) < 0.02) { setState('ENTER'); drive.vlimit = 0.30; drive.target = C.PRECAP_ALONG; } }
+    if (st === 'ALIGN') { wantOuter = 1; if (tState > 0.9 && outer > 0.85 && Math.abs(latS.x) < 0.02) { setState('LOCK_IN'); drive.vlimit = 0.25; drive.target = LOCK_X; } }
+    if (st === 'LOCK_IN' && drive.arrived(0.003)) { setState('CYCLE_IN'); lock.ph = 'SEAL'; }
+    if (st === 'CYCLE_IN') {                                                       // seal outer → N2 purge → pressurise → open inner
+      wantOuter = 0; lock.t += dt;
+      if (lock.ph === 'SEAL' && outer < 0.002) { lock.ph = 'PURGE'; lock.t = 0; }
+      if (lock.ph === 'PURGE') { purge = true; if (lock.t > 2.6) lock.ph = 'PRESS'; }
+      if (lock.ph === 'PRESS' && lock.p >= P_BAY - 0.01) lock.ph = 'OPEN';
+      if (lock.ph === 'OPEN') { wantInner = 1; if (inner > 0.85) { lock.ph = ''; setState('ENTER'); drive.vlimit = 0.30; drive.target = C.PRECAP_ALONG; } }
+    }
     if (st === 'ENTER') {
       drive.vlimit = drive.pos > C.PARK_ALONG + 1.4 ? 0.30 : 0.18;
       if (drive.pos <= C.PRECAP_ALONG + 0.002) { setState('CAPTURE'); S.armTarget = 0; drive.vlimit = 0.10; drive.target = C.PARK_ALONG; }
     }
     if (st === 'CAPTURE') {
-      S.armTarget = 0;
+      S.armTarget = 0; wantInner = 0;                                              // rover is clear of the inner door: reseal the bay
       if (S.arm < 0.01 && drive.arrived(0.002)) { S.couplerTarget = 1; setState('LATCH'); pitchS.v += 0.03; }   // bumper kiss
     }
     if (st === 'LATCH' && S.coupler > 0.985) { latchT += dt; if (latchT > 0.6) { S.latched = true; S.contactsLive = true; latchT = 0; setState('DOCKED'); } }
-    if (st === 'DOCKED') wantDoor = 0;
+    if (st === 'DOCKED') wantInner = 0;
     if (st === 'UNDOCK') {
-      wantDoor = 1; S.contactsLive = false; S.latched = false; S.chargeRamp = 0; S.couplerTarget = 0;
+      wantInner = 1; S.contactsLive = false; S.latched = false; S.chargeRamp = 0; S.couplerTarget = 0;
       if (S.coupler < 0.03) S.armTarget = 1;
-      if (S.arm > 0.97 && S.coupler < 0.03 && door > 0.85) { setState('EXIT'); drive.vlimit = 0.30; drive.target = X_OUT; }
+      if (S.arm > 0.97 && S.coupler < 0.03 && inner > 0.85) { setState('LOCK_OUT'); drive.vlimit = 0.25; drive.target = LOCK_X; }
+    }
+    if (st === 'LOCK_OUT' && drive.arrived(0.003)) { setState('CYCLE_OUT'); lock.ph = 'SEAL'; }
+    if (st === 'CYCLE_OUT') {                                                      // seal inner → vent to vacuum → open outer
+      wantInner = 0;
+      if (lock.ph === 'SEAL' && inner < 0.002) lock.ph = 'VENT';
+      if (lock.ph === 'VENT' && lock.p <= 0.01) lock.ph = 'OPEN';
+      if (lock.ph === 'OPEN') { wantOuter = 1; if (outer > 0.85) { lock.ph = ''; setState('EXIT'); drive.vlimit = 0.30; drive.target = X_OUT; } }
     }
     if (st === 'EXIT') {
-      wantDoor = drive.pos < 3.2 ? 1 : 0;
+      wantOuter = drive.pos < 3.2 ? 1 : 0;
       if (drive.arrived(0.003)) { if (cycle) { cycle = false; setState('APPROACH'); drive.vlimit = 0.35; drive.target = GATE; } else setState('DEPARTED'); }
     }
-    if (st === 'DEPARTED' || st === 'STOWED') wantDoor = 0;
+    if (st === 'DEPARTED' || st === 'STOWED') wantOuter = wantInner = 0;
     latS.target = 0;
 
     drive.step(dt);
     var v = placeRover(dt);
-    door = doorRig.drive(wantDoor, dt);
+    // vestibule pressure (equalisation valve / vacuum pump), then the interlocked doors
+    var pT = lock.ph === 'PRESS' ? P_BAY : (lock.ph === 'VENT' ? 0 : lock.p);
+    lock.p += Math.max(-dt * P_BAY / 2.8, Math.min(dt * P_BAY / 2.8, pT - lock.p));
+    var outerOk = inner < 0.002 && lock.p < 0.05, innerOk = outer < 0.002 && lock.p > P_BAY - 0.05;
+    outer = outerDoor.drive(wantOuter && outerOk ? 1 : 0, dt);
+    inner = innerDoor.drive(wantInner && innerOk ? 1 : 0, dt);
+    var cycling = lock.ph === 'SEAL' || lock.ph === 'PURGE' || lock.ph === 'PRESS' || lock.ph === 'VENT';
+    stepJets(dt, purge);
+    lbMat.emissiveIntensity = cycling ? 0.5 + 1.5 * (0.5 + 0.5 * Math.sin(clock * 8)) : 0.05;
+    lockLamp.intensity += (((cycling || st === 'LOCK_IN' || st === 'LOCK_OUT') ? 1.1 : 0.15) - lockLamp.intensity) * Math.min(1, dt * 2);
+    needle.rotation.z = 2.2 - 4.4 * lock.p / P_BAY;
+    [outerDoor, innerDoor].forEach(function (d, i) {
+      var c = d.open > 0.02 || ((i ? innerOk : outerOk) && !cycling) ? 0x30d158 : (cycling ? 0xff9f0a : 0xff453a);
+      d.lampMat.color.setHex(c); d.lampMat.emissive.setHex(c);
+      d.barMat.emissiveIntensity = (d.moving || cycling) ? 0.9 + 0.6 * Math.sin(clock * 6) : 0.0;
+    });
 
     // the dock module maps states to clamp / coupler targets; our page owns them, so pass a neutral state
     var simState = st === 'DOCKED' ? 'DOCKED' : (st === 'UNDOCK' ? 'UNDOCK_HOLD' : 'PAGE');
@@ -373,13 +573,15 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
     D.stepStation(dt, st === 'DOCKED' ? 'DOCKED' : (st === 'DEPARTED' || st === 'STOWED' ? 'NONE' : 'ENTER'), chargeW);
 
     // bay lighting: lane lights pulse in sequence while a rover is inside the door, bay lamp eases on/off
-    var active = (st === 'ENTER' || st === 'CAPTURE' || st === 'LATCH' || st === 'ALIGN' || st === 'UNDOCK' || st === 'EXIT');
+    var active = st !== 'DOCKED' && st !== 'DEPARTED' && st !== 'STOWED' && st !== 'APPROACH';
     laneMats.forEach(function (m) { m.emissiveIntensity += ((active ? 0.9 + 0.4 * Math.sin(clock * 3) : 0.0) - m.emissiveIntensity) * Math.min(1, dt * 3); });
-    bayLamp.intensity += (((door > 0.05 || active) ? 0.9 : 0.25) - bayLamp.intensity) * Math.min(1, dt * 2);
+    bayLamp.intensity += (((inner > 0.05 || active) ? 0.9 : 0.25) - bayLamp.intensity) * Math.min(1, dt * 2);
     cut.k += ((cut.on ? 1 : 0) - cut.k) * Math.min(1, dt * 4);
-    mRoof.opacity = 1 - 0.86 * cut.k; mCells.opacity = 1 - 0.8 * cut.k; mPvFrame.opacity = mPvStrut.opacity = 1 - 0.8 * cut.k;
-    mRoof.depthWrite = mCells.depthWrite = mPvFrame.depthWrite = mPvStrut.depthWrite = cut.k < 0.5;
-    walls.visible = true; M.wall.opacity = 0.22 - 0.12 * cut.k;
+    mRoof.opacity = 1 - 0.86 * cut.k; mCells.opacity = mPvFrame.opacity = mPvStrut.opacity = 1 - 0.8 * cut.k; mNear.opacity = mNearRib.opacity = 1 - 0.95 * cut.k;
+    var solid = cut.k < 0.5;
+    mRoof.depthWrite = mCells.depthWrite = mPvFrame.depthWrite = mPvStrut.depthWrite = mNear.depthWrite = mNearRib.depthWrite = solid;
+    fadeMeshes.forEach(function (o) { o.castShadow = solid; });
+    secPlane.constant = 0.02 + (1 - cut.k) * 3;
 
     hudT += dt;
     if (hudT > 0.1) {
@@ -387,7 +589,8 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
       var th = S.th || {};
       el('kClamp').textContent = Math.round((1 - S.arm) * 100) + '% closed';
       el('kCpl').textContent = Math.round(S.coupler * 100) + '%' + (S.latched ? ' · latched' : '');
-      el('kDoor').textContent = Math.round(door * 100) + '% open';
+      el('kDoor').textContent = 'outer ' + Math.round(outer * 100) + '% · inner ' + Math.round(inner * 100) + '%';
+      el('kLock').textContent = ({ SEAL: 'sealing', PURGE: 'N₂ purge', PRESS: 'pressurising', VENT: 'venting', OPEN: 'equalised' }[lock.ph] || (inner > 0.02 ? 'open to bay' : (outer > 0.02 ? 'open to surface' : 'sealed'))) + ' · ' + lock.p.toFixed(1) + ' kPa';
       el('kSpd').textContent = Math.abs(v).toFixed(2) + ' m/s';
       el('kChg').textContent = chargeW.toFixed(1) + ' W' + (S.contactsLive ? ' · live' : '');
       el('kPv').textContent = (S.pvW || 0).toFixed(0) + ' / ' + (S.loadW || 0).toFixed(1) + ' W';
@@ -404,11 +607,11 @@ aside { background: var(--panel-solid); border-left: 0.5px solid var(--line2); o
   // start parked and latched so every part is visible at rest
   function parked() {
     D.reset(); var S = D.state(); S.arm = 0; S.armTarget = 0; S.coupler = 1; S.couplerTarget = 1; S.latched = true; S.contactsLive = true; S.chargeRamp = 1;
-    drive.snap(C.PARK_ALONG); latS.snap(0); pitchS.snap(0); heaveS.snap(0.08); doorRig.snap(0); door = 0; wantDoor = 0; cycle = false;
+    drive.snap(C.PARK_ALONG); latS.snap(0); pitchS.snap(0); heaveS.snap(0.08); outerDoor.snap(0); innerDoor.snap(0); outer = inner = wantOuter = wantInner = 0; lock.p = P_BAY; lock.ph = ''; cycle = false;
     setEnv(S.env, bDay, bNight); setState('DOCKED');
   }
   parked();
-  window.__dock = { tick: function (sec, h) { h = h || 1 / 30; for (var t = 0; t < sec; t += h) step(h); renderer.render(scene, camera); return st; }, state: function () { return st; }, D: D, drive: drive, door: function () { return door; }, rover: rover, play: function () { document.getElementById('bDock').click(); }, cam: goCam };
+  window.__dock = { tick: function (sec, h) { h = h || 1 / 30; for (var t = 0; t < sec; t += h) step(h); renderer.render(scene, camera); return st; }, state: function () { return st; }, D: D, drive: drive, door: function () { return { outer: outer, inner: inner, p: lock.p, ph: lock.ph }; }, rover: rover, play: function () { document.getElementById('bDock').click(); }, cam: goCam };
   requestAnimationFrame(frame);
 })();
 </script>
