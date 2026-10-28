@@ -154,7 +154,7 @@
         var nt = startRetry(st + ' timed out', e);
         return cmd(0, 0, 'RETRY', nt);
       }
-      if (st === 'RETRY' && S.stT > C.STATE_TIMEOUT_S * 2) {
+      if (st === 'RETRY' && S.stT > C.STATE_TIMEOUT_S * 3) {
         S.fault = 'retry timed out'; log('FAULT: ' + S.fault);
         return cmd(0, 0, 'FAULT', 'FAULT');
       }
@@ -196,13 +196,14 @@
 
     /* ---- ENTER: slow visual-servo insertion on the bay centreline ---- */
     if (st === 'ENTER') {
-      if (ctx.doorOpen !== undefined && ctx.doorOpen < 0.5) return cmd(0, 0, 'ENTER: DOOR NOT OPEN, HOLD');   // door closed or closing mid-entry
+      if (ctx.lockCap === undefined && ctx.doorOpen !== undefined && ctx.doorOpen < 0.5) return cmd(0, 0, 'ENTER: DOOR NOT OPEN, HOLD');   // door closed or closing mid-entry
       if (Math.abs(e.lat) > 0.25 || Math.abs(e.psi) > 0.45) {
         var n2 = startRetry('left insertion corridor', e);
         return cmd(0, 0, 'RETRY', n2);
       }
       var vE = e.along > C.PARK_ALONG + 1.4 ? 0.30 : 0.18;
-      var sE = stanley(e, vE, 2.2, 1.8, 0.25);
+      if (ctx.lockCap !== undefined) vE = Math.min(vE, ctx.lockCap);      // airlock: stop in the vestibule while it cycles
+      var sE = stanley(e, Math.max(vE, 0.05), 2.2, 1.8, 0.25);
       if (e.along <= C.PRECAP_ALONG) {
         if (Math.abs(e.lat) < C.PRECAP_LAT && Math.abs(e.psi) < C.PRECAP_PSI) {
           S.lastCapture = { lat: ctx.lat, psi: ctx.psi };
@@ -212,7 +213,7 @@
         var n3 = startRetry('pre-capture envelope missed (' + (e.lat * 1000).toFixed(0) + ' mm, ' + (e.psi * 57.3).toFixed(1) + ' deg)', e);
         return cmd(0, 0, 'RETRY', n3);
       }
-      return cmd(sE.steer, vE, 'ENTER ' + e.along.toFixed(2) + 'm');
+      return cmd(sE.steer, vE, (vE < 0.01 && ctx.lockCap !== undefined ? 'ENTER: AIRLOCK CYCLING ' : 'ENTER ') + e.along.toFixed(2) + 'm');
     }
 
     /* ---- CAPTURE: clamp arms close, rover creeps to the hard-stop bumper ---- */
@@ -255,6 +256,7 @@
     if (st === 'RETRY') {
       var ready = S.arm > 0.95 && S.coupler < 0.05;
       var vR = ready ? -0.35 : 0;
+      if (ctx.lockCapOut !== undefined) vR = -Math.min(-vR, ctx.lockCapOut);   // airlock: hold in the vestibule while it vents
       var sR = stanley(e, vR || -0.1, 2.0, 1.0, 0.3);
       if (e.ready && e.along >= S.retreatTo && Math.abs(e.psi) < 0.1) {
         S.atGate = false; S.settle = 0;
@@ -592,6 +594,237 @@
     return rig;
   }
 
+  /* ---------------- airlock (replaces the sectional door) ----------------
+   * Outer pressure door at x 2.15 (the old door plane), inner pressure door at x 0.10, purge vestibule between.
+   * Each door is two bi-parting leaves on a belt drive with EPDM seals. Interlock: a door only opens when the other
+   * is shut and the vestibule pressure matches its side (0 kPa = lunar vacuum outside, P_BAY = dry N2 in the bay).
+   * The airlock runs itself from the rover's position (dock-local `along`) and travel intent ('in' / 'out' / 'idle'):
+   *   in : outer opens → rover stops at LOCK_X → outer seals → N2 purge → pressurise → inner opens
+   *   out: inner opens → rover stops at LOCK_X → inner seals → vent → outer opens
+   * limit(along, dir) is the speed cap (m/s) a driver must respect so the rover never runs into a shut door. */
+  var AL = { X_IN: 0.10, X_OUTER: 2.15, LOCK_X: 1.12, P_BAY: 10.0, OPEN_Z: 0.70, LEAF_W: 0.74, LEAF_TRAVEL: 0.76, DOOR_TOP: 1.12, PURGE_S: 2.6, PRESS_S: 2.8, HALF: 0.78 };
+  function buildAirlock(THREE, G) {
+    function std(c, o) { var p = { color: c, metalness: 0.4, roughness: 0.55 }; for (var k in o) p[k] = o[k]; return new THREE.MeshStandardMaterial(p); }
+    var M = {
+      panel: std(0x7a8087, { metalness: 0.35, roughness: 0.6, envMapIntensity: 0.5 }), mid: std(0x5a6067, { envMapIntensity: 0.55 }),
+      leaf: std(0x969ca3, { metalness: 0.5, roughness: 0.4, envMapIntensity: 0.8 }), dark: std(0x3a4047, { metalness: 0.5, roughness: 0.5 }),
+      trim: std(0xc4c9cf, { metalness: 0.6, roughness: 0.34 }), seal: std(0x1c1f23, { metalness: 0, roughness: 0.85 }),
+      glass: new THREE.MeshPhysicalMaterial({ color: 0xa9c7dc, metalness: 0, roughness: 0.08, transparent: true, opacity: 0.4, depthWrite: false })
+    };
+    function box(w, h, d, m, x, y, z, parent) { var o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; parent.add(o); return o; }
+    function cyl(r, h, m, x, y, z, parent, seg) { var o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg || 16), m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; parent.add(o); return o; }
+    var A = { outer: 0, inner: 0, p: 0, ph: '', purged: false, groups: [], X_IN: AL.X_IN, X_OUTER: AL.X_OUTER, LOCK_X: AL.LOCK_X, P_BAY: AL.P_BAY };
+
+    function bulkhead(X, dir, label) {               // dir: the leaves ride on the vestibule side of the bulkhead
+      var g = new THREE.Group(); G.add(g); A.groups.push(g);
+      var r = { leaves: [], open: 0, g: g }, HB = 1.45 - 0.08, OZ = AL.OPEN_Z, TOP = AL.DOOR_TOP;
+      [-1, 1].forEach(function (s) {
+        box(0.10, HB, 1.62 - OZ, M.panel, X, 0.08 + HB / 2, s * (OZ + (1.62 - OZ) / 2), g);                 // pocket walls
+        box(0.12, TOP - 0.08, 0.05, M.seal, X, 0.08 + (TOP - 0.08) / 2, s * (OZ + 0.02), g);                // EPDM jamb seals
+        [-1, 1].forEach(function (f) { box(0.02, HB, 0.05, M.mid, X + f * 0.06, 0.08 + HB / 2, s * 1.22, g); });
+      });
+      box(0.10, 1.45 - TOP, 2 * OZ, M.panel, X, (TOP + 1.45) / 2, 0, g);                                    // header
+      box(0.12, 0.05, 2 * OZ + 0.1, M.seal, X, TOP + 0.01, 0, g);                                           // lintel seal
+      box(0.16, 0.012, 2 * OZ, M.trim, X, 0.086, 0, g);                                                     // sill plate
+      var LX = X + dir * 0.075;
+      box(0.035, 0.03, 3.0, M.trim, LX, TOP + 0.075, 0, g);                                                 // roller rail
+      box(0.012, 0.02, 2.9, M.seal, LX + dir * 0.022, TOP + 0.075, 0, g);                                   // drive belt
+      box(0.10, 0.12, 0.22, M.dark, X + dir * 0.10, 1.31, 0, g);                                            // belt motor + gearbox
+      var pulley = cyl(0.035, 0.03, M.trim, X + dir * 0.155, 1.31, 0, g); pulley.rotation.z = Math.PI / 2;
+      r.lampMat = new THREE.MeshStandardMaterial({ color: 0xff453a, emissive: 0xff453a, emissiveIntensity: 1.2 });
+      r.barMat = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0xff9f0a, emissiveIntensity: 0 });
+      [-1, 1].forEach(function (f) {                                                                        // status lamp + light bar, both faces
+        box(0.03, 0.08, 0.08, M.seal, X + f * 0.06, 1.33, -0.56, g);
+        var lens = new THREE.Mesh(new THREE.SphereGeometry(0.026, 16, 10), r.lampMat); lens.position.set(X + f * 0.08, 1.33, -0.56); g.add(lens);
+        box(0.01, 0.018, 0.9, r.barMat, X + f * 0.056, 1.20, 0, g);
+      });
+      if (label && typeof document !== 'undefined') {
+        var cv = document.createElement('canvas'); cv.width = 512; cv.height = 96; var c = cv.getContext('2d');
+        c.fillStyle = '#3d434b'; c.fillRect(0, 0, 512, 96); c.fillStyle = '#e6e9ec';
+        c.font = '600 54px -apple-system, Helvetica, Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, 256, 50);
+        var plate = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.115), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(cv), roughness: 0.6 }));
+        plate.rotation.y = Math.PI / 2; plate.position.set(X + 0.052, 1.31, -0.18); g.add(plate);
+      }
+      [-1, 1].forEach(function (s) {
+        var L = new THREE.Group(); L.position.set(LX, 0, s * AL.LEAF_W / 2); g.add(L);
+        var W = AL.LEAF_W;
+        box(0.045, 1.05, W, M.leaf, 0, 0.615, 0, L);
+        box(0.051, 0.62, W - 0.24, M.mid, 0, 0.46, 0, L);                                                    // recessed centre panel
+        box(0.052, 0.10, W - 0.06, M.mid, 0, 0.16, 0, L);                                                    // kick plate
+        box(0.055, 1.05, 0.03, M.seal, 0, 0.615, -s * (W / 2 - 0.015), L);                                   // meeting-edge seal
+        var port = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 28), M.glass); port.rotation.z = Math.PI / 2; port.position.set(0, 0.90, 0); L.add(port);
+        [-1, 1].forEach(function (f) { var rr = new THREE.Mesh(new THREE.TorusGeometry(0.078, 0.013, 10, 28), M.trim); rr.rotation.y = Math.PI / 2; rr.position.set(f * 0.026, 0.90, 0); L.add(rr); });
+        [-0.22, 0.22].forEach(function (tz) {                                                                 // roller trucks on the rail
+          box(0.02, 0.07, 0.05, M.dark, 0, 1.165, tz, L);
+          var wh = cyl(0.026, 0.03, M.trim, 0, TOP + 0.105, tz, L, 14); wh.rotation.z = Math.PI / 2;
+        });
+        r.leaves.push({ g: L, s: s });
+      });
+      r.set = function (o) { r.open = o; r.leaves.forEach(function (lf) { lf.g.position.z = lf.s * (AL.LEAF_W / 2 + o * AL.LEAF_TRAVEL); }); pulley.rotation.x = o * AL.LEAF_TRAVEL / 0.035; };
+      var ax = MO ? new MO.Axis(0, { vmax: 0.42, amax: 0.7, jerkTau: 0.12 }) : null;
+      r.drive = function (t, dt) {
+        t = clamp(t, 0, 1);
+        if (!ax) { var o = r.open + clamp(t - r.open, -dt / 2, dt / 2); r.moving = o !== r.open; r.set(o); return o; }
+        ax.target = t * AL.LEAF_TRAVEL; ax.step(dt); r.set(ax.pos / AL.LEAF_TRAVEL); r.moving = Math.abs(ax.vel) > 0.003; return r.open;
+      };
+      r.snap = function (o) { if (ax) ax.snap(o * AL.LEAF_TRAVEL); r.set(o); };
+      r.set(0);
+      return r;
+    }
+    var od = bulkhead(AL.X_OUTER, -1, 'AIRLOCK 01'), id = bulkhead(AL.X_IN, 1, null);
+    A.outerDoor = od; A.innerDoor = id;
+
+    // vestibule fit-out: dust grate over the vacuum plenum, two N2 purge arches, tank, pump, equalisation valve + gauge
+    var LX = AL.LOCK_X;
+    var grate = null;
+    if (typeof document !== 'undefined') {
+      var gc = document.createElement('canvas'); gc.width = gc.height = 256; var gx2 = gc.getContext('2d');
+      gx2.fillStyle = '#2e3339'; gx2.fillRect(0, 0, 256, 256); gx2.fillStyle = '#15181c';
+      for (var gy = 6; gy < 256; gy += 16) for (var gx = 8; gx < 256; gx += 64) gx2.fillRect(gx, gy, 52, 7);
+      grate = new THREE.CanvasTexture(gc); grate.wrapS = grate.wrapT = THREE.RepeatWrapping; grate.repeat.set(3, 2);
+    }
+    box(1.78, 0.006, 1.36, std(grate ? 0xffffff : 0x2e3339, { map: grate, metalness: 0.5, roughness: 0.6 }), LX, 0.085, 0, G);
+    var nozzles = [];
+    [LX - 0.42, LX + 0.42].forEach(function (ax) {
+      [-1, 1].forEach(function (s) {
+        box(0.06, 0.92, 0.06, M.dark, ax, 0.08 + 0.46, s * 0.64, G);
+        for (var ny = 0.22; ny < 0.95; ny += 0.17) {
+          var n = cyl(0.011, 0.05, M.trim, ax, ny, s * 0.595, G, 8); n.rotation.x = Math.PI / 2;
+          nozzles.push({ p: new THREE.Vector3(ax, ny, s * 0.57), d: new THREE.Vector3(0, -0.15, -s).normalize() });
+        }
+      });
+      box(0.06, 0.06, 1.34, M.dark, ax, 1.03, 0, G);
+      [-0.36, -0.12, 0.12, 0.36].forEach(function (nz) {
+        cyl(0.011, 0.05, M.trim, ax, 0.985, nz, G, 8);
+        nozzles.push({ p: new THREE.Vector3(ax, 0.96, nz), d: new THREE.Vector3(0, -1, 0) });
+      });
+    });
+    cyl(0.12, 0.86, M.trim, LX, 0.08 + 0.43, -1.36, G, 24);                                                 // N2 purge tank
+    cyl(0.123, 0.05, M.mid, LX, 0.75, -1.36, G, 24); cyl(0.04, 0.06, M.dark, LX, 0.97, -1.36, G, 12);
+    box(0.38, 0.28, 0.30, M.dark, LX, 0.08 + 0.14, 1.34, G);                                                // vacuum pump (dust + gas recovery)
+    var fan = cyl(0.09, 0.012, M.mid, LX, 0.08 + 0.14, 1.185, G, 24); fan.rotation.x = Math.PI / 2;
+    for (var fr = -0.12; fr <= 0.121; fr += 0.06) box(0.30, 0.012, 0.02, M.mid, LX, 0.367, 1.34 + fr, G);  // cooling fins
+    box(0.05, 0.05, 0.05, M.trim, LX - 0.12, 0.385, 1.22, G); box(0.03, 0.03, 0.30, M.seal, LX - 0.12, 0.385, 1.06, G);   // suction hose
+    box(0.14, 0.02, 0.06, new THREE.MeshStandardMaterial({ color: 0x30d158, emissive: 0x30d158, emissiveIntensity: 0.6 }), LX + 0.1, 0.30, 1.188, G);
+    box(0.24, 0.30, 0.07, M.mid, LX + 0.5, 0.95, -1.565, G);                                                // equalisation valve box
+    var gauge = cyl(0.07, 0.012, std(0xeef1f4, { metalness: 0, roughness: 0.5 }), LX + 0.5, 0.97, -1.525, G, 28); gauge.rotation.x = Math.PI / 2;
+    var needle = new THREE.Group(); needle.position.set(LX + 0.5, 0.97, -1.517); G.add(needle);
+    box(0.008, 0.055, 0.004, std(0xff453a, {}), 0, 0.026, 0, needle);
+    box(0.03, 0.42, 0.03, M.dark, LX + 0.5, 1.24, -1.57, G);                                                // vent line up through the roof
+    cyl(0.03, 0.24, M.dark, LX + 0.5, 1.65, -1.4, G); cyl(0.06, 0.02, M.dark, LX + 0.5, 1.78, -1.4, G);
+    var beacon = new THREE.Group(); beacon.position.set(LX, 1.40, 0); G.add(beacon);                       // amber cycle beacon + interior lamp
+    box(0.10, 0.04, 0.10, M.dark, 0, 0.03, 0, beacon);
+    var lbMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xf59e0b, emissiveIntensity: 0.05, transparent: true, opacity: 0.8 });
+    cyl(0.035, 0.06, lbMat, 0, -0.02, 0, beacon);
+    var lamp = new THREE.PointLight(0xe8eef5, 0.0, 3.5, 2); lamp.position.set(LX, 1.2, 0); G.add(lamp);
+    // purge jets: short-lived particles fired from the nozzles while the purge runs
+    var NP = 420, pPos = new Float32Array(NP * 3), parts = [];
+    for (var q = 0; q < NP; q++) { parts.push({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }); pPos[q * 3 + 1] = -10; }
+    var pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    var jets = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0xeef2f5, size: 0.05, transparent: true, opacity: 0.8, depthWrite: false }));
+    jets.frustumCulled = false; G.add(jets);
+    var emitAcc = 0, clk = 0;
+    function stepJets(dt, on) {
+      emitAcc = Math.min(1 + (on ? dt * 420 : 0), emitAcc + (on ? dt * 420 : 0));
+      for (var i = 0; i < NP; i++) {
+        var P = parts[i];
+        if (P.life <= 0 && emitAcc >= 1) {
+          emitAcc -= 1; var nz = nozzles[(Math.random() * nozzles.length) | 0];
+          P.p.copy(nz.p); P.v.copy(nz.d).multiplyScalar(1.4 + Math.random() * 0.8);
+          P.v.x += (Math.random() - 0.5) * 0.5; P.v.y += (Math.random() - 0.5) * 0.4; P.v.z += (Math.random() - 0.5) * 0.4; P.life = 0.45 + Math.random() * 0.4;
+        }
+        if (P.life > 0) { P.life -= dt; P.v.multiplyScalar(1 - Math.min(1, dt * 3.5)); P.v.y -= dt * 0.6; P.p.addScaledVector(P.v, dt); if (P.p.y < 0.09) P.p.y = 0.09; }
+        pPos[i * 3] = P.p.x; pPos[i * 3 + 1] = P.life > 0 ? P.p.y : -10; pPos[i * 3 + 2] = P.p.z;
+      }
+      if (emitAcc > 1) emitAcc = 1;
+      pGeo.attributes.position.needsUpdate = true;
+    }
+
+    /* zones by rover centre: the rover is 1.29 m long and the leaves ride 75 mm off each door plane, so ±HALF clears them */
+    function zone(a) {
+      if (a >= AL.X_OUTER + AL.HALF) return 'OUT';
+      if (a > AL.X_OUTER - AL.HALF) return 'OD';      // straddling the outer door
+      if (a >= AL.X_IN + AL.HALF) return 'LOCK';
+      if (a > AL.X_IN - AL.HALF) return 'ID';         // straddling the inner door
+      return 'BAY';
+    }
+    A.zone = zone;
+    // ctx: { along, vel, intent: 'in' | 'out' | 'idle', near (outside but approaching), sealBay (rover parked: close inner) }
+    A.update = function (dt, ctx) {
+      clk += dt;
+      var z = zone(ctx.along), intent = ctx.intent || 'idle', still = Math.abs(ctx.vel || 0) < 0.03;
+      var wantO = 0, wantI = 0, forceO = z === 'OD', forceI = z === 'ID', needP = A.p;
+      if (intent === 'in') {
+        if (z === 'OUT' && ctx.near !== false) { wantO = 1; needP = 0; }
+        if (z === 'LOCK') {
+          if (A.inner > 0.02) wantI = 1;               // already open: let the rover through
+          else if (still) { wantO = 0; if (A.outer < 0.002) { wantI = 1; needP = AL.P_BAY; } }
+          else wantO = 1;
+        }
+        if (z === 'BAY') wantI = ctx.sealBay ? 0 : (A.inner > 0.02 ? 1 : 0);
+      } else if (intent === 'out') {
+        if (z === 'BAY') { wantI = 1; needP = AL.P_BAY; }
+        if (z === 'LOCK') {
+          if (A.outer > 0.02) wantO = 1;
+          else if (still) { wantI = 0; if (A.inner < 0.002) { wantO = 1; needP = 0; } }
+          else wantI = 1;
+        }
+        if (z === 'OUT') wantO = ctx.holdOpen || ctx.along < AL.X_OUTER + 1.05 ? 1 : 0;
+      } else if (z === 'OUT' && A.inner < 0.002 && A.outer < 0.002) needP = 0;   // idle with the rover outside: leave it vented
+      if (forceO) wantO = 1;
+      if (forceI) wantI = 1;
+      // pressure: only moves with both doors shut. An inbound pressurise is preceded by the N2 dust purge.
+      var sealed = A.outer < 0.002 && A.inner < 0.002, purge = false;
+      if (A.outer > 0.02) A.purged = false;
+      A.ph = '';
+      if (sealed && Math.abs(needP - A.p) > 0.01) {
+        if (needP > A.p && intent === 'in' && !A.purged) {
+          A.purgeT = (A.purgeT || 0) + dt; purge = true; A.ph = 'PURGE';
+          if (A.purgeT > AL.PURGE_S) { A.purged = true; A.purgeT = 0; }
+        } else {
+          A.p += clamp(needP - A.p, -dt * AL.P_BAY / AL.PRESS_S, dt * AL.P_BAY / AL.PRESS_S);
+          A.ph = needP > A.p ? 'PRESS' : 'VENT';
+        }
+      } else if ((wantO && A.outer < 0.002 && A.inner > 0.002) || (wantI && A.inner < 0.002 && A.outer > 0.002)) A.ph = 'SEAL';
+      var okO = A.inner < 0.002 && A.p < 0.05, okI = A.outer < 0.002 && A.p > AL.P_BAY - 0.05;
+      A.outer = od.drive((wantO && okO) || (forceO && A.outer > 0.002) ? 1 : 0, dt);
+      A.inner = id.drive((wantI && okI) || (forceI && A.inner > 0.002) ? 1 : 0, dt);
+      // visuals
+      var cycling = A.ph !== '';
+      stepJets(dt, purge);
+      lbMat.emissiveIntensity = cycling ? 0.5 + 1.5 * (0.5 + 0.5 * Math.sin(clk * 8)) : 0.05;
+      lamp.intensity += (((cycling || z === 'LOCK') ? 1.1 : 0.15) - lamp.intensity) * Math.min(1, dt * 2);
+      needle.rotation.z = 2.2 - 4.4 * A.p / AL.P_BAY;
+      [od, id].forEach(function (d, i) {
+        var c = d.open > 0.02 || ((i ? okI : okO) && !cycling) ? 0x30d158 : (cycling ? 0xff9f0a : 0xff453a);
+        d.lampMat.color.setHex(c); d.lampMat.emissive.setHex(c);
+        d.barMat.emissiveIntensity = (d.moving || cycling) ? 0.9 + 0.6 * Math.sin(clk * 6) : 0.0;
+      });
+      return A;
+    };
+    /* speed cap (m/s, >= 0) for a rover at `along` heading 'in' (decreasing along) or 'out': stop short of shut doors */
+    A.limit = function (along, dir) {
+      var stop = null;
+      if (dir === 'in') {
+        if (along > AL.X_OUTER - 0.15 && A.outer < 0.9) stop = AL.X_OUTER + AL.HALF + 0.04;
+        else if (along > AL.X_IN + AL.HALF && A.inner < 0.9) stop = AL.LOCK_X;
+        if (stop === null) return Infinity;
+        return stopCap(along - stop);
+      }
+      if (along < AL.X_IN - AL.HALF && A.inner < 0.9) stop = AL.X_IN - AL.HALF - 0.04;
+      else if (along < AL.X_OUTER - AL.HALF && A.outer < 0.9) stop = AL.LOCK_X;
+      if (stop === null) return Infinity;
+      return stopCap(stop - along);
+    };
+    function stopCap(d) { return d <= 0.008 ? 0 : Math.max(0.03, Math.min(0.6, 0.9 * d)); }
+    A.snap = function (outer, inner, p) { od.snap(outer); id.snap(inner); A.outer = outer; A.inner = inner; A.p = p; A.ph = ''; A.purged = false; A.purgeT = 0; };
+    A.label = function () {
+      return ({ SEAL: 'sealing', PURGE: 'N₂ purge', PRESS: 'pressurising', VENT: 'venting' }[A.ph] ||
+        (A.inner > 0.02 ? 'open to bay' : (A.outer > 0.02 ? 'open to surface' : 'sealed'))) + ' · ' + A.p.toFixed(1) + ' kPa';
+    };
+    return A;
+  }
+
   var _tmp = null, _clock = 0;
   function update(dt, dockingState, padObj) {
     if (!H) return;
@@ -720,7 +953,7 @@
     C: C, state: function () { return S; }, reset: function () { var lg = S.onLog; S = fresh(); S.onLog = lg; },   // keep the logger across resets
     beginApproach: beginApproach, step: step, assist: assist, sensorFor: sensorFor,
     chargePowerW: chargePowerW, stepStation: stepStation, stationLoadW: stationLoadW,
-    build: build, buildDoor: buildDoor, update: update, hud: hud, setLogger: function (fn) { S.onLog = fn; },
+    build: build, buildDoor: buildDoor, buildAirlock: buildAirlock, AIRLOCK: AL, update: update, hud: hud, setLogger: function (fn) { S.onLog = fn; },
     resetSpares: function () { S.spares = [C.PACK_WH, C.PACK_WH]; S.spareWh = C.PACK_WH; },
     swapStep: swapStep, noteDeparture: noteDeparture, noteArrival: noteArrival, chargeMinutes: chargeMinutes, runsLeft: runsLeft,
     releaseReady: function () { return S.arm > 0.97 && S.coupler < 0.03; },

@@ -1042,8 +1042,8 @@ var diamondFloorTex = createDiamondPlateTex();
 var mpptScreenTex = createMpptScreenTex();
 var dockSolarTex = createSolarTex();
 
-var matBay = new THREE.MeshStandardMaterial({map: hangarWallTex, bumpMap: hangarWallTex, bumpScale: 0.03, color: 0x94a3b8, metalness: 0.72, roughness: 0.42});
-var matBayDark = new THREE.MeshStandardMaterial({color: 0x0f172a, metalness: 0.78, roughness: 0.38});
+var matBay = new THREE.MeshStandardMaterial({map: hangarWallTex, bumpMap: hangarWallTex, bumpScale: 0.03, color: 0x8a9097, metalness: 0.6, roughness: 0.5});
+var matBayDark = new THREE.MeshStandardMaterial({color: 0x3a4047, metalness: 0.6, roughness: 0.45});
 var matBayTrim = new THREE.MeshStandardMaterial({color: 0xcbd5e1, metalness: 0.88, roughness: 0.24});
 var matHazard = new THREE.MeshStandardMaterial({map: hazardTex, roughness: 0.4, metalness: 0.3});
 var matFloorPlate = new THREE.MeshStandardMaterial({map: diamondFloorTex, bumpMap: diamondFloorTex, bumpScale: 0.025, color: 0x64748b, metalness: 0.75, roughness: 0.48});
@@ -1064,10 +1064,13 @@ dockGroup.add(entryRamp);
 
 // Wheel Guide Chock Rails (keeps 6-wheel rover centered in bay)
 [-0.54, 0.54].forEach(function(zr) {
-  var guideRail = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.045, 0.055), matBayTrim);
-  guideRail.position.set(-0.1, 0.10, zr);
-  guideRail.castShadow = true;
-  dockGroup.add(guideRail);
+  // split at the airlock door planes (x 0.10, 2.15) so the door leaves can close across the lane
+  [[-2.3, -0.02], [0.22, 2.03]].forEach(function(seg) {
+    var guideRail = new THREE.Mesh(new THREE.BoxGeometry(seg[1] - seg[0], 0.045, 0.055), matBayTrim);
+    guideRail.position.set((seg[0] + seg[1]) / 2, 0.10, zr);
+    guideRail.castShadow = true;
+    dockGroup.add(guideRail);
+  });
   var flare = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.045, 0.055), matHazard);
   flare.position.set(2.28, 0.10, zr + (zr > 0 ? 0.08 : -0.08));
   flare.rotation.y = zr > 0 ? -0.35 : 0.35;
@@ -1192,8 +1195,8 @@ var pvCableBlk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.75, 8
 pvCableBlk.position.set(-0.08, 0.48, -0.02);
 mpptCabinet.add(pvCableRed, pvCableBlk);
 
-// 5. Sectional overhead garage door (panels ride ceiling tracks) - built by NASA_Dock.buildDoor
-var dockDoorRig = NASA_Dock.buildDoor(THREE, dockGroup, {bayDark: matBayDark, bayTrim: matBayTrim, hazard: matHazard});
+// 5. Airlock: outer + inner interlocked pressure doors with an N2 purge vestibule - built by NASA_Dock.buildAirlock
+var dockAirlock = NASA_Dock.buildAirlock(THREE, dockGroup);
 
 var doorLight = new THREE.PointLight(0x38bdf8, 0.5, 8);
 doorLight.position.set(1.4, 1.25, 0);
@@ -1413,7 +1416,7 @@ function computeDockDrive(dt) {
   if (dockingState === 'APPROACH' || dockingState === 'ROTATE' || dockingState === 'REVERSE') dockingState = 'TRANSIT';
 
   if (dockingState === 'UNDOCK') {
-    if (dockDoorOpen < 0.82 || !NASA_Dock.releaseReady()) {
+    if (dockAirlock.inner < 0.82 || !NASA_Dock.releaseReady()) {
       return { steer: 0, throttle: 0, forward: false, label: 'UNDOCK (release clamps)' };
     }
     dockingState = 'UNDOCK_EXIT';
@@ -1430,10 +1433,11 @@ function computeDockDrive(dt) {
       throttleOut = along < 1.2 ? 0.62 : (along < 4.5 ? 0.82 : 0.92);
     }
     if (Math.abs(lat) > 0.45) throttleOut = 0.38;
+    throttleOut = Math.min(throttleOut, dockAirlock.limit(along, 'out') / NASA_Dock.C.MAX_SPEED);   // hold in the vestibule while it vents
     var rear = Math.min(lidarData[18], lidarData[19], lidarData[17], lidarData[16]);
     if (rear < 0.55) throttleOut = Math.min(throttleOut, 0.25);
     var clear =
-      along >= DOCK_EXIT_ALONG && Math.abs(lat) < 0.32 && Math.abs(faceOut) < 0.28 && dockDoorOpen > 0.75;
+      along >= DOCK_EXIT_ALONG && Math.abs(lat) < 0.32 && Math.abs(faceOut) < 0.28;   // the outer door closes behind the rover, so do not require it open
     if (clear) {
       completeHangarExit();
       return { steer: 0, throttle: 0, forward: false, label: 'DEPARTED' };
@@ -1473,7 +1477,8 @@ function computeDockDrive(dt) {
 
   if (dockingState === 'ALIGN' || dockingState === 'ENTER' || dockingState === 'CAPTURE' ||
       dockingState === 'LATCH' || dockingState === 'RETRY' || dockingState === 'FAULT') {
-    var dc = NASA_Dock.step({ state: dockingState, along: along, lat: lat, psi: faceIn, vel: vel, dt: dt, doorOpen: dockDoorOpen });
+    var dc = NASA_Dock.step({ state: dockingState, along: along, lat: lat, psi: faceIn, vel: vel, dt: dt, doorOpen: dockDoorOpen,
+      lockCap: dockAirlock.limit(along, 'in'), lockCapOut: dockAirlock.limit(along, 'out') });
     if (dc.next && dc.next !== dockingState) {
       dockingState = dc.next;
       if (dc.next === 'ENTER' && typeof setCamMode === 'function' && camMode !== 'dock') setCamMode('dock');
@@ -5968,20 +5973,17 @@ function updatePhysics(dt) {
   var dockDistNow = roverGroup.position.distanceTo(dockGroup.position);
   var dockingActive =
     dockingState !== 'NONE' && dockingState !== 'DOCKED' && dockingState !== 'DEPARTED';
-  var wantDoorOpen =
-    dockingState === 'UNDOCK' ||
-    dockingState === 'UNDOCK_EXIT' ||
-    dockingState === 'ENTER' ||
-    dockingState === 'ALIGN' ||
-    dockingState === 'CAPTURE' ||
-    dockingState === 'RETRY' ||
-    dockingState === 'FAULT' ||   // never close the door on a rover that aborted mid-bay
-    (dockingState === 'DOCKED' && !!pendingMissionAfterUndock) ||
-    (dockingState === 'TRANSIT' && dockDistNow < 24) ||
-    (camMode === 'dock' && dockingState !== 'DOCKED' && dockingState !== 'LATCH');   // door closes once docked / latched
-  // opener-driven: soft start, cruise, soft stop (was an exponential snap that opened 80 % in ~0.4 s)
-  dockDoorOpen = dockDoorRig.drive ? dockDoorRig.drive(wantDoorOpen ? 1 : 0, dt) : dockDoorOpen;
-  doorLight.intensity = 0.3 + dockDoorOpen * 1.6;
+  // airlock runs itself from where the rover is and which way it is headed
+  var outbound = dockingState === 'UNDOCK' || dockingState === 'UNDOCK_EXIT' || dockingState === 'RETRY' ||
+    (dockingState === 'DOCKED' && !!pendingMissionAfterUndock);
+  var inbound = dockingState === 'ALIGN' || dockingState === 'ENTER' || dockingState === 'CAPTURE' || dockingState === 'LATCH' ||
+    dockingState === 'DOCKED' || dockingState === 'FAULT' || (dockingState === 'TRANSIT' && dockDistNow < 24);
+  dockAirlock.update(dt, {
+    along: dockFrame(roverGroup.position).along, vel: vel, intent: outbound ? 'out' : (inbound ? 'in' : 'idle'),
+    sealBay: dockingState === 'CAPTURE' || dockingState === 'LATCH' || dockingState === 'DOCKED', holdOpen: dockingState === 'RETRY'
+  });
+  dockDoorOpen = dockAirlock.outer;
+  doorLight.intensity = 0.3 + Math.max(dockAirlock.outer, dockAirlock.inner) * 1.6;
   NASA_Dock.update(dt, dockingState, chargePadGroup);
 
   var isDocked = dockingState === 'DOCKED';
