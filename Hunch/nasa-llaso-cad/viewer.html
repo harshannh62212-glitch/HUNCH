@@ -5612,7 +5612,8 @@ function updatePhysics(dt) {
   } else {
     turnVel += (autoTurnTarget - turnVel) * 10.0 * dt * roverMassScale();
   }
-  if (Math.abs(turnVel) < 0.018) turnVel = 0;
+  // Kill residual drift only when no turn is being asked for; a deliberate slow turn (fine alignment) must still spin up.
+  if (Math.abs(turnVel) < 0.018 && Math.abs(autoTurnTarget) < 0.018) turnVel = 0;
   roverYaw += turnVel * dt;
 
   camHousing.rotation.y += (0 - camHousing.rotation.y) * 3 * dt;

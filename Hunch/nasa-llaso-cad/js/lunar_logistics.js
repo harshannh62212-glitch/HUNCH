@@ -22,6 +22,13 @@
   var DECK_Y = 0.30;
   var backingOut = false;
   var ARM_TIME = 0.5;              // every arm segment runs at this fraction of its original time (2x faster)
+  // Park tolerances at the lander belt / airlock table (rover origin vs. the park pose)
+  var PARK_TOL_ALONG = 0.005;      // m along the park axis
+  var PARK_TOL_LAT = 0.008;        // m sideways
+  var PARK_TOL_YAW = 0.008;        // rad (0.46 deg)
+  var FINE_ZONE = 0.30;            // m: inside this the rover creeps on the park axis
+  var GRIP_SETTLE_S = 0.22;        // fingers pull the pod onto the tip over this long (no snap)
+  var SWAY_HZ = 2.0, SWAY_ZETA = 0.32, SWAY_MAX = 0.12;   // pod swing on the bail gimbal: spring-damped, end stops (rad)
   var GRIP_SNAP_DIST = 0.065;     // Matched to claw finger envelope with visual servoing
   var GRIP_RETRY_MAX = 2;         // Grip correction attempts before force-lock
 
@@ -112,6 +119,7 @@
   var _qId = new THREE.Quaternion();
   var _tipArm = new THREE.Vector3();
   var _tipErr = new THREE.Vector3();
+  var _tipPrev = null, _tipVel = new THREE.Vector3(), _tipAcc = new THREE.Vector3(), _tmpV = new THREE.Vector3(), _tmpQ = new THREE.Quaternion();
 
   function log(html) {
     if (typeof llog === 'function') llog(html);
@@ -832,7 +840,7 @@
     var dist = Math.hypot(pose.x - p.x, pose.z - p.z);
     var stopErr = Math.abs(wrap(pose.targetYaw - roverYaw));
     var v = (typeof vel !== 'undefined') ? Math.abs(vel) : 0;
-    return dist < 0.12 && stopErr < 0.12 && v < 0.08;
+    return dist < 0.012 && stopErr < 0.012 && v < 0.03;
   }
 
   function parkPose() {
@@ -1009,18 +1017,95 @@
         tag: w.tag || '',
         retargetGrasp: !!w.retargetGrasp,
         retargetPre: !!w.retargetPre,
+        via: !!w.via,
+        hold: !w.local && !w.stow,                            // grip-only step: the arm holds wherever it actually is
+        liveL: w.live && w.local ? w.local.clone() : null,   // re-solve against the measured tip (load droop included)
       });
       yaw = nextYaw;
       sh = nextSh;
       el = nextEl;
       grip = nextGrip;
     }
-    traj = { segs: segs, i: 0, t: 0 };
+    traj = { segs: mergeVias(segs), i: 0, t: 0 };
     if (missed && !reachWarned) {
       reachWarned = true;
       log('<span class="text-amber-300">[ARM] Target outside the 0.45 m reach. Easing 5 cm closer.</span>');
     }
     return !missed;
+  }
+
+  /* Runs of segments whose end is a via point become one segment: a monotone cubic through the joint-space knots
+     (no overshoot, so no joint ever reverses between knots), parameterised by joint distance and timed with one
+     quintic, so the arm flows through them without stopping. The duration keeps the peak joint rate under
+     VIA_RATE (lower while carrying a pod). */
+  var VIA_RATE = 1.5, VIA_RATE_LOADED = 1.05;   // rad/s peak joint rate on a blended move
+  function mergeVias(segs) {
+    var out = [];
+    for (var i = 0; i < segs.length; i++) {
+      if (!segs[i].via || i === segs.length - 1) { out.push(segs[i]); continue; }
+      var first = segs[i], knots = [[first.yaw0, first.sh0, first.el0, first.g0]], dur = 0, j = i;
+      for (; j < segs.length; j++) {
+        var sj = segs[j];
+        knots.push([sj.yaw1, sj.sh1, sj.el1, sj.g1]);
+        dur += sj.dur;
+        if (!sj.via) break;
+      }
+      if (j >= segs.length) j = segs.length - 1;
+      var cum = [0], tot = 0;
+      for (var k = 1; k < knots.length; k++) {
+        tot += Math.max(1e-4, Math.hypot(knots[k][0] - knots[k - 1][0], knots[k][1] - knots[k - 1][1], knots[k][2] - knots[k - 1][2]));
+        cum.push(tot);
+      }
+      for (k = 0; k < cum.length; k++) cum[k] /= tot;
+      var tans = [];                                  // per-knot tangents (d joint / d param), Fritsch-Carlson limited
+      for (k = 0; k < knots.length; k++) {
+        var tk = [];
+        for (var d = 0; d < 4; d++) {
+          var dl = k > 0 ? (knots[k][d] - knots[k - 1][d]) / (cum[k] - cum[k - 1]) : null;
+          var dr = k < knots.length - 1 ? (knots[k + 1][d] - knots[k][d]) / (cum[k + 1] - cum[k]) : null;
+          var m;
+          if (dl === null) m = dr; else if (dr === null) m = dl;
+          else if (dl * dr <= 0) m = 0;
+          else { m = (dl + dr) / 2; var lim = 3 * Math.min(Math.abs(dl), Math.abs(dr)); if (Math.abs(m) > lim) m = Math.sign(m) * lim; }
+          tk.push(m);
+        }
+        tans.push(tk);
+      }
+      // quintic time law peaks at 1.875 x the mean rate; the monotone cubic adds up to ~1.5x on a span
+      var carrying = first.g0 <= GRIP_CLOSED + 1e-3 && segs[j].g1 <= GRIP_CLOSED + 1e-3;   // fingers shut on a pod
+      var rate = carrying ? VIA_RATE_LOADED : VIA_RATE;
+      var minDur = 1.875 * 1.3 * tot / rate;
+      var last = segs[j];
+      out.push({
+        knots: knots, cum: cum, tans: tans, dur: Math.max(dur * 0.85, minDur), tag: last.tag,
+        yaw0: first.yaw0, sh0: first.sh0, el0: first.el0, g0: first.g0,
+        yaw1: last.yaw1, sh1: last.sh1, el1: last.el1, g1: last.g1
+      });
+      i = j;
+    }
+    return out;
+  }
+
+  // Start every segment from where the joints actually are (live re-solves and corrections move them off the plan),
+  // so a segment never begins with a jump back to the planned pose.
+  function rebaseSeg(seg) {
+    var arm = window.roverArm;
+    if (!arm) return;
+    var y = arm.base.rotation.y, sh = arm.shoulder.rotation.z, el = arm.elbow.rotation.z, g = gripGap();
+    if (seg.knots) { seg.knots[0] = [y, sh, el, g]; return; }   // first span bends to meet the actual start
+    seg.yaw0 = y; seg.sh0 = sh; seg.el0 = el; seg.g0 = g;
+    if (seg.hold) { seg.yaw1 = y; seg.sh1 = sh; seg.el1 = el; }
+  }
+
+  function sampleKnots(seg, u) {
+    var K = seg.knots, c = seg.cum, M = seg.tans, n = K.length - 1, i = 0;
+    while (i < n - 1 && u > c[i + 1]) i++;
+    var h = Math.max(1e-6, c[i + 1] - c[i]), t = Math.max(0, Math.min(1, (u - c[i]) / h));
+    var t2 = t * t, t3 = t2 * t;
+    var h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+    var out = [];
+    for (var d = 0; d < 4; d++) out.push(h00 * K[i][d] + h10 * h * M[i][d] + h01 * K[i + 1][d] + h11 * h * M[i + 1][d]);
+    return out;
   }
 
   function visualServoingOffset(targetMesh) {
@@ -1055,6 +1140,20 @@
   function playTraj(dt) {
     if (!traj) return true;
     var seg = traj.segs[traj.i];
+    if (traj.t === 0) rebaseSeg(seg);
+    if (seg.knots) {
+      traj.t += dt;
+      var qk = sampleKnots(seg, quintic(Math.min(1, traj.t / seg.dur)));
+      setJoints(qk[0], qk[1], qk[2], qk[3]);
+      if (traj.t < seg.dur) return false;
+      var kTag = seg.tag;
+      traj.t = 0;
+      traj.i += 1;
+      var kDone = traj.i >= traj.segs.length;
+      if (kDone) traj = null;
+      onArmTag(kTag);
+      return kDone;
+    }
     var endYaw = seg.yaw1;
     var endSh = seg.sh1;
     var endEl = seg.el1;
@@ -1069,6 +1168,11 @@
       seg.yaw1 = endYaw;
       seg.sh1 = endSh;
       seg.el1 = endEl;
+    }
+    if (seg.liveL) {
+      var ikSeat = ikAtTipTarget(seg.liveL, seg.yaw0);
+      endYaw = ikSeat.yaw; endSh = ikSeat.shoulder; endEl = ikSeat.elbow;
+      seg.yaw1 = endYaw; seg.sh1 = endSh; seg.el1 = endEl;
     }
     traj.t += dt;
     var u = quintic(Math.min(1, traj.t / seg.dur));
@@ -1270,6 +1374,8 @@
     armMode = 'pick';
     var lift = graspTip.clone();
     lift.y += 0.16;
+    var lowLift = graspTip.clone();
+    lowLift.y += 0.06;                          // keeps the first few cm of the lift vertical (out of the tray lips)
     var slots = window.cargoBaySlots || [];
     var slot = slots[bay.length] || slots[0];
     var seat = worldTarget(slot);
@@ -1289,14 +1395,15 @@
       { local: graspTip, grip: GRIP_OPEN, dur: 0.5, retargetGrasp: true },
       { local: graspTip, grip: GRIP_OPEN, dur: 0.3, retargetGrasp: true },
       { grip: GRIP_CLOSED, dur: 0.5, tag: 'close' },
-      { local: lift, grip: GRIP_CLOSED, dur: 0.6 },
-      { local: mid, grip: GRIP_CLOSED },
-      { local: raised, grip: GRIP_CLOSED },
-      { local: nearSeat, grip: GRIP_CLOSED, dur: 0.55 },
-      { local: seat, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat' },
-      { local: seat, grip: GRIP_CLOSED, dur: 0.25 },
+      { local: lowLift, grip: GRIP_CLOSED, dur: 0.45, via: true },
+      { local: lift, grip: GRIP_CLOSED, dur: 0.4, via: true },
+      { local: mid, grip: GRIP_CLOSED, via: true },
+      { local: raised, grip: GRIP_CLOSED, via: true },
+      { local: nearSeat, grip: GRIP_CLOSED, dur: 0.55, live: true },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat', live: true },
+      { local: seat, grip: GRIP_CLOSED, dur: 0.25, live: true },
       { grip: GRIP_OPEN, dur: 0.5, tag: 'openBay' },
-      { local: raised, grip: GRIP_OPEN, dur: 0.35 },
+      { local: raised, grip: GRIP_OPEN, dur: 0.35, via: true },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPick' },
     ]);
     log('<span class="text-cyan-300 font-bold">[ARM] Reaching for ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + '.</span>');
@@ -1340,6 +1447,8 @@
     var pre = grasp.clone();
     pre.y += 0.12;
     if (!solveArm(pre).reachable) pre.y = grasp.y + 0.06;
+    var lowOut = grasp.clone();
+    lowOut.y += Math.min(0.06, (pre.y - grasp.y) * 0.5);   // first part of the lift stays vertical (out of the cradle guides)
     picking = mesh;
     gripRetry = 0;
     armMode = 'place';
@@ -1351,14 +1460,15 @@
       { local: pre, grip: GRIP_OPEN, dur: 0.5 },
       { local: grasp, grip: GRIP_OPEN, dur: 0.45 },
       { grip: GRIP_CLOSED, dur: 0.4, tag: 'closeBay' },
-      { local: pre, grip: GRIP_CLOSED, dur: 0.4 },
-      { local: mid, grip: GRIP_CLOSED },
-      { local: placeUp, grip: GRIP_CLOSED },
-      { local: placeNear, grip: GRIP_CLOSED, dur: 0.55 },
-      { local: place, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat' },
-      { local: place, grip: GRIP_CLOSED, dur: 0.25 },
+      { local: lowOut, grip: GRIP_CLOSED, dur: 0.35, via: true },
+      { local: pre, grip: GRIP_CLOSED, dur: 0.3, via: true },
+      { local: mid, grip: GRIP_CLOSED, via: true },
+      { local: placeUp, grip: GRIP_CLOSED, via: true },
+      { local: placeNear, grip: GRIP_CLOSED, dur: 0.55, live: true },
+      { local: place, grip: GRIP_CLOSED, dur: 0.9, tag: 'seat', live: true },
+      { local: place, grip: GRIP_CLOSED, dur: 0.25, live: true },
       { grip: GRIP_OPEN, dur: 0.5, tag: 'openTable' },
-      { local: placeUp, grip: GRIP_OPEN, dur: 0.35 },
+      { local: placeUp, grip: GRIP_OPEN, dur: 0.35, via: true },
       { stow: true, grip: GRIP_OPEN, tag: 'stowedPlace' },
     ]);
     log('<span class="text-cyan-300">[ARM] Offloading ' + mesh.userData.rec.id + ' · ' + mesh.userData.rec.source_item + ' to intake table.</span>');
@@ -1392,42 +1502,112 @@
     mesh.getWorldPosition(mW);
     mW.add(tipW).sub(gW);
     gr.worldToLocal(mW);
-    mesh.position.copy(mW);
+    // The fingers close on the bail, which is a 2-axis gimbal: the pod hangs plumb under the tip and turns with the
+    // arm's base yaw. Whatever small offset the grasp left is pulled out over GRIP_SETTLE_S (no snap).
+    mesh.userData.hold = { t: 0, yawOff: worldYaw(mesh) - worldYaw(arm.base), graspL: grasp.position.clone(),
+      e0: null, th: new THREE.Vector2(), w: new THREE.Vector2() };
   }
 
-  // Releases a pod onto a seat. It falls the last few mm under lunar gravity and the guide rails
-  // walk it into the slot over about half a second. No instant snap.
+  function worldYaw(obj) {
+    obj.updateWorldMatrix(true, false);
+    var e = obj.matrixWorld.elements;                       // local +x axis in world, projected on the ground
+    return Math.atan2(-e[2], e[0]);
+  }
+
+  /* Held pod on the bail gimbal: it hangs plumb from the fingertip, so it stays level whatever the forearm pitch.
+     The tip's horizontal acceleration swings it like a stiffened pendulum (gimbal friction spring, damper, end stops):
+     theta'' = -w^2 theta - 2 zeta w theta' + a_h / L, with L the bail-to-centre drop. */
+  var _cw = new THREE.Vector3(), _qs = new THREE.Quaternion(), _qy = new THREE.Quaternion(), _eu = new THREE.Euler(), _gq = new THREE.Quaternion();
+  function stepHeld(dt) {
+    var arm = window.roverArm;
+    if (!arm || !arm.tip || dt <= 0) return;
+    arm.tip.getWorldPosition(_tmpV);
+    if (_tipPrev) {
+      var vx = (_tmpV.x - _tipPrev.x) / dt, vy = (_tmpV.y - _tipPrev.y) / dt, vz = (_tmpV.z - _tipPrev.z) / dt;
+      _tipAcc.set((vx - _tipVel.x) / dt, (vy - _tipVel.y) / dt, (vz - _tipVel.z) / dt);
+      if (_tipAcc.length() > 40) _tipAcc.set(0, 0, 0);               // ignore teleports (resets)
+      _tipVel.set(vx, vy, vz);
+      _tipPrev.copy(_tmpV);
+    } else { _tipPrev = _tmpV.clone(); _tipVel.set(0, 0, 0); _tipAcc.set(0, 0, 0); }
+    var gr = arm.gripper || arm.wrist;
+    if (!held || !held.userData.hold || held.parent !== gr) return;
+    var h = held.userData.hold;
+    h.t += dt;
+    var L = Math.max(0.05, h.graspL.length());
+    var w0 = 2 * Math.PI * SWAY_HZ;
+    var n = Math.max(1, Math.ceil(dt / 0.008)), hdt = dt / n;
+    for (var i = 0; i < n; i++) {                                     // x: tilt about world X (driven by a_z), y: about world Z (by -a_x)
+      h.w.x += (-w0 * w0 * h.th.x - 2 * SWAY_ZETA * w0 * h.w.x + _tipAcc.z / L) * hdt;
+      h.w.y += (-w0 * w0 * h.th.y - 2 * SWAY_ZETA * w0 * h.w.y - _tipAcc.x / L) * hdt;
+      h.th.x += h.w.x * hdt; h.th.y += h.w.y * hdt;
+      if (Math.abs(h.th.x) > SWAY_MAX) { h.th.x = Math.sign(h.th.x) * SWAY_MAX; h.w.x *= -0.2; }   // gimbal end stop
+      if (Math.abs(h.th.y) > SWAY_MAX) { h.th.y = Math.sign(h.th.y) * SWAY_MAX; h.w.y *= -0.2; }
+    }
+    _qy.setFromAxisAngle(new THREE.Vector3(0, 1, 0), worldYaw(arm.base) + h.yawOff);
+    _qs.setFromEuler(_eu.set(h.th.x, 0, h.th.y, 'XZY'));
+    var podQ = _qs.clone().multiply(_qy);                               // world attitude of the pod
+    _cw.copy(h.graspL).applyQuaternion(podQ);
+    var centre = _tmpV.clone().sub(_cw);                                // pod centre hangs below the tip
+    if (!h.e0) h.e0 = held.getWorldPosition(new THREE.Vector3()).sub(centre);   // grasp offset left by the approach
+    var k = Math.min(1, h.t / GRIP_SETTLE_S);
+    k = k * k * (3 - 2 * k);
+    centre.addScaledVector(h.e0, 1 - k);
+    gr.updateWorldMatrix(true, false);
+    gr.getWorldQuaternion(_gq).invert();
+    held.quaternion.copy(_gq.multiply(podQ));
+    held.position.copy(gr.worldToLocal(centre));
+  }
+
+  // Releases a pod onto a seat. It falls the last few mm under lunar gravity, bounces with a little restitution,
+  // and the guide chamfers centre it only while it is in contact (spring + damping). No scripted glide or snap.
   function releaseOn(parent, mesh, y) {
     if (!parent || !mesh) return;
     hideTies(mesh);
     parent.attach(mesh);
+    mesh.userData.hold = null;
     mesh.userData.settling = true;
     settling.push({
-      mesh: mesh, parent: parent, y: y || 0, t: 0, v: 0, yy: mesh.position.y,
-      p0: mesh.position.clone(), q0: mesh.quaternion.clone(),
-      dur: 0.55 + Math.min(0.5, Math.hypot(mesh.position.x, mesh.position.z) * 6)
+      mesh: mesh, parent: parent, y: y || 0, t: 0, vy: 0, contact: false, bounces: 0,
+      lat: new THREE.Vector2(mesh.position.x, mesh.position.z), vl: new THREE.Vector2(0, 0),
+      q0: mesh.quaternion.clone(), qT: seatAttitude(mesh), f: 0, fv: 0
     });
   }
 
+  // Pods are symmetric under a half turn about vertical, so a pod set down backwards seats as it is (no 180 spin).
+  function seatAttitude(mesh) {
+    _eu.setFromQuaternion(mesh.quaternion, 'YXZ');
+    var yaw = Math.abs(wrap(_eu.y)) > Math.PI / 2 ? Math.PI : 0;
+    return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  }
+
   function stepSettling(dt) {
+    var KL = 220, CL = 2 * 0.85 * Math.sqrt(KL);      // chamfer centring (stiffness per unit mass, damping)
+    var KF = 380, CF = 2 * 0.9 * Math.sqrt(KF);       // rocking flat onto the base
     for (var i = settling.length - 1; i >= 0; i--) {
       var s = settling[i];
       s.t += dt;
-      var a = Math.min(1, s.t / s.dur);
-      a = a * a * (3 - 2 * a);
-      s.v += G_MOON * dt;
-      s.yy -= s.v * dt;
-      var grounded = false;
-      if (s.yy <= s.y) {
-        s.yy = s.y;
-        grounded = true;
-        s.v = 0;
+      var n = Math.max(1, Math.ceil(dt / 0.005)), h = dt / n;
+      for (var k = 0; k < n; k++) {
+        s.vy -= G_MOON * h;
+        var py = s.mesh.position.y + s.vy * h;
+        if (py <= s.y) {
+          py = s.y;
+          if (s.vy < -0.025) { s.vy = -s.vy * 0.18; s.bounces++; } else s.vy = 0;
+          s.contact = true;
+        }
+        s.mesh.position.y = py;
+        if (s.contact) {
+          s.vl.x += (-KL * s.lat.x - CL * s.vl.x) * h; s.vl.y += (-KL * s.lat.y - CL * s.vl.y) * h;
+          s.lat.x += s.vl.x * h; s.lat.y += s.vl.y * h;
+          s.fv += (KF * (1 - s.f) - CF * s.fv) * h; s.f = Math.min(1, s.f + s.fv * h);
+        }
       }
-      s.mesh.position.set(s.p0.x * (1 - a), s.yy, s.p0.z * (1 - a));
-      s.mesh.quaternion.copy(s.q0).slerp(_qId, a);
-      if (s.t >= s.dur && grounded) {
+      s.mesh.position.x = s.lat.x; s.mesh.position.z = s.lat.y;
+      s.mesh.quaternion.copy(s.q0).slerp(s.qT, Math.max(0, Math.min(1, s.f)));
+      var still = s.contact && s.vy === 0 && s.mesh.position.y <= s.y + 1e-5 && s.lat.length() < 4e-4 && s.vl.length() < 3e-3 && s.f > 0.998;
+      if (still || s.t > 3) {
         s.mesh.position.set(0, s.y, 0);
-        s.mesh.quaternion.identity();
+        s.mesh.quaternion.copy(s.qT);
         s.mesh.userData.settling = false;
         if (s.parent.userData && s.parent.userData.ties) {
           s.parent.userData.ties.forEach(function (t) { t.visible = true; });
@@ -1603,6 +1783,7 @@
       if (done && armMode === 'pick' && phase === 'arm_pick') afterPick();
       if (done && armMode === 'place' && phase === 'arm_place') afterPlace();
     }
+    stepHeld(dt);
     applyCompliance(dt);
     if (held) watchJump(held, dt);
     for (var i = 0; i < bay.length; i++) watchJump(bay[i], dt);
@@ -2098,6 +2279,7 @@
 
   var api = {
     phase: function () { return phase; },
+    parkPose: function () { return parkPose(); },
     startFleet: function () {
       if (fleet.on) { log('<span class="text-slate-400">[ROCKET] Resupply already under way.</span>'); return; }
       if (!manifest) initFallbackManifest();
@@ -2199,45 +2381,56 @@
       var along = (p.x - pose.x) * hx + (p.z - pose.z) * hz;
       var lat = (p.x - pose.x) * Math.sin(stopYaw) + (p.z - pose.z) * Math.cos(stopYaw);
       // Forward-only driving cannot fix a sideways error beside the face, so back out onto the park axis first.
-      if (dist < 1.0 && Math.abs(lat) > 0.06 && along > -0.30) backingOut = true;
-      if (backingOut && (along < -0.90 || Math.abs(lat) < 0.025 || dist > 1.7)) backingOut = false;
-      if (backingOut) {
-        var yb = wrap(stopYaw - roverYaw);
-        return { steer: Math.max(-0.9, Math.min(0.9, yb * 1.5)), throttle: 0.60, forward: false, reverse: true, brake: false };
-      }
-      var useStop = dist < 1.0;   // lateral servo zone: steer onto the park axis while closing
-      var latYaw = stopYaw + Math.max(-0.40, Math.min(0.40, lat * 3.0));
-      var yawErr = wrap((useStop ? latYaw : driveYaw) - roverYaw);
-      var stopErr = wrap(stopYaw - roverYaw);
+      // Near the face the allowance is the park tolerance; further out the approach servo still has room to fix it.
+      if (dist < 1.0 && along > -0.30 && Math.abs(lat) > (along > -0.12 ? PARK_TOL_LAT * 1.25 : 0.06)) backingOut = true;
+      if (backingOut && (along < -0.90 || dist > 1.7)) backingOut = false;
       var ms = (typeof activeMotor !== 'undefined' && activeMotor.maxSpeed) ? activeMotor.maxSpeed : 0.94;
-      var pickAlign = phase === 'align_pick';
-      var distGate = pickAlign ? 0.07 : 0.045;
-      var yawGate = pickAlign ? 0.18 : 0.28;
-      var fineDist = pickAlign ? 0.04 : 0.03;
-      var fineYaw = pickAlign ? 0.10 : 0.18;
-      var velGate = pickAlign ? 0.05 : 0.06;
-      if (dist < distGate && Math.abs(stopErr) < yawGate) {
-        if (Math.abs(vel) < velGate || (dist < fineDist && Math.abs(stopErr) < fineYaw)) {
+      var stopErr = wrap(stopYaw - roverYaw);
+      var tvDamp = (typeof turnVel !== 'undefined') ? turnVel * 0.20 : 0;
+      if (backingOut) {
+        return { steer: Math.max(-0.9, Math.min(0.9, stopErr * 1.5)), throttle: 0.60, forward: false, reverse: true, brake: false };
+      }
+      var vNow = (typeof vel !== 'undefined') ? vel : 0;
+      if (dist < FINE_ZONE) {
+        // Fine dock: creep down the park axis on a decelerating profile, stop inside 5 mm, then pivot square.
+        var togo = -along;                                         // + = still short of the park point
+        if (Math.abs(togo) <= PARK_TOL_ALONG && Math.abs(vNow) < 0.03) {
+          // Square up by pivoting in place: proportional turn rate, never below what the motors can hold steady.
+          var tvNow = (typeof turnVel !== 'undefined') ? turnVel : 0;
+          if (Math.abs(stopErr) > PARK_TOL_YAW * 0.4) {
+            var pivot = (stopErr > 0 ? 1 : -1) * Math.min(0.20, Math.max(0.025, Math.abs(stopErr) * 1.6));
+            return { steer: pivot, throttle: 0, forward: false, reverse: false, brake: false };
+          }
+          if (tvNow !== 0) return { steer: 0, throttle: 0, forward: false, reverse: false, brake: false };
           phase = phase === 'align_pick' ? 'arm_pick' : 'arm_place';
           traj = null;
           armMode = null;
           gripRetry = 0;
+          var errTxt = 'park error ' + (togo * 1000).toFixed(0) + ' mm along, ' + (lat * 1000).toFixed(0) + ' mm side, ' + (stopErr * 57.2958).toFixed(2) + ' deg';
           log(phase === 'arm_pick'
-            ? '<span class="text-cyan-300 font-bold">[ARM] At the lander belt. Waiting on the handle.</span>'
+            ? '<span class="text-cyan-300 font-bold">[ARM] At the lander belt (' + errTxt + '). Waiting on the handle.</span>'
             : '<span class="text-cyan-300 font-bold">[ARM] Bumper is ' +
-              ((bumperGap() != null) ? (bumperGap() * 100).toFixed(0) : '?') +
-              ' cm from the airlock face. Setting the pod in the receiving zone.</span>');
+              ((bumperGap() != null) ? (bumperGap() * 100).toFixed(1) : '?') +
+              ' cm from the airlock face (' + errTxt + '). Setting the pod in the receiving zone.</span>');
           return { steer: 0, throttle: 0, forward: false, reverse: false, brake: true };
         }
-        var doBrake = dist < 0.15 || Math.abs(vel) > 0.10;
-        return { steer: Math.max(-0.8, Math.min(0.8, stopErr * 1.5)), throttle: 0, forward: false, reverse: false, brake: doBrake };
+        var vC = Math.min(0.14, Math.max(0.02, Math.sqrt(2 * 0.10 * Math.abs(togo))));
+        if (togo > 0) {
+          var hYaw = stopYaw + Math.max(-0.25, Math.min(0.25, lat * 3.0));
+          var steerF = Math.max(-0.6, Math.min(0.6, wrap(hYaw - roverYaw) * 1.6 - tvDamp));
+          return { steer: steerF, throttle: Math.min(1, vC / ms), forward: true, reverse: false, brake: false };
+        }
+        // overshot: back straight up the axis, holding the park heading
+        return { steer: Math.max(-0.5, Math.min(0.5, stopErr * 1.5)), throttle: Math.min(1, vC / (ms * 0.4)), forward: false, reverse: true, brake: false };
       }
+      var latYaw = stopYaw + Math.max(-0.40, Math.min(0.40, lat * 3.0));
+      var yawErr = wrap((dist < 1.0 ? latYaw : driveYaw) - roverYaw);
       var v = 0;
       if (Math.abs(yawErr) < 0.45) {
-        v = Math.min(0.38, Math.sqrt(Math.max(0, 2 * 0.35 * dist)));
-        if (dist < 0.50) v = Math.min(v, 0.14);
+        v = Math.min(0.38, Math.sqrt(Math.max(0, 2 * 0.35 * (dist - FINE_ZONE * 0.6))));
+        v = Math.max(v, 0.05);
+        if (dist < 0.60) v = Math.min(v, 0.14);
       }
-      var tvDamp = (typeof turnVel !== 'undefined') ? turnVel * 0.20 : 0;
       var steer = Math.max(-0.95, Math.min(0.95, yawErr * 1.35 - tvDamp));
       return { steer: steer, throttle: v > 0.02 ? Math.min(1, v / ms) : 0, forward: v > 0.02, reverse: false, brake: false };
     },
