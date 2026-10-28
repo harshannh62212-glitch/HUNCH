@@ -22,6 +22,16 @@ http://127.0.0.1:8002/viewer.html?selftest=pits
 
 Or in the console: `runPitCorridorSelfTest()` — expect **4/4 passed**, no `inBowl`, `minClear ≥ 0.35m`.
 
+Full navigation benchmark (12 routes: the 4 crater corridors + 8 seeded routes; checks goal reached, crashes,
+bowl entry, pit/rock clearance, rock contacts, time stopped/reversing, steering reversals). In the console:
+
+```js
+var s = document.createElement('script'); s.src = 'tools/nav_bench.js'; document.body.appendChild(s);
+// then
+NavBench.reset(); NavBench.step(25000);   // repeat until it returns 'done'
+NavBench.summary();                       // 2026-10-28: 12/12 reached, 0 crash/bowl/contact, 0 s stopped, mean 71.6 s
+```
+
 ## Manual (viewer.html)
 
 | # | Scenario | Pass criteria |

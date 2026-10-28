@@ -2353,6 +2353,18 @@ function nearestPitClearance(x, z) {
   return craterRimClearance(x, z);
 }
 
+/** Nearest crater rim: edge distance (m, < 0 inside) and the outward unit normal at the rover. */
+function nearestPitNormal(x, z) {
+  var best = { edge: 99, nx: 0, nz: 0 };
+  function test(cx, cz, r) {
+    var dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz) || 1e-3, e = d - r;
+    if (e < best.edge) { best.edge = e; best.nx = dx / d; best.nz = dz / d; }
+  }
+  for (var i = 0; i < craters.length; i++) { var c = craters[i]; if (c.d > 0) test(c.x, c.z, c.r); }
+  for (var si = 0; si < smallCraters.length; si++) { var sc = smallCraters[si]; test(sc.x, sc.z, sc.r); }
+  return best;
+}
+
 function isInPitKeepOutZone(x, z) {
   if (isInCraterBowl(x, z)) return true;
   return craterRimClearance(x, z) < PIT_KEEP_OUT_M;
@@ -2399,7 +2411,9 @@ function pitRepulsionSteer(p) {
   return Math.max(-0.55, Math.min(0.55, Math.atan2(-cross, Math.abs(dot) + 0.35)));
 }
 
-function motionStepBlocked(nx, nz) {
+function motionStepBlocked(nx, nz, px, pz) {
+  // A step that opens up rim clearance is always allowed, so a rover at the edge can drive away from the pit.
+  if (px !== undefined && craterRimClearance(nx, nz) > craterRimClearance(px, pz) + 1e-5 && !isSteepHillCell(nx, nz)) return false;
   if (isTerrainNavBlocked(nx, nz)) return true;
   var fx = Math.cos(roverYaw),
     fz = -Math.sin(roverYaw);
@@ -3773,10 +3787,27 @@ function computeAutopilot(dt) {
     }
     return { steer: window_prevBestSteer * 0.55 + evade * 0.45, speed: 0.42 };
   }
-  if (isTerrainNavBlocked(p.x, p.z)) {
+  // Pit-edge escape: inside the hard band (or a bowl) drive out along the rim's outward normal, leaning toward the
+  // route, at a crawl. Stopping dead here used to deadlock the rover forever (speed scaled to 0 at the edge).
+  var pitN = nearestPitNormal(p.x, p.z);
+  if (isTerrainNavBlocked(p.x, p.z) || pitN.edge < 0.45) {
     navForceReplan = true;
-    window_lastTargetSpeed += (0 - window_lastTargetSpeed) * Math.min(1.0, 4.0 * dt);
-    return { steer: window_prevBestSteer, speed: 0 };
+    var ex = pitN.nx, ez = pitN.nz;
+    if (pitN.edge >= 99 || isSteepHillCell(p.x, p.z)) {                 // steep ground, not a pit: head for the nearest safe cell
+      var safe = nearestSafeNavPoint(p.x, p.z, 8);
+      if (safe) { ex = safe.x - p.x; ez = safe.z - p.z; }
+    }
+    var gdx = globalGoal.x - p.x, gdz = globalGoal.z - p.z, gl = Math.hypot(gdx, gdz) || 1;
+    var along = (gdx / gl) * (-ez) + (gdz / gl) * ex;                   // tangent component toward the goal
+    var hx = ex + (-ez) * along * 0.6, hz = ez + ex * along * 0.6;
+    var want = Math.atan2(-hz, hx), herr = want - roverYaw;
+    while (herr > Math.PI) herr -= 2 * Math.PI;
+    while (herr < -Math.PI) herr += 2 * Math.PI;
+    var escSpeed = Math.abs(herr) < 0.6 ? 0.32 : 0;                     // pivot first, then roll out
+    window_lastTargetSpeed += (escSpeed - window_lastTargetSpeed) * Math.min(1.0, 4.0 * dt);
+    window_prevBestSteer = Math.max(-0.9, Math.min(0.9, herr * 1.4));
+    if (navPitLogCooldown <= 0) { navPitLogCooldown = 2.5; llog('<span class="text-amber-300">[PIT GUARD] At the rim (' + pitN.edge.toFixed(2) + ' m). Backing away along the rim normal.</span>'); }
+    return { steer: window_prevBestSteer, speed: Math.max(0, window_lastTargetSpeed) };
   }
 
   var corridorClr = forwardCorridorMinClear(p, roverYaw, 5.8);
@@ -3861,7 +3892,11 @@ function computeAutopilot(dt) {
   var latLim = (0.6 * MU * G) / (Math.abs(steer) * activeMotor.maxSpeed + 1e-3);
   speed = Math.min(speed, Math.max(0.25, latLim));
   if (pitEdge < 1.35) {
-    speed *= smoothstep(0.25, 1.35, pitEdge);
+    // Slow for the rim only while closing on it; driving along or away from it is safe.
+    var hfx = Math.cos(roverYaw), hfz = -Math.sin(roverYaw);
+    var closingRim = -(hfx * pitN.nx + hfz * pitN.nz);
+    var rimScale = smoothstep(0.25, 1.35, pitEdge);
+    speed *= closingRim > 0.2 ? rimScale : Math.max(0.55, rimScale);
   }
 
   // Real stuck watchdog: judge by actual ground covered, not the commanded
@@ -5711,7 +5746,7 @@ function updatePhysics(dt) {
     dockingState === 'UNDOCK_EXIT';
   if ((autoOn || neuralPilotOn) && !inHangarLane && (Math.abs(vel) > 0.01 || Math.abs(dx) + Math.abs(dz) > 0.001)) {
     var nx = roverGroup.position.x + dx, nz = roverGroup.position.z + dz;
-    if (motionStepBlocked(nx, nz)) {
+    if (motionStepBlocked(nx, nz, roverGroup.position.x, roverGroup.position.z)) {
       vel = 0;
       turnVel *= 0.65;
       navForceReplan = true;
@@ -5906,7 +5941,18 @@ function updatePhysics(dt) {
       NASA_SoilTracks.wheel(gi, wX, wZ, roverYaw, rutDepth, wheelSlipNow());
       var vertDiff = desiredCenterY - actualCenterY;
       var suspTravel = Math.max(-0.045, Math.min(0.045, vertDiff));
-      wgData.group.position.y += ((0.09 + suspTravel) - wgData.group.position.y) * Math.min(1.0, 20.0 * dt);
+      // Spring-damper wheel travel (about 9 Hz, zeta 0.55): the wheel follows the ground with a little settle
+      // after a bump instead of an exponential ease; the bump stops at +/-45 mm push back.
+      if (wgData.suspV === undefined) wgData.suspV = 0;
+      var sw = 2 * Math.PI * 9, sx = wgData.group.position.y - 0.09;
+      var sSub = Math.max(1, Math.ceil(dt / 0.006)), sh = dt / sSub;
+      for (var ss = 0; ss < sSub; ss++) {
+        wgData.suspV += (sw * sw * (suspTravel - sx) - 2 * 0.55 * sw * wgData.suspV) * sh;
+        sx += wgData.suspV * sh;
+        if (sx > 0.048) { sx = 0.048; if (wgData.suspV > 0) wgData.suspV *= -0.3; }
+        if (sx < -0.048) { sx = -0.048; if (wgData.suspV < 0) wgData.suspV *= -0.3; }
+      }
+      wgData.group.position.y = 0.09 + sx;
     }
     NASA_SoilTracks.frame();
   }
@@ -5966,9 +6012,21 @@ function updatePhysics(dt) {
   var liveRPM = (Math.abs(vel) * 60) / (2 * Math.PI * 0.10);
   document.getElementById('stat-spd').innerHTML = Math.abs(vel).toFixed(2) + ' m/s <span class="text-slate-500">|</span> <span class="text-emerald-400">' + liveRPM.toFixed(0) + ' rpm</span>';
 
-  // Wheel rotation
-  var rads = (vel / 0.10) * dt;   // 0.10 m rolling radius (tyre + lugs); 0.09 made the wheels spin 11 % fast
-  wheels.forEach(function(w) { w.rotation.y -= rads; });
+  // Wheel rotation: skid-steer kinematics per wheel plus traction slip, with motor/wheel inertia.
+  // Contact-patch speed of a wheel at chassis offset z is vel + yawRate * z (inner side slower, a pivot
+  // counter-rotates the two sides). When the drive is traction-limited the wheels spin faster than the
+  // ground moves; on a hard brake they slow before the chassis does.
+  var WR = 0.10;                                  // rolling radius (tyre + lugs)
+  var dp = window._drivePhysics || {};
+  var slipExtra = dp.slip ? Math.sign(_lastDrive || vel || 1) * Math.min(0.9, 0.55 * Math.max(0, (dp.slipRatio || 1) - 1) + 0.12) : 0;
+  if (!window._wheelOmega) window._wheelOmega = [0, 0, 0, 0, 0, 0];
+  for (var wsi = 0; wsi < wheels.length; wsi++) {
+    var wz = (wheelGroups[wsi] && wheelGroups[wsi].localPos) ? wheelGroups[wsi].localPos.z : (wsi < 3 ? 0.34 : -0.34);
+    var surf = vel + turnVel * wz + slipExtra;
+    var wTgt = surf / WR;
+    _wheelOmega[wsi] += (wTgt - _wheelOmega[wsi]) * Math.min(1, 14 * dt);   // gearmotor + wheel inertia
+    wheels[wsi].rotation.y -= _wheelOmega[wsi] * dt;
+  }
 
   // Battery simulation & Hangar Bay LED Chevron Animation
   var dockDistNow = roverGroup.position.distanceTo(dockGroup.position);

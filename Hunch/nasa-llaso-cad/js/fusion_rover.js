@@ -149,13 +149,10 @@
       sk.rotation.z = s * 0.24;
     });
 
-    // body skin: side panels (white) with a blue belt line and a red safety-stripe tab
+    // body skin: clean white side panels with a single blue belt line (palette: white, graphite, aluminium, one blue accent)
     [1, -1].forEach(function (s) {
       box(CH_L - 0.10, 0.105, 0.020, mPaint, 0, 0.128, s * (BW + 0.002), root, true);
       box(CH_L - 0.10, 0.012, 0.022, mBlue, 0, 0.168, s * (BW + 0.003), root);
-      box(0.10, 0.012, 0.022, mRed, -HL + 0.12, 0.168, s * (BW + 0.004), root);
-      // panel gaps (dark seal lines) so the skin reads as separate bolted panels
-      [-0.30, 0.09, 0.40].forEach(function (gx) { box(0.004, 0.100, 0.022, mSeal, gx, 0.128, s * (BW + 0.004), root); });
     });
     // rear & front fascia
     box(0.020, 0.105, BW * 2, mPaint, -HL + 0.012, 0.128, 0, root, true);
@@ -217,8 +214,8 @@
       box(0.040, 0.020, 0.075, mAlu, 0, 0.112, -ss * 0.052, yoke, true);                   // swing arm back toward the body
       cyl(0.0185, 0.0185, 0.052, mGraphite, 0, 0, -ss * 0.050, yoke, 'z', 20, true);       // gearmotor can
       cyl(0.016, 0.016, 0.030, mAluDark, 0, 0, -ss * 0.022, yoke, 'z', 20);                // gearbox
-      cyl(0.0125, 0.0125, 0.012, mBrass, 0, 0, -ss * 0.082, yoke, 'z', 16);                // encoder cap
-      box(0.006, 0.050, 0.006, mRed, 0.010, 0.050, -ss * 0.050, yoke);                     // motor leads
+      cyl(0.0125, 0.0125, 0.012, mAluDark, 0, 0, -ss * 0.082, yoke, 'z', 16);              // encoder cap
+      box(0.006, 0.050, 0.006, mGraphite, 0.010, 0.050, -ss * 0.050, yoke);                // motor leads
       box(0.006, 0.050, 0.006, mRubber, -0.010, 0.050, -ss * 0.050, yoke);
       wg.add(yoke);
       var lEye = new THREE.Object3D(); lEye.name = 'axle-eye-' + wd.id; lEye.position.set(0, 0, -ss * 0.02); wg.add(lEye);
@@ -237,7 +234,7 @@
         spoke.position.set(Math.cos(sa) * 0.036, 0, Math.sin(sa) * 0.036); spoke.rotation.y = -sa; tire.add(spoke);
       }
       cyl(0.026, 0.030, 0.090, mBlue, 0, 0, 0, tire, null, 20);                             // hub
-      cyl(0.011, 0.011, 0.095, mBrass, 0, 0, 0, tire, null, 10);                            // axle nut
+      cyl(0.011, 0.011, 0.095, mAlu, 0, 0, 0, tire, null, 10);                              // axle nut
       wg.add(spin); root.add(wg);
       wheels.push(tire);
       wheelGroups.push({ group: wg, tire: tire, lowerEye: lEye, id: wd.id, localPos: new THREE.Vector3(wd.x, 0.09, wd.z), baseZ: wd.z });
@@ -270,7 +267,7 @@
       var R2 = rest / 2;
       box(0.020, 0.010, 0.012, mAluDark, 0, R2 - 0.005, 0, shock);                           // top clevis
       cyl(0.0032, 0.0032, rest * 0.55, mAlu, 0, R2 - rest * 0.275, 0, shock, null, 8);       // chrome shaft
-      cyl(0.010, 0.010, rest * 0.45, mRed, 0, -R2 + rest * 0.24, 0, shock, null, 14);        // damper body
+      cyl(0.010, 0.010, rest * 0.45, mBlue, 0, -R2 + rest * 0.24, 0, shock, null, 14);       // damper body
       box(0.020, 0.010, 0.012, mAluDark, 0, -R2 + 0.005, 0, shock);                          // bottom clevis
       for (var c = 0; c < 5; c++) {                                                           // spring coils
         var coil = new THREE.Mesh(new THREE.TorusGeometry(0.013, 0.0018, 5, 14), mAluDark);
@@ -393,15 +390,14 @@
     });
     box(0.016, 0.060, BW * 2 - 0.02, mPaint, CR_X0 + 0.008, 0.036, 0, cargoBay, true);       // aft wall
     box(0.008, 0.008, BW * 2 - 0.02, mBlue, CR_X0 + 0.008, 0.070, 0, cargoBay);
-    // pod guides: four wedge posts funnel the pod into the slot, painted safety orange
+    // pod guides: four slim posts with chamfered lead-ins funnel the pod into the slot
     var gx = podL * 0.5 + 0.004, gz = podW * 0.5 + 0.016;   // pod is long along X
     // Two pods ride side by side (2 x 5 lb): slot centres at z = +/-SLOT_DZ, each with its own four guide posts.
     var SLOT_DZ = 0.125;
     [SLOT_DZ, -SLOT_DZ].forEach(function (zc) {
       [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (g) {
-        var post = box(0.020, 0.075, 0.020, mOrange, SLOT_X + g[0] * gx, 0.040, zc + g[1] * gz, cargoBay, true);
-        var cap = box(0.032, 0.008, 0.032, mRed, SLOT_X + g[0] * (gx + 0.002), 0.082, zc + g[1] * gz, cargoBay);
-        var fl = box(0.020, 0.040, 0.012, mOrange, SLOT_X + g[0] * gx, 0.066, zc + g[1] * (gz + 0.014), cargoBay); fl.rotation.x = g[1] * 0.45;
+        box(0.018, 0.075, 0.018, mAluDark, SLOT_X + g[0] * gx, 0.040, zc + g[1] * gz, cargoBay, true);
+        var fl = box(0.018, 0.034, 0.010, mAlu, SLOT_X + g[0] * gx, 0.068, zc + g[1] * (gz + 0.012), cargoBay); fl.rotation.x = g[1] * 0.45;
       });
     });
     // swing hold-down clamps on the side rails (parked open, along the rail, so the arm can drop pods in from above)
@@ -420,8 +416,8 @@
     global.cargoBaySlots = [];
     [SLOT_DZ, -SLOT_DZ].forEach(function (zc) {
       var slot = new THREE.Object3D(); slot.position.set(SLOT_X, 0.006 + podH * 0.5, zc); cargoBay.add(slot);
-      var tieA = box(0.024, 0.006, podW + 0.024, mOrange, podL * 0.30, podH * 0.5 + 0.003, 0, slot);    // ratchet straps over the pod
-      var tieB = box(0.024, 0.006, podW + 0.024, mOrange, -podL * 0.30, podH * 0.5 + 0.003, 0, slot);
+      var tieA = box(0.024, 0.006, podW + 0.024, mBlue, podL * 0.30, podH * 0.5 + 0.003, 0, slot);      // ratchet straps over the pod
+      var tieB = box(0.024, 0.006, podW + 0.024, mBlue, -podL * 0.30, podH * 0.5 + 0.003, 0, slot);
       tieA.visible = tieB.visible = false;                                                                // sim shows them when a pod is seated
       slot.userData.ties = [tieA, tieB];
       global.cargoBaySlots.push(slot);
@@ -434,7 +430,6 @@
     box(0.20, 0.010, BW * 2 - 0.06, mPaintShade, 0, 0, 0, cargoLid, true);
     box(0.20, 0.006, 0.020, mBlue, 0, 0.007, 0, cargoLid);
     [-1, 1].forEach(function (sx) { [-1, 1].forEach(function (sz) { box(0.012, 0.024, 0.012, mAlu, sx * 0.09, -0.016, sz * (BW - 0.045), cargoLid); }); });   // slide carriages
-    [-0.10, 0.10].forEach(function (z) { cyl(0.008, 0.008, 0.010, mBrass, -0.085, 0.008, z, cargoLid, null, 10); });
 
     // ── battery hatch (gold MLI wrap) + SoC LED bar on the aft service deck ──
     box(0.16, 0.004, 0.20, mFoil, -HL + 0.14, DECK_Y + 0.008, 0, root);
@@ -493,12 +488,14 @@
     // 6. CHARGE BRIDGE — top-deck magnetic pad the dock coupler mates with (x = -0.22, y = 0.338)
     // =========================================================================
     var bridge = new THREE.Group(); bridge.position.y = 0.006; root.add(bridge);   // pad surface lands at the dock coupler's contact height
-    // legs: the front pair sits 10 mm aft of the pod slots (pods span x -0.0975 … +0.2075); they used to clip both pods
-    [[-0.33, 0.125], [-0.115, 0.125], [-0.33, -0.125], [-0.115, -0.125]].forEach(function (p) {   // legs
-      box(0.014, PAD.y - DECK_Y - 0.002, 0.014, mAlu, p[0], (PAD.y + DECK_Y) / 2 - 0.001, p[1], bridge, true);
-    });
-    box(0.225, 0.010, 0.020, mPaint, PAD.x - 0.0025, PAD.y - 0.011, 0.125, bridge);            // cross rails
-    box(0.225, 0.010, 0.020, mPaint, PAD.x - 0.0025, PAD.y - 0.011, -0.125, bridge);
+    // one central pedestal (clear of both pod slots: pods span x -0.0975 … +0.2075) carries the pad; a flared
+    // white collar spreads into the pad base so it reads as one part, not a table on legs
+    var PED_H = PAD.y - DECK_Y - 0.030;
+    box(0.080, PED_H, 0.080, mGraphite, PAD.x, DECK_Y + PED_H / 2, 0, bridge, true);
+    box(0.086, 0.010, 0.086, mAluDark, PAD.x, DECK_Y + 0.005, 0, bridge);                           // foot plate
+    var collar = cyl(0.060, 0.115, 0.022, mPaint, PAD.x, PAD.y - 0.023, 0, bridge, null, 4, true);  // square flare (4-sided)
+    collar.rotation.y = Math.PI / 4;
+    box(0.004, PED_H - 0.02, 0.040, mBlue, PAD.x + 0.041, DECK_Y + PED_H / 2, 0, bridge);           // status stripe
     box(0.220, 0.012, 0.215, mGraphite, PAD.x, PAD.y - 0.006, 0, bridge, true);                // pad base
     [-0.055, 0.055].forEach(function (z) { box(0.180, 0.006, 0.040, mCopper, PAD.x, PAD.y + 0.002, z, bridge); });   // contact rails
     box(0.022, 0.004, 0.100, mLedGreen, PAD.x + 0.100, PAD.y + 0.001, 0, bridge);              // alignment light
@@ -519,7 +516,7 @@
     armBase.position.set(0.327, HOOD_TOP, 0.122);
     root.add(armBase);
     cyl(0.040, 0.044, 0.012, mAlu, 0, 0.006, 0, armBase, null, 24);                              // mounting ring
-    for (var bi = 0; bi < 6; bi++) { var ba = bi / 6 * Math.PI * 2; cyl(0.004, 0.004, 0.008, mBrass, Math.cos(ba) * 0.036, 0.014, Math.sin(ba) * 0.036, armBase, null, 8); }
+    for (var bi = 0; bi < 6; bi++) { var ba = bi / 6 * Math.PI * 2; cyl(0.004, 0.004, 0.008, mAluDark, Math.cos(ba) * 0.036, 0.014, Math.sin(ba) * 0.036, armBase, null, 8); }
     cyl(0.031, 0.034, 0.030, mPaint, 0, 0.027, 0, armBase, null, 24, true);                       // turret
     cyl(0.0325, 0.0325, 0.008, mFoil, 0, 0.034, 0, armBase, null, 24);                            // gold MLI collar
     cyl(0.024, 0.024, 0.010, mBlue, 0, 0.046, 0, armBase, null, 24);
