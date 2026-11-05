@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEGIS-G Path Grader CAD</title>
+  <meta name="description" content="Interactive 3D CAD of the path-grader rover: blade, fill hopper, strike-off bar and compaction roller on the same rocker-bogie chassis as AEGIS-V1.">
+  <style>
+    :root {
+      --bg: #0f1114; --panel: #1d1f23; --line: rgba(255,255,255,0.08); --line2: rgba(255,255,255,0.14);
+      --fg: #f2f3f5; --mute: #9a9ea6; --dim: #6b7079;
+      --blue: #0a84ff; --green: #30d158; --amber: #ff9f0a; --red: #ff453a;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Roboto, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font); -webkit-font-smoothing: antialiased; }
+    #app { position: fixed; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+    #view { position: relative; min-width: 0; overflow: hidden; touch-action: none; }
+    #view canvas { display: block; width: 100%; height: 100%; }
+    .toolbar { position: absolute; top: 14px; left: 16px; right: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; pointer-events: none; }
+    .toolbar > * { pointer-events: auto; }
+    .title { display: flex; flex-direction: column; margin-right: auto; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+    .title b { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+    .title span { color: var(--mute); font-size: 12px; }
+    .seg { display: inline-flex; background: rgba(40,42,47,.75); border: 0.5px solid var(--line2); border-radius: 8px; padding: 2px; backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); }
+    .seg button { font: 500 12px var(--font); color: var(--fg); background: transparent; border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer; transition: background .2s; }
+    .seg button:hover { background: rgba(255,255,255,.06); }
+    .seg button.on { background: rgba(255,255,255,.16); box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+    button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+    #status { position: absolute; left: 16px; bottom: 16px; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; background: rgba(28,30,34,.78); border: 0.5px solid var(--line2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font-weight: 600; font-size: 12px; max-width: calc(100% - 200px); }
+    #status i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); transition: background .4s, box-shadow .4s; }
+    #status.busy i { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+    #status.pick i { background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+    #statusTxt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #hint { position: absolute; right: 16px; bottom: 18px; color: var(--dim); font-size: 11px; pointer-events: none; }
+    #loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--mute); font-size: 12px; transition: opacity .6s ease; z-index: 3; text-align: center; }
+    #loading.gone { opacity: 0; pointer-events: none; }
+    #loading .spin { width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.12); border-top-color: var(--fg); animation: sp 1s linear infinite; margin: 0 auto 10px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    #metrics { position: absolute; left: 16px; top: 64px; display: none; gap: 6px 14px; padding: 8px 12px; border-radius: 10px; background: rgba(28,30,34,.72); border: 0.5px solid var(--line2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); font: 500 11px var(--mono); color: var(--mute); grid-template-columns: auto auto; }
+    #metrics.on { display: grid; }
+    #metrics b { color: var(--fg); font-weight: 600; text-align: right; }
+    aside { background: var(--panel); border-left: 0.5px solid var(--line2); overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .group h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+    .card { background: rgba(255,255,255,.035); border: 0.5px solid var(--line); border-radius: 10px; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; padding: 10px 12px; font-size: 12px; margin: 0; }
+    .kv dt { color: var(--mute); }
+    .kv dd { margin: 0; text-align: right; font: 500 12px var(--mono); font-variant-numeric: tabular-nums; }
+    .actions { display: grid; }
+    .act { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; background: none; border: 0; border-top: 0.5px solid var(--line); color: var(--fg); font: 13px var(--font); text-align: left; cursor: pointer; transition: background .15s; }
+    .act:first-child { border-top: 0; border-radius: 10px 10px 0 0; }
+    .act:last-child { border-radius: 0 0 10px 10px; }
+    .act:hover { background: rgba(255,255,255,.05); }
+    .act:disabled { opacity: .45; cursor: default; }
+    .act .ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; background: rgba(10,132,255,.18); color: #64b5ff; }
+    .act .ic svg { width: 16px; height: 16px; }
+    .act small { display: block; color: var(--mute); font-size: 11px; }
+    .act kbd { font: 500 10px var(--mono); color: var(--dim); border: 0.5px solid var(--line2); border-radius: 4px; padding: 1px 5px; }
+    .act.on .ic { background: var(--blue); color: #fff; }
+    .legend { list-style: none; margin: 0; padding: 4px 6px; display: grid; }
+    .legend label { display: flex; gap: 9px; align-items: center; color: var(--fg); padding: 6px; border-radius: 7px; cursor: pointer; }
+    .legend label:hover { background: rgba(255,255,255,.05); }
+    .legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .legend span { flex: 1; }
+    .legend small { color: var(--dim); font-family: var(--mono); font-size: 11px; }
+    .legend input { accent-color: var(--blue); margin: 0; }
+    .note { color: var(--mute); font-size: 11.5px; line-height: 1.5; margin: 0; }
+    @media (max-width: 820px) {
+      #app { position: static; display: block; }
+      #view { height: 62vh; min-height: 340px; }
+      aside { border-left: 0; border-top: 0.5px solid var(--line2); }
+      #hint { display: none; }
+    }
+    /* ?embed=1 : hosted inside the website preview — no inspector, compact action bar at the bottom */
+    .ebar { display: none; }
+    body.embed #app { grid-template-columns: minmax(0, 1fr); position: fixed; }
+    body.embed aside, body.embed #hint, body.embed .title { display: none; }
+    body.embed #view { height: 100%; }
+    body.embed #status { left: 14px; top: 14px; bottom: auto; }
+    body.embed #metrics { top: 52px; }
+    body.embed .toolbar { left: auto; right: 14px; }
+    body.embed .ebar { display: inline-flex; position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); gap: 2px; padding: 3px; border-radius: 12px; background: rgba(36,38,42,.72); border: 0.5px solid rgba(255,255,255,.14); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); max-width: calc(100% - 24px); overflow-x: auto; }
+    body.embed .ebar button { font: 500 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; color: #f2f3f5; background: transparent; border: 0; border-radius: 9px; padding: 7px 12px; cursor: pointer; white-space: nowrap; transition: background .2s; }
+    body.embed .ebar button:hover { background: rgba(255,255,255,.08); }
+    body.embed .ebar button.on { background: rgba(255,255,255,.18); }
+    body.embed .ebar button:disabled { opacity: .4; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <div id="loading"><div><div class="spin"></div><span id="loadTxt">Loading path grader</span></div></div>
+    <div class="toolbar">
+      <div class="title"><b>AEGIS-G Path Grader</b><span id="sub">Blade · fill hopper · roller · same rocker-bogie chassis</span></div>
+      <div class="seg" id="scaleSeg" role="group" aria-label="Scale"><button data-scale="proto" class="on">2 ft prototype</button><button data-scale="full">Full scale</button></div>
+      <div class="seg" id="cams" role="group" aria-label="Camera">
+        <button data-cam="iso" class="on">Overview</button><button data-cam="side">Side</button><button data-cam="front">Front</button><button data-cam="top">Top</button><button data-cam="rear">Rear</button>
+      </div>
+    </div>
+    <div id="metrics"><span>Distance</span><b id="mDist">0.0 m</b><span>Holes left</span><b id="mHoles">–</b><span>Blade</span><b id="mBlade">down</b></div>
+    <div id="status"><i></i><span id="statusTxt">Ready · click a part to identify it</span></div>
+    <div class="ebar" role="group" aria-label="Animations">
+      <button data-click="aWork">Work pass</button><button data-click="aBlade">Blade</button><button data-click="aLid">Hopper lid</button><button data-click="aExplode">Explode</button><button data-click="aSpin">Wheels</button>
+    </div>
+    <div id="hint">Drag to orbit · scroll to zoom · right-drag to pan · click a part</div>
+  </div>
+  <aside>
+    <div class="group">
+      <h2>Model</h2>
+      <div class="card"><dl class="kv">
+        <dt>Overall (L × W × H)</dt><dd id="dims">—</dd>
+        <dt>Blade</dt><dd id="kBlade">—</dd>
+        <dt>Roller</dt><dd id="kRoller">—</dd>
+        <dt>Fill hopper</dt><dd id="kHopper">—</dd>
+        <dt>Parts</dt><dd id="kParts">—</dd>
+      </dl></div>
+    </div>
+    <div class="group">
+      <h2>Animate</h2>
+      <div class="card actions">
+        <button class="act" id="aWork"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"/><path d="M5 18c2-5 4-5 6 0M13 18c1-3 3-3 5 0"/><path d="M4 9h6l2 4"/></svg></span><span>Work pass<small>drive over a pitted strip: cut, fill, level, roll</small></span><kbd>W</kbd></button>
+        <button class="act" id="aBlade"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6v9c0 2 4 3 8 3"/><path d="M12 4v8M9 9l3-3 3 3"/></svg></span><span>Raise / lower blade<small>push frame swings on the sub-beam</small></span><kbd>B</kbd></button>
+        <button class="act" id="aLid"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="12" width="16" height="7" rx="1"/><path d="M4 12l9-6"/></svg></span><span>Hopper lid<small>open to load fill, closed for transit</small></span><kbd>L</kbd></button>
+        <button class="act" id="aExplode"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg></span><span>Exploded view<small>pull each sub-assembly apart</small></span><kbd>E</kbd></button>
+        <button class="act" id="aSpin"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 4v6M12 14v6M4 12h6M14 12h6"/></svg></span><span>Spin wheels and roller<small>free-run on the spot</small></span><kbd>S</kbd></button>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Sub-assemblies</h2>
+      <div class="card"><ul class="legend" id="legend"></ul></div>
+    </div>
+    <p class="note">Concept-level geometry. Blade, hopper, roller and sensor sizes are design assumptions, not tested values. The work-pass terrain is an illustration of the intended sequence; no soil, compaction or power analysis has been done.</p>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  'use strict';
+  var Q = new URLSearchParams(location.search), EMBED = Q.get('embed') === '1';
+  if (EMBED) document.body.classList.add('embed');
+  var $ = function (id) { return document.getElementById(id); };
+  var clamp = function (x, a, b) { return x < a ? a : (x > b ? b : x); };
+  var ease = function (u) { return u * u * u * (10 + u * (-15 + 6 * u)); };       // minimum-jerk
+  var sstep = function (a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------------------------------------------------------- renderer / scene */
+  var view = $('view');
+  var renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  view.insertBefore(renderer.domElement, view.firstChild);
+  var scene = new THREE.Scene(); scene.background = new THREE.Color(0x14171c); scene.fog = new THREE.Fog(0x14171c, 6, 26);
+  var camera = new THREE.PerspectiveCamera(36, 1, 0.02, 200);
+  var controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.09; controls.maxPolarAngle = Math.PI * 0.495; controls.screenSpacePanning = true;
+
+  // procedural studio environment for reflections (no external HDR)
+  (function () {
+    var es = new THREE.Scene(), geo = new THREE.SphereGeometry(20, 32, 16), cols = [], p = geo.attributes.position, c = new THREE.Color();
+    for (var i = 0; i < p.count; i++) {
+      var h = clamp(p.getY(i) / 20 * 0.5 + 0.5, 0, 1), t = Math.pow(h, 1.4); c.setRGB(0.10 + 0.52 * t, 0.11 + 0.57 * t, 0.13 + 0.65 * t); cols.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    es.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    var panel = new THREE.Mesh(new THREE.PlaneGeometry(14, 9), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2.0, 1.8), side: THREE.DoubleSide }));
+    panel.position.set(-8, 14, 6); panel.lookAt(0, 0, 0); es.add(panel);
+    var pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.04).texture;
+  })();
+  scene.add(new THREE.HemisphereLight(0xcfd8e6, 0x2a2420, 0.35));
+  var sun = new THREE.DirectionalLight(0xfff1dd, 1.7); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.004;
+  scene.add(sun); scene.add(sun.target);
+  var rim = new THREE.DirectionalLight(0x8fb4ff, 0.6); rim.position.set(4, 2, -5); scene.add(rim);
+
+  /* ---------------------------------------------------------------- world (rover + terrain), scaled per model */
+  var world = new THREE.Group(); scene.add(world);
+  var S = { data: null, scale: 'proto', parts: {}, groups: {}, pivots: {}, size: new THREE.Vector3(), hdr: null, terrain: null };
+  var st = { X: 0, dist: 0, blade: 1, lid: 1, explode: 0, spin: 0, working: false, spinning: false, follow: false };   // blade 1 = down, lid 1 = open
+  var anim = { blade: null, lid: null, explode: null };
+  var GROUP_INFO = { blade: ['Blade, push frame, lift', '#e0a82e'], hopper: ['Fill hopper, spout, strike-off', '#2f8f5b'], roller: ['Compaction roller', '#7f8c8d'], sensors: ['Lidar, cameras, lamps', '#8fa3b8'], chassis: ['Chassis and equipment box', '#6b7a8f'], suspension: ['Rocker-bogie', '#4f81bd'], wheels: ['Wheels and hub drives', '#2b2b2b'] };
+  var MATS = {};
+  function material(c, m) {
+    var key = c + m; if (MATS[key]) return MATS[key];
+    var col = new THREE.Color(c).convertSRGBToLinear(), mt;
+    if (m === 'paint') mt = new THREE.MeshPhysicalMaterial({ color: col, roughness: .42, metalness: .15, clearcoat: .5, clearcoatRoughness: .35 });
+    else if (m === 'rubber') mt = new THREE.MeshStandardMaterial({ color: col.multiplyScalar(.9), roughness: .92, metalness: 0 });
+    else if (m === 'glass') mt = new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0x0b1624).convertSRGBToLinear(), roughness: .04, metalness: .2, clearcoat: 1, clearcoatRoughness: .05, envMapIntensity: 1.6 });
+    else if (m === 'emissive') mt = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.4, roughness: .3 });
+    else if (m === 'soil') mt = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x8b7d6b).convertSRGBToLinear(), roughness: 1 });
+    else mt = new THREE.MeshStandardMaterial({ color: col, roughness: .5, metalness: .55 });
+    return (MATS[key] = mt);
+  }
+
+  /* ---------------------------------------------------------------- binary model loader */
+  function parse(buf) {
+    var dv = new DataView(buf), hl = dv.getUint32(0, true), hdr = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)));
+    var base = 4 + hl;
+    hdr.parts.forEach(function (p) {
+      var n = p.t * 9, pos = new Float32Array(buf, base + p.o, n), nb = n + ((-n) % 4 + 4) % 4;
+      p.pos = pos; p.nrm = new Int8Array(buf, base + p.o + n * 4, n);
+    });
+    return hdr;
+  }
+  function geom(p, shift) {
+    var g = new THREE.BufferGeometry(), pos = p.pos;
+    if (shift) { pos = new Float32Array(p.pos); for (var i = 0; i < pos.length; i += 3) { pos[i] -= shift[0]; pos[i + 1] -= shift[1]; pos[i + 2] -= shift[2]; } }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(p.nrm, 3, true));
+    g.computeBoundingSphere(); g.computeBoundingBox(); return g;
+  }
+  function pivotGroup(id, at, parent) {
+    if (S.pivots[id]) return S.pivots[id];
+    var g = new THREE.Group(); g.position.fromArray(at); g.userData.at = at.slice(); (parent || S.rover).add(g); return (S.pivots[id] = g);
+  }
+  var BLADE_PIV = /^(blade_|push_|fastener_blade|rubber_blade|lamp_blade|conduit_blade)/;
+  var LID_PIV = /^(hopper_lid_open|hopper_lid_stiffeners|lift_hopper_lid_prop)/;
+
+  function build(hdr) {
+    if (S.rover) { world.remove(S.rover); }
+    S.rover = new THREE.Group(); world.add(S.rover); S.parts = {}; S.groups = {}; S.pivots = {}; S.hdr = hdr;
+    Object.keys(GROUP_INFO).forEach(function (g) { S.groups[g] = new THREE.Group(); S.groups[g].userData.name = g; S.rover.add(S.groups[g]); });
+    hdr.parts.forEach(function (p) {
+      var parent = S.groups[p.g], g, mesh, mt = material(p.c, p.m);
+      if (p.sp) {                                           // wheels / roller spin about their own axis
+        var id = 'spin:' + (p.sp.kind === 'wheel' ? p.n.slice(0, 8) : 'roller'); var at = p.sp.c;
+        var pg = pivotGroup(id, at, parent); pg.userData.spin = p.sp; g = geom(p, at); mesh = new THREE.Mesh(g, mt); pg.add(mesh);
+      } else if (BLADE_PIV.test(p.n) && !/^push_subbeam/.test(p.n)) {
+        var bp = hdr.bladePivot, pgb = pivotGroup('blade', bp, parent); g = geom(p, bp); mesh = new THREE.Mesh(g, mt); pgb.add(mesh);
+      } else if (LID_PIV.test(p.n)) {
+        var lp = hdr.lidHinge, pgl = pivotGroup('lid', lp, parent); g = geom(p, lp); mesh = new THREE.Mesh(g, mt); pgl.add(mesh); if (/prop/.test(p.n)) pgl.userData.prop = mesh;
+      } else if (p.n === 'lift_actuators') {
+        var a = hdr.actA, pga = pivotGroup('act', a, parent); g = geom(p, a); mesh = new THREE.Mesh(g, mt); pga.add(mesh);
+      } else { mesh = new THREE.Mesh(geom(p), mt); parent.add(mesh); }
+      mesh.castShadow = true; mesh.receiveShadow = p.m !== 'glass'; mesh.userData = { name: p.n, group: p.g, base: mt };
+      S.parts[p.n] = mesh;
+    });
+    var box = new THREE.Box3().setFromObject(S.rover); box.getSize(S.size); S.box = box;
+    // lay the rover on the ground: lowest wheel point = y 0 (model already has wheels on z=0)
+    // facing: +X forward
+    return hdr;
+  }
+
+  /* ---------------------------------------------------------------- terrain (pitted strip that the grader works) */
+  function makeTerrain(k) {
+    var LEN = 7.8 * k, WID = 3.2 * k, X0 = -1.6 * k, nx = Math.round(260), nz = 64;
+    var geo = new THREE.PlaneGeometry(LEN, WID, nx, nz); geo.rotateX(-Math.PI / 2); geo.translate(X0 + LEN / 2, 0, 0);
+    var pos = geo.attributes.position, cnt = pos.count, col = new Float32Array(cnt * 3); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    var H0 = new Float32Array(cnt), holes = [
+      [1.15, 0.06, 0.17, 0.052], [1.9, -0.22, 0.12, 0.04], [2.35, 0.25, 0.14, 0.046], [3.05, -0.02, 0.2, 0.062], [3.75, 0.2, 0.11, 0.036], [4.2, -0.18, 0.15, 0.05], [4.75, 0.04, 0.12, 0.04]];
+    var mounds = [[1.55, 0.18, 0.2, 0.03], [2.7, -0.25, 0.22, 0.034], [3.45, -0.12, 0.16, 0.026], [4.45, 0.26, 0.18, 0.03]];
+    function noise(x, z) { return Math.sin(x * 6.1 + 1.3) * Math.cos(z * 5.3) * 0.004 + Math.sin(x * 17.3 + z * 11.7) * 0.0018 + Math.sin(x * 2.3 - z * 3.1) * 0.006; }
+    for (var i = 0; i < cnt; i++) {
+      var x = pos.getX(i) / k, z = pos.getZ(i) / k, h = noise(x, z);
+      holes.forEach(function (o) { var dx = x - o[0], dz = z - o[1], r = Math.sqrt(dx * dx + dz * dz) / o[2]; if (r < 1.5) h += -o[3] * Math.pow(Math.max(0, 1 - r * r), 1.4) + (r > .8 && r < 1.5 ? o[3] * .18 * Math.sin((r - .8) / .7 * Math.PI) : 0); });
+      mounds.forEach(function (o) { var dx = x - o[0], dz = z - o[1], r2 = (dx * dx + dz * dz) / (o[2] * o[2]); h += o[3] * Math.exp(-r2 * 2.2); });
+      H0[i] = h * k;
+    }
+    var mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    var mesh = new THREE.Mesh(geo, mat); mesh.receiveShadow = true;
+    var T = { mesh: mesh, geo: geo, H0: H0, k: k, holes: holes, X0: X0, LEN: LEN, nx: nx, nz: nz, stage: new Uint8Array(cnt) };
+    T.reset = function () { for (var i = 0; i < cnt; i++) { pos.setY(i, H0[i]); } shade(0, true); };
+    function shade(Xr, all) {
+      // Xr: rover origin x (metres). Stage boundaries along the rover: blade edge, spout, strike-off bar, roller contact.
+      var hdr = S.hdr, eB = Xr + hdr.edgeX, eS = Xr + hdr.spoutX, eK = Xr + hdr.strikeX, eR = Xr + hdr.rollerX, hh = hdr.bladeW / 2 - 0.01 * k;
+      var ease2 = 0.035 * k;
+      var base = new THREE.Color(0x4b453e).convertSRGBToLinear(), loose = new THREE.Color(0x6f6659).convertSRGBToLinear(), pack = new THREE.Color(0x2e2a26).convertSRGBToLinear(), c = new THREE.Color();
+      for (var i = 0; i < cnt; i++) {
+        var x = pos.getX(i), z = pos.getZ(i), h0 = H0[i], h = h0, cm = 0, wy = sstep(hh, hh - 0.04 * k, Math.abs(z));      // wy: inside the working width
+        var a = sstep(eB, eB - ease2 * 2, x) * wy;                  // blade has passed: mounds cut, holes half-filled by pushed material
+        var cutTop = Math.min(h0, 0.004 * k); var half = h0 < 0 ? h0 * 0.45 : cutTop;
+        h = h0 + (half - h0) * a;
+        var b = sstep(eS, eS - ease2 * 2, x) * wy;                  // spout has dropped fill: heap above grade
+        h = h + (Math.max(h, 0.011 * k) - h) * b;
+        var d = sstep(eK, eK - ease2, x) * wy;                      // strike-off bar levels the heap
+        h = h + (0.0065 * k - h) * d;
+        var r = sstep(eR, eR - ease2, x) * wy;                      // roller compacts and smooths
+        h = h + (0.0016 * k - h) * r;
+        pos.setY(i, h);
+        var m1 = a * (1 - r) * (1 - r * 0.0); var mixLoose = clamp(a * 0.9, 0, 1) * (1 - r);
+        c.copy(base).lerp(loose, mixLoose * 0.8).lerp(pack, r);
+        var tint = 1 + (h0 * 6 / k); c.multiplyScalar(clamp(tint, .72, 1.12) * (1 - r * 0.0));
+        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+      }
+      pos.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.computeVertexNormals();
+    }
+    T.shade = shade; T.reset(); return T;
+  }
+  function holesLeft(Xr) {
+    if (!S.terrain) return 0; var hdr = S.hdr, eB = Xr + hdr.edgeX, n = 0, k = S.terrain.k;
+    S.terrain.holes.forEach(function (o) { if (o[0] * k > eB) n++; }); return n;
+  }
+
+  /* ---------------------------------------------------------------- framing + presets */
+  var PRESETS = { iso: [2.3, 0.5, 1.0], work: [2.75, 0.34, 1.3], side: [Math.PI, 0.1, 0.95], front: [1.5707, 0.14, 0.95], top: [Math.PI, 1.5, 1.0], rear: [-1.5707, 0.28, 1.0] };
+  // spherical (azimuth about Y, elevation, distance factor); camera at (sin az, ., cos az): az = pi looks at the rover's left side, pi/2 at its front
+  var camGoal = null;
+  window.__preset = PRESETS;
+  function framing() { var d = Math.max(S.size.x, S.size.z, S.size.y * 1.3) * 1.6 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.56; return d; }
+  function unpack(t) {
+    var bin = atob(t.trim()), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  }
+  function goCam(name, instant) {
+    var p = PRESETS[name], d = framing() * p[2], c = new THREE.Vector3(); S.box.getCenter(c); c.y = S.size.y * 0.38; c.add(new THREE.Vector3(S.rover.position.x, 0, 0));
+    var el = p[1], az = p[0], pos = new THREE.Vector3(c.x + d * Math.sin(az) * Math.cos(el), c.y + d * Math.sin(el), c.z + d * Math.cos(az) * Math.cos(el));
+    if (name === 'top') pos.set(c.x + 0.0005 * d, c.y + d * 1.05, c.z + 0.02 * d);
+    var tc = [].slice.call(document.querySelectorAll('#cams button')); tc.forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cam') === name); });
+    if (instant) { camera.position.copy(pos); controls.target.copy(c); controls.update(); camGoal = null; return; }
+    camGoal = { p0: camera.position.clone(), t0: controls.target.clone(), p1: pos, t1: c, u: 0 };
+  }
+  function lightRig() {
+    var s = Math.max(S.size.x, S.size.z); sun.position.set(-s * 1.6, s * 1.15, s * 0.9); sun.target.position.set(0, 0, 0);
+    var e = s * 1.6; sun.shadow.camera.left = -e; sun.shadow.camera.right = e; sun.shadow.camera.top = e; sun.shadow.camera.bottom = -e; sun.shadow.camera.near = .1; sun.shadow.camera.far = s * 8; sun.shadow.camera.updateProjectionMatrix();
+    camera.near = s * 0.02; camera.far = s * 80; camera.updateProjectionMatrix(); controls.minDistance = s * 0.5; controls.maxDistance = s * 9;
+    scene.fog.near = s * 6; scene.fog.far = s * 26;
+  }
+
+  /* ---------------------------------------------------------------- loading */
+  var cache = {};
+  function setStatus(t, mode) { $('statusTxt').textContent = t; var s = $('status'); s.classList.toggle('busy', mode === 'busy'); s.classList.toggle('pick', mode === 'pick'); }
+  function load(scale, first) {
+    var url = 'grader_' + scale + '.gz.txt';   // gzip + base64 so it publishes as text
+    $('loading').classList.remove('gone'); $('loadTxt').textContent = scale === 'full' ? 'Loading full-scale model' : 'Loading path grader';
+    var p = cache[scale] ? Promise.resolve(cache[scale]) : fetch(url).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).then(unpack).then(function (b) { return (cache[scale] = parse(b)); });
+    return p.then(function (hdr) {
+      stopWork(true); anim.explode = anim.blade = anim.lid = null; st.explode = 0; st.blade = 1; st.lid = 1; st.dist = 0; st.X = 0; st.spin = 0; S._camX = 0; S.scale = scale;
+      build(hdr); var k = hdr.k; if (S.terrain) { world.remove(S.terrain.mesh); S.terrain.geo.dispose(); }
+      S.terrain = makeTerrain(k); world.add(S.terrain.mesh); S.terrain.mesh.position.y = 0.0;
+      if (!S.floor) { S.floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: new THREE.Color(0x24211e).convertSRGBToLinear(), roughness: 1 })); S.floor.position.y = -0.004 * k; S.floor.receiveShadow = true; scene.add(S.floor); } S.floor.position.y = -0.12 * k;
+      S.rover.position.x = 0; S.rover.position.y = 0.0; lightRig(); applyPose(); buildInspector(hdr); goCam('iso', true);
+      [].slice.call(document.querySelectorAll('#scaleSeg button')).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-scale') === scale); });
+      $('loading').classList.add('gone'); setStatus('Ready · click a part to identify it');
+    }).catch(function (e) { $('loadTxt').textContent = 'Could not load the model (' + e.message + ')'; });
+  }
+
+  /* ---------------------------------------------------------------- inspector */
+  function fmt(v) { return v >= 1 ? v.toFixed(2) + ' m' : Math.round(v * 1000) + ' mm'; }
+  function buildInspector(h) {
+    var k = h.k, s = S.size; $('dims').textContent = fmt(s.x) + ' × ' + fmt(s.z) + ' × ' + fmt(s.y);
+    $('kBlade').textContent = fmt(h.bladeW) + ' × ' + fmt(0.12 * k) + ' curved'; $('kRoller').textContent = 'Ø' + fmt(2 * h.rollerR) + ' × ' + fmt(2 * (h.wy + 0.03 * k) - 0.01 * k);
+    $('kHopper').textContent = fmt(0.22 * k) + ' × ' + fmt(0.22 * k) + ' × ' + fmt(0.105 * k); $('kParts').textContent = h.parts.length + ' · ' + Math.round(h.parts.reduce(function (a, p) { return a + p.t; }, 0) / 1000) + 'k tris';
+    $('sub').textContent = (h.name === 'full' ? 'Full-scale' : '2 ft prototype') + ' · same rocker-bogie chassis as AEGIS-V1';
+    var ul = $('legend'); ul.innerHTML = '';
+    Object.keys(GROUP_INFO).forEach(function (g) {
+      var n = h.parts.filter(function (p) { return p.g === g; }).length, li = document.createElement('li');
+      li.innerHTML = '<label><input type="checkbox" checked data-g="' + g + '"><i style="background:' + GROUP_INFO[g][1] + '"></i><span>' + GROUP_INFO[g][0] + '</span><small>' + n + '</small></label>';
+      ul.appendChild(li);
+    });
+    [].slice.call(ul.querySelectorAll('input')).forEach(function (i) { i.addEventListener('change', function () { S.groups[i.getAttribute('data-g')].visible = i.checked; }); });
+  }
+
+  /* ---------------------------------------------------------------- pose: blade, lid, explode, spin */
+  var EXPL = { blade: [0.16, 0, 0], roller: [-0.2, 0, 0], hopper: [0, 0.2, 0], sensors: [0, 0.14, 0], chassis: [0, 0, 0], suspension: [0, 0, 0], wheels: [0, 0, 0] };
+  var BLADE_UP = THREE.MathUtils.degToRad(11);
+  function applyPose() {
+    var h = S.hdr, k = h.k, e = ease(st.explode);
+    Object.keys(S.groups).forEach(function (g) { var v = EXPL[g] || [0, 0, 0]; S.groups[g].position.set(v[0] * k * e, v[1] * k * e, v[2] * k * e); });
+    Object.keys(S.pivots).forEach(function (id) { var pg = S.pivots[id]; if (id.indexOf('spin:') === 0 && id.slice(5, 11) === 'wheel_') { var s = h.wy * (id.charAt(11) === 'L' ? 1 : -1); pg.position.z = pg.userData.at[2] + (id.charAt(11) === 'L' ? -1 : 1) * 0.1 * k * e; } });
+    var up = (1 - st.blade) * BLADE_UP;
+    if (S.pivots.blade) S.pivots.blade.rotation.z = up;
+    if (S.pivots.act) {
+      var A = new THREE.Vector3().fromArray(h.actA), B = new THREE.Vector3().fromArray(h.actB), P = new THREE.Vector3().fromArray(h.bladePivot);
+      var B1 = B.clone().sub(P).applyAxisAngle(new THREE.Vector3(0, 0, 1), up).add(P);
+      var a0 = Math.atan2(B.y - A.y, B.x - A.x), a1 = Math.atan2(B1.y - A.y, B1.x - A.x); S.pivots.act.rotation.z = a1 - a0;
+    }
+    if (S.pivots.lid) { S.pivots.lid.rotation.z = (1 - st.lid) * THREE.MathUtils.degToRad(h.lidAngle); if (S.pivots.lid.userData.prop) S.pivots.lid.userData.prop.visible = st.lid > 0.5; }
+    var wr = -st.dist / h.R, rr = -st.dist / h.rollerR;
+    Object.keys(S.pivots).forEach(function (id) { var pg = S.pivots[id]; if (pg.userData.spin) pg.rotation.z = pg.userData.spin.kind === 'wheel' ? wr : rr; });
+    S.rover.position.x = st.X;
+  }
+  function tween(key, to, ms, done) {
+    var from = st[key], t0 = performance.now(), d = reduce ? 1 : ms; anim[key] = { from: from, to: to, t0: t0, d: d, done: done };
+  }
+  function stepTweens(now) {
+    ['blade', 'lid', 'explode'].forEach(function (key) {
+      var a = anim[key]; if (!a) return; var u = clamp((now - a.t0) / a.d, 0, 1); st[key] = a.from + (a.to - a.from) * (u < 1 ? (u * u * u * (10 + u * (-15 + 6 * u))) : 1);   // eased
+      if (u >= 1) { anim[key] = null; if (a.done) a.done(); }
+    });
+  }
+
+  /* ---------------------------------------------------------------- work pass */
+  var work = { v: 0, last: 0 };
+  function startWork() {
+    if (st.working) { stopWork(false); return; }
+    st.working = true; st.follow = true; st.explode = 0; anim.explode = null; st.spinning = false;
+    if (st.blade < 0.99) tween('blade', 1, 700);
+    if (st.lid < .99) tween('lid', 1, 700);
+    $('metrics').classList.add('on'); setStatus('Work pass · cut → fill → level → roll', 'busy');
+    if (st.X > S.hdr.k * 5.0) { st.X = 0; st.dist = 0; S.terrain.reset(); }
+    work.last = performance.now(); work.v = 0; goCam('work');
+    var t = $('cams'); // keep camera presets usable during the pass
+  }
+  function stopWork(silent) {
+    st.working = false; st.follow = false; if (!silent) setStatus('Paused · press Work pass to continue');
+  }
+  function resetWork() { st.X = 0; st.dist = 0; if (S.terrain) S.terrain.reset(); applyPose(); }
+  var CAM_OFF = new THREE.Vector3();
+
+  /* ---------------------------------------------------------------- picking */
+  var ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), pickDown = null, hilite = null;
+  renderer.domElement.addEventListener('pointerdown', function (e) { pickDown = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  renderer.domElement.addEventListener('pointerup', function (e) {
+    if (!pickDown || Math.hypot(e.clientX - pickDown.x, e.clientY - pickDown.y) > 5 || performance.now() - pickDown.t > 450) return;
+    var r = renderer.domElement.getBoundingClientRect(); mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    var hits = ray.intersectObjects(Object.keys(S.parts).map(function (k) { return S.parts[k]; }).filter(function (m) { return m.visible && m.parent && m.parent.visible !== false; }), false);
+    if (hilite) { hilite.material = hilite.userData.base; hilite = null; }
+    if (hits.length) {
+      var m = hits[0].object; hilite = m; var mt = m.userData.base.clone(); mt.emissive = new THREE.Color(0x0a84ff); mt.emissiveIntensity = 0.55; m.material = mt;
+      setStatus(m.userData.name.replace(/_/g, ' '), 'pick');
+    } else setStatus(st.working ? 'Work pass · cut → fill → level → roll' : 'Ready · click a part to identify it', st.working ? 'busy' : '');
+  });
+
+  /* ---------------------------------------------------------------- UI wiring */
+  function toggleBlade() { tween('blade', st.blade > 0.5 ? 0 : 1, 900); setStatus(st.blade > 0.5 ? 'Blade raised for transit' : 'Blade lowered to work'); }
+  function toggleLid() { tween('lid', st.lid > 0.5 ? 0 : 1, 900); setStatus(st.lid > 0.5 ? 'Hopper lid closed' : 'Hopper lid open'); }
+  function toggleExplode() { var on = !(anim.explode ? anim.explode.to > 0.5 : st.explode > 0.5); if (on) { stopWork(true); } tween('explode', on ? 1 : 0, 1000); setStatus(on ? 'Exploded view' : 'Assembled'); }
+  function toggleSpin() { st.spinning = !st.spinning; setStatus(st.spinning ? 'Wheels and roller free-running' : 'Ready · click a part to identify it'); }
+  var map = { aWork: startWork, aBlade: toggleBlade, aLid: toggleLid, aExplode: toggleExplode, aSpin: toggleSpin };
+  Object.keys(map).forEach(function (id) { $(id).addEventListener('click', map[id]); });
+  [].slice.call(document.querySelectorAll('.ebar button')).forEach(function (b) { b.addEventListener('click', function () { map[b.getAttribute('data-click')](); }); });
+  function sync() { var on = { aWork: st.working, aExplode: !!(anim.explode ? anim.explode.to > 0.5 : st.explode > 0.5), aSpin: st.spinning }; Object.keys(on).forEach(function (id) { $(id).classList.toggle('on', on[id]); var b = document.querySelector('.ebar [data-click=' + id + ']'); if (b) b.classList.toggle('on', on[id]); }); }
+  [].slice.call(document.querySelectorAll('#cams button')).forEach(function (b) { b.addEventListener('click', function () { goCam(b.getAttribute('data-cam')); }); });
+  [].slice.call(document.querySelectorAll('#scaleSeg button')).forEach(function (b) { b.addEventListener('click', function () { var s = b.getAttribute('data-scale'); if (s !== S.scale) load(s); }); });
+  addEventListener('keydown', function (e) {
+    if (e.target && /input|textarea/i.test(e.target.tagName)) return; var k = e.key.toLowerCase();
+    if (k === 'w') startWork(); else if (k === 'b') toggleBlade(); else if (k === 'l') toggleLid(); else if (k === 'e') toggleExplode(); else if (k === 's') toggleSpin();
+    else if ('12345'.indexOf(k) >= 0 && k) goCam(['iso', 'side', 'front', 'top', 'rear'][+k - 1]);
+  });
+
+  /* ---------------------------------------------------------------- main loop */
+  function resize() { var w = view.clientWidth, h = view.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(view); resize();
+  var last = performance.now(), lastDist = 0;
+  function frame(now) {
+    requestAnimationFrame(frame); var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!S.hdr) { renderer.render(scene, camera); return; }
+    stepTweens(now);
+    if (st.working) {
+      var k = S.hdr.k, vmax = 0.30 * k, remaining = 5.4 * k - st.X; var tgt = Math.min(vmax, Math.max(0, remaining) * 0.9 + 0.02);
+      work.v += clamp(tgt - work.v, -0.5 * k * dt, 0.25 * k * dt);
+      st.X += work.v * dt; st.dist += work.v * dt;
+      if (remaining <= 0.01 && work.v < 0.01) { stopWork(true); setStatus('Pass complete · strip is smooth and compacted'); work.v = 0; }
+    } else if (st.spinning) { st.dist += 0.35 * S.hdr.k * dt; }
+    applyPose(); sync();
+    if (st.working || st.X !== lastDist) { S.terrain.shade(st.X); $('mDist').textContent = (st.X / S.hdr.k).toFixed(1) + ' m'; $('mHoles').textContent = holesLeft(st.X) + ' of ' + S.terrain.holes.length; $('mBlade').textContent = st.blade > .5 ? 'down' : 'up'; lastDist = st.X; }
+    if (camGoal) {
+      camGoal.u = Math.min(1, camGoal.u + dt / (reduce ? 0.01 : 0.9)); var e = ease(camGoal.u);
+      var shift = st.follow ? st.X - (camGoal.xs || 0) : 0;
+      camera.position.lerpVectors(camGoal.p0, camGoal.p1, e); controls.target.lerpVectors(camGoal.t0, camGoal.t1, e); if (camGoal.u >= 1) camGoal = null;
+    }
+    if (st.working && !camGoal) { var dx = st.X - (S._camX || 0); camera.position.x += dx; controls.target.x += dx; }
+    S._camX = st.X;
+    controls.update(); sun.position.x = -S.size.x * 1.6 + st.X; sun.target.position.x = st.X;
+    renderer.render(scene, camera);
+  }
+  S._camX = 0; requestAnimationFrame(frame);
+  load(Q.get('scale') === 'full' ? 'full' : 'proto', true).then(function () { if (Q.get('autoplay') === '1') startWork(); });
+  window.__grader = { scene: scene, renderer: renderer, sun: sun, S: S, st: st, goCam: goCam, load: load, startWork: startWork, toggleExplode: toggleExplode, toggleLid: toggleLid, toggleBlade: toggleBlade, tween: tween, THREE: THREE, camera: camera, controls: controls };
+})();
+</script>
+</body>
+</html>
